@@ -1,12 +1,7 @@
 package loggamja.mcsync.mixin;
 
-import loggamja.mcsync.MCRiderCamera;
-import net.fabricmc.fabric.api.networking.v1.PacketSender;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
-import net.minecraft.network.packet.s2c.play.ChatMessageS2CPacket;
-import net.minecraft.network.packet.s2c.play.GameMessageS2CPacket;
 import net.minecraft.network.packet.s2c.play.OverlayMessageS2CPacket;
-import net.minecraft.network.packet.s2c.play.TitleS2CPacket;
 import net.minecraft.text.*;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -14,8 +9,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import java.util.List;
-import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -24,7 +17,7 @@ public class ClientPlayNetworkHandlerMixin {
     @Inject(method = "onOverlayMessage", at = @At("HEAD"))
     private void onHandleGameMessage(OverlayMessageS2CPacket packet, CallbackInfo ci) {
         Text message = packet.text();
-        MCRiderCamera.actionbarSpeed = extractSpeed(message.getString());
+        //MCRiderCamera.actionbarSpeed = extractSpeed(message.getString());
     }
     @Unique
     Float extractSpeed(String text) {

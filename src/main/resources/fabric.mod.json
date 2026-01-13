@@ -17,9 +17,7 @@
 	"entrypoints": {
 		"main": [
           "loggamja.mcsync.MCRiderMain",
-          "loggamja.mcsync.MCRiderRadar",
-          "loggamja.mcsync.MCRiderDraft",
-          "loggamja.mcsync.MCRiderCamera"
+          "loggamja.mcsync.MCRiderRadar"
 		],
 		"fabric-datagen": [
           "loggamja.mcsync.MCRiderDataGenerator"
@@ -30,7 +28,7 @@
 	],
 	"depends": {
 		"fabricloader": ">=0.16.4",
-		"minecraft": ">=1.21.4 <=1.21.11",
+		"minecraft": ">=1.21.1 <=1.21.11",
 		"java": ">=21",
 		"fabric-api": "*"
 	},

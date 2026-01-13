@@ -22,8 +22,8 @@ public class MCRiderRadar implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        //HudRenderCallback.EVENT.register((context, context2) -> renderRadar(context, context2.getTickDelta(false)));
-        HudRenderCallback.EVENT.register((context, context2) -> renderRadar(context, context2.getTickProgress(false)));
+        HudRenderCallback.EVENT.register((context, context2) -> renderRadar(context, context2.getTickDelta(false)));
+        //HudRenderCallback.EVENT.register((context, context2) -> renderRadar(context, context2.getTickProgress(false)));
     }
     private void renderRadar(DrawContext context, float tickDelta) {
         if (!MCRiderMain.isRidingKart) return;

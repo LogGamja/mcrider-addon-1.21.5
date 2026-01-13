@@ -58,28 +58,6 @@ public class MCRiderMain implements ModInitializer {
         }
         return client.player;
     }
-    String getSaddleType(Entity vehicle) {
-        if (hasCertainName(vehicle, "mcrider-saddle-common")) {
-            return "common";
-        }
-        else if (hasCertainName(vehicle, "mcrider-saddle-1.0")) {
-            return "1.0";
-        }
-        else if (hasCertainName(vehicle, "mcrider-saddle-boat")) {
-            return "boat";
-        }
-        else {
-            return "none";
-        }
-    }
-    boolean hasCertainName(Entity entity, String saddleName) {
-        if (entity != null && entity.getCustomName() != null) {
-            return entity.getCustomName().toString().equals("literal{"  + saddleName + "}");
-        }
-        else {
-            return false;
-        }
-    }
     void updateRidingState() {
         if (currentSaddleType.equals("none") == isRidingKart) {
             isRidingKart = !isRidingKart;
