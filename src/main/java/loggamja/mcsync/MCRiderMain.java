@@ -12,10 +12,11 @@ import net.minecraft.entity.player.PlayerEntity;
 import java.util.*;
 
 public class MCRiderMain implements ModInitializer {
-    String currentSaddleType = "none";
     public static List<Float> playerYawBuffer = new ArrayList<>(Collections.nCopies(1, 0f));
 
     public static boolean isRidingKart = false;
+
+    public static float direction = 0;
 
     static MCRiderConfig cfg;
     static MinecraftClient client = MinecraftClient.getInstance();
@@ -34,14 +35,11 @@ public class MCRiderMain implements ModInitializer {
     void onClientTickEnd() {
         if (!isPlayingInGame()) return;
 
-        Entity vehicle = getRidingPlayer().getVehicle();
-        currentSaddleType = getSaddleType(vehicle);
-
         updateRidingState();
 
         if (isRidingKart && getRidingPlayer() == client.player && cfg.MCRiderRotationOption > 0) {
             Entity kartMobil = getRidingPlayer().getRootVehicle();
-            if (!hasCertainName(kartMobil, "mcrider-stop")) {
+            if (MCRiderCamera.realSpeed > 0.00001) {
                 simulateKartRotation(kartMobil);
             }
         }
@@ -59,9 +57,20 @@ public class MCRiderMain implements ModInitializer {
         return client.player;
     }
     void updateRidingState() {
-        if (currentSaddleType.equals("none") == isRidingKart) {
-            isRidingKart = !isRidingKart;
-            autoThirdPerson();
+        if (client.player == null || client.player.getRootVehicle() == client.player){
+            if (isRidingKart) {
+                isRidingKart = false;
+                autoThirdPerson();
+            }
+            return;
+        }
+        if (client.player.getVehicle() != null && client.player.getVehicle().getType() == EntityType.COD || client.player.getVehicle().getType() == EntityType.ARMADILLO) {
+            if (client.player.getRootVehicle().getType() == EntityType.ARMOR_STAND || client.player.getRootVehicle().getType() == EntityType.ITEM_DISPLAY) {
+                if (!isRidingKart) {
+                    isRidingKart = true;
+                    autoThirdPerson();
+                }
+            }
         }
     }
     void autoThirdPerson() {
@@ -77,19 +86,8 @@ public class MCRiderMain implements ModInitializer {
     void simulateKartRotation(Entity kartMobil) {
         if (kartMobil == getRidingPlayer()) return;
 
-        List<Entity> passengers = kartMobil.getPassengerList();
-        for (var i: passengers) {
-            if (hasCertainName(i, "mcrider-direction")) {
-                for (var j : passengers) {
-                    if (hasCertainName(j, "mcrider-modelsaddle")) {
-                        float angleToRotate = calculateRotation(i.getYaw());
-                        rotateKartModel(j, angleToRotate);
-                        break;
-                    }
-                }
-                break;
-            }
-        }
+        float angleToRotate = calculateRotation(kartMobil.getYaw());
+        rotateKartModel(kartMobil, angleToRotate);
     }
     float calculateRotation(float directionYaw) {
         var playerYaw = playerYawBuffer.getFirst();
@@ -97,10 +95,7 @@ public class MCRiderMain implements ModInitializer {
         var deltaAngle = normalizeAngle(playerYaw - directionYaw);
         var overShootAngle = getOverShootAngle(deltaAngle);
 
-        if (currentSaddleType.equals("boat"))
-            return normalizeAngle(playerYaw);
-        else
-            return normalizeAngle(playerYaw + overShootAngle);
+        return normalizeAngle(playerYaw + overShootAngle);
     }
     void rotateKartModel(Entity entity, float angleToRotate) {
         List<Entity> models = entity.getPassengerList();
@@ -110,15 +105,10 @@ public class MCRiderMain implements ModInitializer {
     }
     float getOverShootAngle(float deltaAngle) {
         var overShootAngle = deltaAngle;
-        if (currentSaddleType.equals("1.0")) {
-            if (deltaAngle <= -55) overShootAngle = -110f - deltaAngle;
-            if (55 <= deltaAngle) overShootAngle = 110f - deltaAngle;
-        }
-        else {
-            if (-110 <= deltaAngle && deltaAngle <= -55) overShootAngle = -110f - deltaAngle;
-            if (55 <= deltaAngle && deltaAngle <= 110) overShootAngle = 110f - deltaAngle;
-            if ((deltaAngle < -110 || deltaAngle > 110)) overShootAngle = 0f;
-        }
+
+        if (deltaAngle <= -55) overShootAngle = -110f - deltaAngle;
+        if (55 <= deltaAngle) overShootAngle = 110f - deltaAngle;
+
         return overShootAngle / 2;
     }
     float normalizeAngle(float angle) {

@@ -17,7 +17,8 @@
 	"entrypoints": {
 		"main": [
           "loggamja.mcsync.MCRiderMain",
-          "loggamja.mcsync.MCRiderRadar"
+          "loggamja.mcsync.MCRiderRadar",
+          "loggamja.mcsync.MCRiderCamera"
 		],
 		"fabric-datagen": [
           "loggamja.mcsync.MCRiderDataGenerator"
