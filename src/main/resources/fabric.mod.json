@@ -1,0 +1,42 @@
+{
+	"schemaVersion": 1,
+	"id": "sync-mcrider",
+	"version": "${version}",
+	"name": "MCRider",
+	"description": "카트라이더: 마인크래프트의 사용자 경험을 개선합니다.\nEnhance user experience when playing 'KartRider: Minecraft'.",
+	"authors": [
+		"LogGamja"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/",
+		"sources": "https://github.com/FabricMC/fabric-example-mod"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/mcrider-sync/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+          "loggamja.mcsync.MCRiderMain",
+          "loggamja.mcsync.MCRiderRadar",
+          "loggamja.mcsync.MCRiderDraft",
+          "loggamja.mcsync.MCRiderCamera"
+		],
+		"fabric-datagen": [
+          "loggamja.mcsync.MCRiderDataGenerator"
+		]
+	},
+	"mixins": [
+		"mcsync.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.16.4",
+		"minecraft": ">=1.21.4 <=1.21.11",
+		"java": ">=21",
+		"fabric-api": "*"
+	},
+	"suggests": {
+        "tick-sync": "*"
+    },
+    "breaks": {
+    }
+}

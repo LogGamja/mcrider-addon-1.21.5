@@ -1,0 +1,21 @@
+{
+  "required": true,
+  "package": "loggamja.mcsync.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "CameraMixin",
+    "ClientPlayNetworkHandlerMixin",
+    "HideCodMixin",
+    "ExampleMixin",
+    "GameMenuScreenMixin",
+    "GameRendererMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "overwrites": {
+    "requireAnnotations": true
+  },
+  "client": [
+  ]
+}
