@@ -13,7 +13,7 @@ public class MCRiderConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final File CONFIG_FILE = new File(FabricLoader.getInstance().getConfigDir().toFile(), "mcsync-config.json");
 
-    public int MCRiderRotationOption = 1;
+    public int MCRiderRotationOption = 2;
     public boolean MCRiderPacketAcceleration = true;
     public int MCRiderRadarOption = 1;
     public boolean useNoclipCamera = true;
