@@ -1,6 +1,7 @@
 package loggamja.mcsync.mixin;
 
 import loggamja.mcsync.MCRiderCamera;
+import loggamja.mcsync.MCRiderMain;
 import net.fabricmc.fabric.api.networking.v1.PacketSender;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.network.packet.s2c.play.ChatMessageS2CPacket;
@@ -23,16 +24,24 @@ import java.util.regex.Pattern;
 public class ClientPlayNetworkHandlerMixin {
     @Inject(method = "onOverlayMessage", at = @At("HEAD"))
     private void onHandleGameMessage(OverlayMessageS2CPacket packet, CallbackInfo ci) {
+        if (!MCRiderMain.isRidingKart || !MCRiderMain.isPlayingInGame()) return;
+
         Text message = packet.text();
-        MCRiderCamera.actionbarSpeed = extractSpeed(message.getString());
+        var speed = extractSpeed(message.getString());
+
+        if (MCRiderMain.currentSaddleType.equals("1.0")) {
+            speed *= 2.59065f;
+        }
+
+        MCRiderCamera.actionbarSpeed = speed;
     }
     @Unique
-    Float extractSpeed(String text) {
+    float extractSpeed(String text) {
         Pattern p = Pattern.compile("(\\d+(?:\\.\\d+)?)km/h");
         Matcher m = p.matcher(text);
         if (m.find()) {
-            return Float.parseFloat(m.group(1));
+            return Math.max(Float.parseFloat(m.group(1)), 0);
         }
-        return -1.0f; // 매칭 실패 시 null 반환
+        return -169f; // 매칭 실패 시 -169 반환
     }
 }

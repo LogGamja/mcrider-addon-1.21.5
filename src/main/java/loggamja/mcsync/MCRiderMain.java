@@ -12,7 +12,7 @@ import net.minecraft.entity.player.PlayerEntity;
 import java.util.*;
 
 public class MCRiderMain implements ModInitializer {
-    String currentSaddleType = "none";
+    public static String currentSaddleType = "none";
     public static List<Float> playerYawBuffer = new ArrayList<>(Collections.nCopies(1, 0f));
 
     public static boolean isRidingKart = false;

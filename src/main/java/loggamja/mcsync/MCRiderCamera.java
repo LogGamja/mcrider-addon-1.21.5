@@ -40,6 +40,9 @@ public class MCRiderCamera implements ModInitializer {
 
     @Override
     public void onInitialize() {
+        ClientTickEvents.START_CLIENT_TICK.register(client -> {
+            actionbarSpeed = -169f;
+        });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             onClientTickEnd();
         });
@@ -82,7 +85,7 @@ public class MCRiderCamera implements ModInitializer {
         final double ARM_SPEED_BACKWARD = 4 * armSpeedMultiplier;
 
         final float actionbarSpeedHalf = actionbarSpeed / 2;
-        speed = (actionbarSpeed == -1.0f) ? realSpeed : actionbarSpeedHalf;
+        speed = (actionbarSpeed == -169f) ? realSpeed : actionbarSpeedHalf;
         if (realSpeed > speed) speed++;
 
         final double convertedSpeed = speed * 24.83;

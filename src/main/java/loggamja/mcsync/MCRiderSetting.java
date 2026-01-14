@@ -28,7 +28,6 @@ public class MCRiderSetting extends Screen {
             "Show enemy radar when riding a kart.",
             "Show a draft gauge when riding a kart.",
             "Automatically change to 3rd person view when riding a kart.",
-            "Show enemy radar when riding a kart.",
             "Third person camera goes through blocks when riding a kart.",
             "Change camera mode when riding a kart."
     };
