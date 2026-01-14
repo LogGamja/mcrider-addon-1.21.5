@@ -41,12 +41,12 @@ public class MCRiderCamera implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            onClientTickEnd();
+        ClientTickEvents.START_CLIENT_TICK.register(client -> {
+            onClientTickStart();
         });
     }
 
-    void onClientTickEnd() {
+    void onClientTickStart() {
         if (!MCRiderMain.isPlayingInGame() || !MCRiderMain.isRidingKart || MCRiderConfig.INSTANCE.cameraMode == 0) return;
 
         calculateSpeed();
