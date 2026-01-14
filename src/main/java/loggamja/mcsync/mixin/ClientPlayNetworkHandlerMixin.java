@@ -34,6 +34,8 @@ public class ClientPlayNetworkHandlerMixin {
         }
 
         MCRiderCamera.actionbarSpeed = speed;
+        if (speed == -169f) MCRiderCamera.timeAfterLastActionbar = 20;
+        else MCRiderCamera.timeAfterLastActionbar = 0;
     }
     @Unique
     float extractSpeed(String text) {
