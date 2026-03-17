@@ -14,7 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class LivingEntityRendererMixin {
     @Inject(method = "clampBodyYaw", at = @At(value = "HEAD"), cancellable = true)
     private static void clampBodyYaw(LivingEntity entity, float degrees, float tickProgress, CallbackInfoReturnable<Float> cir) {
-        if (MCRiderMain.isRidingKart) {
+        if (MCRiderMain.isRidingKart && entity == MCRiderMain.getRidingPlayer()) {
             cir.setReturnValue(MathHelper.lerpAngleDegrees(tickProgress, entity.lastBodyYaw, entity.bodyYaw));
         }
     }
