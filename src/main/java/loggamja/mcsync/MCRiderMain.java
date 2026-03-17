@@ -17,6 +17,8 @@ public class MCRiderMain implements ModInitializer {
 
     public static boolean isRidingKart = false;
 
+    public static float asdf = 0;
+
     static MCRiderConfig cfg;
     static MinecraftClient client = MinecraftClient.getInstance();
 
@@ -97,14 +99,17 @@ public class MCRiderMain implements ModInitializer {
         }
     }
     void simulateKartRotation(Entity kartMobil) {
-        if (kartMobil == getRidingPlayer()) return;
+        var player = getRidingPlayer();
+        if (kartMobil == player) return;
 
         List<Entity> passengers = kartMobil.getPassengerList();
         for (var i: passengers) {
             if (hasCertainName(i, "mcrider-direction")) {
+                float angleToRotate = calculateRotation(i.getYaw());
+                player.setBodyYaw(angleToRotate);
+
                 for (var j : passengers) {
                     if (hasCertainName(j, "mcrider-modelsaddle")) {
-                        float angleToRotate = calculateRotation(i.getYaw());
                         rotateKartModel(j, angleToRotate);
                         break;
                     }

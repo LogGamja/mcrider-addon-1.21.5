@@ -22,7 +22,7 @@ public class MCRiderConfig {
     public int cameraMode = 2;
 
     public int MCRiderFOV = 90;
-    public int MCRiderFOVEffects = 85;
+    public int MCRiderFOVEffects = 80;
 
     // 싱글톤
     public static final MCRiderConfig INSTANCE = new MCRiderConfig();
