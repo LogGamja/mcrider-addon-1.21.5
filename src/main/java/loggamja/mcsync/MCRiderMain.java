@@ -4,10 +4,9 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.Perspective;
-import net.minecraft.client.render.Camera;
 import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityType;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.util.math.MathHelper;
 
 import java.util.*;
 
@@ -16,8 +15,6 @@ public class MCRiderMain implements ModInitializer {
     public static List<Float> playerYawBuffer = new ArrayList<>(Collections.nCopies(1, 0f));
 
     public static boolean isRidingKart = false;
-
-    public static float asdf = 0;
 
     static MCRiderConfig cfg;
     static MinecraftClient client = MinecraftClient.getInstance();
@@ -41,40 +38,51 @@ public class MCRiderMain implements ModInitializer {
 
         updateRidingState();
 
-        if (isRidingKart && getRidingPlayer() == client.player && cfg.MCRiderRotationOption > 0) {
-            Entity kartMobil = getRidingPlayer().getRootVehicle();
-            if (!hasCertainName(kartMobil, "mcrider-stop")) {
-                simulateKartRotation(kartMobil);
+        if (cfg.MCRiderRotationOption > 0) {
+            if (isRidingKart && getRidingPlayer() == client.player) {
+                Entity kartMobil = getRidingPlayer().getRootVehicle();
+
+                if (!hasCertainName(kartMobil, "mcrider-stop")) {
+                    simulateKartRotation(kartMobil);
+                }
             }
+            fixAllPlayersBodyToKart();
         }
+    }
+    public static boolean isRidingKart(PlayerEntity player) {
+        var kartSaddle = player.getVehicle();
+        if (kartSaddle == null) return false;
+
+        return !Objects.equals(getSaddleType(kartSaddle), "none");
     }
     public static boolean isPlayingInGame() {
         MinecraftClient client = MinecraftClient.getInstance();
-        return client.world != null && client.player != null && !(client.getCameraEntity() == null) &&  !client.isPaused();
+        return client.world != null && client.player != null && client.getCameraEntity() != null && !client.isPaused();
     }
     public static PlayerEntity getRidingPlayer() {
         MinecraftClient client = MinecraftClient.getInstance();
+        var cameraEntity = client.getCameraEntity();
 
-        if (client.getCameraEntity().isPlayer()) {
-            return (PlayerEntity) client.getCameraEntity();
+        if (cameraEntity != null && cameraEntity.isPlayer()) {
+            return (PlayerEntity) cameraEntity;
         }
         return client.player;
     }
-    String getSaddleType(Entity vehicle) {
-        if (hasCertainName(vehicle, "mcrider-saddle-common")) {
+    static String getSaddleType(Entity saddle) {
+        if (hasCertainName(saddle, "mcrider-saddle-common")) {
             return "common";
         }
-        else if (hasCertainName(vehicle, "mcrider-saddle-1.0")) {
+        else if (hasCertainName(saddle, "mcrider-saddle-1.0")) {
             return "1.0";
         }
-        else if (hasCertainName(vehicle, "mcrider-saddle-boat")) {
+        else if (hasCertainName(saddle, "mcrider-saddle-boat")) {
             return "boat";
         }
         else {
             return "none";
         }
     }
-    boolean hasCertainName(Entity entity, String saddleName) {
+    static boolean hasCertainName(Entity entity, String saddleName) {
         if (entity != null && entity.getCustomName() != null) {
             return entity.getCustomName().toString().equals("literal{"  + saddleName + "}");
         }
@@ -98,6 +106,29 @@ public class MCRiderMain implements ModInitializer {
             }
         }
     }
+    void fixAllPlayersBodyToKart() {
+        for (PlayerEntity other : Objects.requireNonNull(client.world).getPlayers()) {
+            if (isRidingKart(other)) {
+                fixPlayerBodyToKart(other, other.getRootVehicle());
+            }
+        }
+    }
+    void fixPlayerBodyToKart(PlayerEntity player, Entity kartMobil) {
+        if (kartMobil == player) return;
+
+        List<Entity> passengers = kartMobil.getPassengerList();
+        for (var i: passengers) {
+            if (hasCertainName(i, "mcrider-direction")) {
+                for (var j : passengers) {
+                    if (hasCertainName(j, "mcrider-modelsaddle")) {
+                        player.setBodyYaw(j.getYaw());
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+    }
     void simulateKartRotation(Entity kartMobil) {
         var player = getRidingPlayer();
         if (kartMobil == player) return;
@@ -105,12 +136,11 @@ public class MCRiderMain implements ModInitializer {
         List<Entity> passengers = kartMobil.getPassengerList();
         for (var i: passengers) {
             if (hasCertainName(i, "mcrider-direction")) {
-                float angleToRotate = calculateRotation(i.getYaw());
-                player.setBodyYaw(angleToRotate);
+                var kartModelRotation = calculateRotation(i.getYaw());
 
                 for (var j : passengers) {
                     if (hasCertainName(j, "mcrider-modelsaddle")) {
-                        rotateKartModel(j, angleToRotate);
+                        rotateKartModel(j, kartModelRotation);
                         break;
                     }
                 }
@@ -121,16 +151,18 @@ public class MCRiderMain implements ModInitializer {
     float calculateRotation(float directionYaw) {
         var playerYaw = playerYawBuffer.getFirst();
 
-        var deltaAngle = normalizeAngle(playerYaw - directionYaw);
+        var deltaAngle = MathHelper.wrapDegrees(playerYaw - directionYaw);
         var overShootAngle = getOverShootAngle(deltaAngle);
 
         if (currentSaddleType.equals("boat"))
-            return normalizeAngle(playerYaw);
+            return MathHelper.wrapDegrees(playerYaw);
         else
-            return normalizeAngle(playerYaw + overShootAngle);
+            return MathHelper.wrapDegrees(playerYaw + overShootAngle);
     }
     void rotateKartModel(Entity entity, float angleToRotate) {
         List<Entity> models = entity.getPassengerList();
+
+        entity.setYaw(angleToRotate);
         for (var j: models) {
             j.setYaw(angleToRotate);
         }
@@ -147,14 +179,6 @@ public class MCRiderMain implements ModInitializer {
             if ((deltaAngle < -110 || deltaAngle > 110)) overShootAngle = 0f;
         }
         return overShootAngle / 2;
-    }
-    float normalizeAngle(float angle) {
-        if (angle > 0) {
-            return ((angle + 180f) % 360f) - 180f;
-        }
-        else {
-            return -(((-angle + 180f) % 360f) - 180f);
-        }
     }
     public static void onFrameRender() {
         if (!isPlayingInGame()) return;
