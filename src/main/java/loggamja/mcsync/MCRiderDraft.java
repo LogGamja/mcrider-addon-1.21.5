@@ -7,6 +7,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.entity.effect.StatusEffects;
+import net.minecraft.util.math.MathHelper;
 
 import java.util.Objects;
 
@@ -25,23 +26,35 @@ public class MCRiderDraft implements ModInitializer {
         });
 
         //HudRenderCallback.EVENT.register((context, context2) -> render(context, context2.getTickDelta(false)));
-        HudRenderCallback.EVENT.register((context, context2) -> render(context, context2.getDynamicDeltaTicks()));
+        //HudRenderCallback.EVENT.register((context, context2) -> render(context, context2.getDynamicDeltaTicks()));
+        HudRenderCallback.EVENT.register((context, context2) -> render(context, 0)); //일단은 틱 델타를 쓰는 곳이 없음. 상수 고정
     }
     public static void draftGauge() {
         if (!MCRiderMain.isRidingKart || !MCRiderMain.isPlayingInGame() || !MCRiderConfig.INSTANCE.useDraftGauge) return;
 
-        draftChargeTick = 0;
-
-        // 다른 플레이어의 effect는 읽을 수 없음, 관전 시 관전자에게 effect 적용 후 감지
         var effect = Objects.requireNonNull(client.player).getStatusEffect(StatusEffects.WIND_CHARGED);
+        var draftState = MCRiderMain.getS2CValue(MCRiderMain.getRidingPlayer(), "draft-state");
 
-        if (effect != null) {
-            if (effect.getAmplifier() == 169) {
-                draftChargeTick = effect.getDuration() - 10;
-            }
+        if (effect != null && effect.getAmplifier() == 169) {
+            draftChargeTick = effect.getDuration() - 10;
+
+            isChargingDraft = 0 < draftChargeTick && draftChargeTick <= 50;
+            isDraftActive = draftChargeTick > 100;
         }
-        isChargingDraft = 0 < draftChargeTick && draftChargeTick <= 60;
-        isDraftActive = draftChargeTick > 100;
+        else if (draftState != 0) {
+            draftChargeTick--;
+
+            if (!isChargingDraft && (draftState == 1)) draftChargeTick = 50;
+            if (!isDraftActive && (draftState == 2)) draftChargeTick = 390;
+
+            isChargingDraft = draftState == 1;
+            isDraftActive = draftState == 2;
+        }
+        else {
+            draftChargeTick = 0;
+            isChargingDraft = false;
+            isDraftActive = false;
+        }
     }
     public void render(DrawContext context, float tickDelta) {
         if (!MCRiderMain.isRidingKart || !MCRiderMain.isPlayingInGame() || !MCRiderConfig.INSTANCE.useDraftGauge) return;
@@ -102,23 +115,23 @@ public class MCRiderDraft implements ModInitializer {
             int anchorY = gaugeY - 3;
 
             float scale = 0.6f;
-            //context.getMatrices().push();
-            //context.getMatrices().translate(anchorX, anchorY, 0);
-            //context.getMatrices().scale(scale, scale, 1.0f);
-//
-            //int localX = -textWidth / 2;
-            //int localY = -renderer.fontHeight;
-//
-            //context.drawTextWithShadow(renderer, text, localX, localY, color);
-            //context.getMatrices().pop();
-
-            context.getMatrices().translate(anchorX, anchorY);
-            context.getMatrices().scale(scale, scale);
+            context.getMatrices().push();
+            context.getMatrices().translate(anchorX, anchorY, 0);
+            context.getMatrices().scale(scale, scale, 1.0f);
 
             int localX = -textWidth / 2;
             int localY = -renderer.fontHeight;
 
             context.drawTextWithShadow(renderer, text, localX, localY, color);
+            context.getMatrices().pop();
+
+            //context.getMatrices().translate(anchorX, anchorY);
+            //context.getMatrices().scale(scale, scale);
+
+            //int localX = -textWidth / 2;
+            //int localY = -renderer.fontHeigh t;
+
+            //context.drawTextWithShadow(renderer, text, localX, localY, color);
         }
     }
 }

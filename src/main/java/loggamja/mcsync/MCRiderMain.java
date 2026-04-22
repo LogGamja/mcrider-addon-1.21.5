@@ -5,7 +5,11 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.Perspective;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.attribute.EntityAttributeInstance;
+import net.minecraft.entity.attribute.EntityAttributeModifier;
+import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
 
 import java.util.*;
@@ -84,7 +88,7 @@ public class MCRiderMain implements ModInitializer {
     }
     static boolean hasCertainName(Entity entity, String saddleName) {
         if (entity != null && entity.getCustomName() != null) {
-            return entity.getCustomName().toString().equals("literal{"  + saddleName + "}");
+            return entity.getCustomName().getString().equals(saddleName);
         }
         else {
             return false;
@@ -108,9 +112,9 @@ public class MCRiderMain implements ModInitializer {
     }
     void fixAllPlayersBodyToKart() {
         for (PlayerEntity other : Objects.requireNonNull(client.world).getPlayers()) {
-            if (isRidingKart(other)) {
-                fixPlayerBodyToKart(other, other.getRootVehicle());
-            }
+            if (!isRidingKart(other)) continue;
+
+            fixPlayerBodyToKart(other, other.getRootVehicle());
         }
     }
     void fixPlayerBodyToKart(PlayerEntity player, Entity kartMobil) {
@@ -204,5 +208,14 @@ public class MCRiderMain implements ModInitializer {
         float frameMs = 1000 / fps;
         long k = Math.round(criteriaTick / frameMs);
         return Math.max(1L, k);
+    }
+    static int getS2CValue(PlayerEntity player, String name) {
+        Identifier id = Identifier.of("minecraft", name);
+
+        EntityAttributeInstance inst = player.getAttributeInstance(EntityAttributes.EXPLOSION_KNOCKBACK_RESISTANCE);
+        if (inst == null) return 0;
+
+        EntityAttributeModifier mod = inst.getModifier(id);
+        return (mod == null) ? 0 : (int)mod.value();
     }
 }

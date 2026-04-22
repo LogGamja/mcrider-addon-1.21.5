@@ -134,14 +134,17 @@ public class MCRiderCamera implements ModInitializer {
         filteredTargetFOV = Collections.max(targetFovBuffer);
     }
     void detectBooster() {
-        // 다른 플레이어의 effect는 읽을 수 없음, 관전 시 관전자에게 effect 적용 후 감지
-        var effect = Objects.requireNonNull(client.player).getStatusEffect(StatusEffects.DOLPHINS_GRACE);
+        if (client.player == null) return;
 
-        isUsingBooster = false;
-        if (effect != null) {
-            if (effect.getAmplifier() == 169) {
-                isUsingBooster = true;
-            }
+        // 나 자신의 effect 감지
+        var effect = client.player.getStatusEffect(StatusEffects.DOLPHINS_GRACE);
+        var boostState = MCRiderMain.getS2CValue(MCRiderMain.getRidingPlayer(), "boost-state");
+
+        if (effect != null && effect.getAmplifier() == 169) {
+            isUsingBooster = true;
+        }
+        else {
+            isUsingBooster = boostState > 0;
         }
     }
     public static float interpolate(float current, float target, float temporalGradient) {
