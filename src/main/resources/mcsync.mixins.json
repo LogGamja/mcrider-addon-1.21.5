@@ -8,7 +8,8 @@
     "ExampleMixin",
     "GameMenuScreenMixin",
     "GameRendererMixin",
-    "LivingEntityRendererMixin"
+    "LivingEntityRendererMixin",
+    "DisplayEntityRendererMixin"
   ],
   "injectors": {
     "defaultRequire": 1
