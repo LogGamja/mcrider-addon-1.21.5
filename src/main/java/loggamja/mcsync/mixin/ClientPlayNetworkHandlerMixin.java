@@ -2,10 +2,13 @@ package loggamja.mcsync.mixin;
 
 import loggamja.mcsync.MCRiderCamera;
 import loggamja.mcsync.MCRiderMain;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.network.packet.s2c.play.*;
 import net.minecraft.text.*;
+import net.minecraft.util.Identifier;
+import net.minecraft.util.math.MathHelper;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -13,6 +16,8 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import java.util.ArrayDeque;
+import java.util.Iterator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -20,6 +25,12 @@ import java.util.regex.Pattern;
 public class ClientPlayNetworkHandlerMixin {
     @Shadow
     private ClientWorld world;
+
+    @Unique
+    private static final Identifier DEBUG_MODIFIER_ID = Identifier.of("kfckartriderpack", "debug");
+
+    @Unique
+    private float lastEntityYaw = Float.NaN;
 
     @Inject(method = "onOverlayMessage", at = @At("HEAD"))
     private void onHandleGameMessage(OverlayMessageS2CPacket packet, CallbackInfo ci) {
@@ -47,38 +58,63 @@ public class ClientPlayNetworkHandlerMixin {
         return -169f;
     }
 
-    private float prevEntityYaw = Float.NaN;
-
-    @Inject(method = "onEntity", at = @At("HEAD"))
-    private void mcsync$onEntityPacket(EntityS2CPacket packet, CallbackInfo ci) {
+    @Inject(method = "onEntityAttributes", at = @At("HEAD"))
+    private void mcsync$onEntityAttributes(EntityAttributesS2CPacket packet, CallbackInfo ci) {
         if (Thread.currentThread().getName().contains("Render")) return;
 
-        if (MCRiderMain.trackedEntityId == -1) return;
-        if (packet.getEntity(world).getId() != MCRiderMain.trackedEntityId) return;
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc.player == null) return;
+        if (packet.getEntityId() != mc.player.getId()) return;
 
-        float entityYaw = packet.getYaw();
+        if (!MCRiderMain.isRidingKart) return;
+
         long now = System.nanoTime();
 
-        boolean thisPacketMoved = !Float.isNaN(prevEntityYaw) && entityYaw != prevEntityYaw;
+        for (EntityAttributesS2CPacket.Entry entry : packet.getEntries()) {
+            var attr = entry.attribute();
+            if (attr.getKey().isEmpty()) continue;
+            if (!attr.getKey().get().getValue().toString().contains("explosion_knockback_resistance")) continue;
 
-        if (thisPacketMoved) {
-            if (MCRiderMain.entityWasStopped) {
-                // 정지 → 이동 전환: 즉시 측정
-                if (!MCRiderMain.playerWasStopped) {
-                    long playerYawAt = MCRiderMain.lastPlayerYawChangedAt;
-                    if (playerYawAt != -1L) {
-                        double diffMs = (now - playerYawAt) / 1_000_000.0;
-                        MCRiderMain.LOGGER.info(
-                                "[SyncTracker] 플레이어 yaw 변화 → 엔티티 패킷 수신: {} ms",
-                                String.format("%.3f", diffMs)
-                        );
+            for (var modifier : entry.modifiers()) {
+                if (!modifier.id().equals(DEBUG_MODIFIER_ID)) continue;
+
+                float entityYaw = (float) modifier.value();
+
+                if (entityYaw == lastEntityYaw) return;
+                lastEntityYaw = entityYaw;
+
+                ArrayDeque<MCRiderMain.YawEntry> history = MCRiderMain.playerYawHistory;
+                MCRiderMain.YawEntry best = null;
+                float bestDiff = Float.MAX_VALUE;
+                int maxDistance = 500;
+
+                int distance = 0;
+                Iterator<MCRiderMain.YawEntry> it = history.descendingIterator();
+                while (it.hasNext() && distance <= maxDistance) {
+                    MCRiderMain.YawEntry histEntry = it.next();
+
+                    float diff = Math.abs(MathHelper.wrapDegrees(histEntry.yaw() - entityYaw));
+                    if (diff > 180f) diff = 360f - diff;
+
+                    if (diff <= bestDiff) {
+                        bestDiff = diff;
+                        best = histEntry;
                     }
+                    distance++;
                 }
-                MCRiderMain.entityWasStopped = false;
-            }
-            MCRiderMain.lastEntityMovedAt = now;
-        }
 
-        prevEntityYaw = entityYaw;
+                if (best == null) return;
+
+                double diffMs = (now - best.nanoTime()) / 1_000_000.0;
+                MCRiderMain.LOGGER.info(
+                        "[SyncTracker] 플레이어 yaw → 어트리뷰트 패킷 수신: {} ms (yaw={}, entityYaw={}, diff={})",
+                        String.format("%.3f", diffMs),
+                        String.format("%.4f", best.yaw()),
+                        String.format("%.4f", entityYaw),
+                        String.format("%.4f", bestDiff)
+                );
+                return;
+            }
+        }
     }
 }

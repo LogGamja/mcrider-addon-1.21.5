@@ -27,17 +27,16 @@ public class MCRiderMain implements ModInitializer {
     static MCRiderConfig cfg;
     static MinecraftClient client = MinecraftClient.getInstance();
 
-    // ── 플레이어 타임스탬프 ───────────────────────────────────────────────────
-    private static final int STOP_WINDOW = 5;
-    private static float prevFramePlayerYaw = Float.NaN;
-    private static int stoppedFrameCount = 0;
-    public static boolean playerWasStopped = true;
-    public static volatile long lastPlayerYawChangedAt = -1L;
+    // ── 플레이어 yaw 타임스탬프 버퍼 ─────────────────────────────────────────
+    public static final int YAW_BUFFER_SIZE = 1000;
 
-    // ── 엔티티 타임아웃 (틱에서 체크) ────────────────────────────────────────
-    private static final long ENTITY_STOP_TIMEOUT_NS = 75_000_000L;
-    public static volatile long lastEntityMovedAt = -1L;
-    public static volatile boolean entityWasStopped = true;
+    public record YawEntry(float yaw, long nanoTime) {}
+
+    // 렌더 스레드에서만 쓰고, Netty 스레드에서 읽음 - volatile 참조로 가시성 확보
+    public static volatile ArrayDeque<YawEntry> playerYawHistory = new ArrayDeque<>(YAW_BUFFER_SIZE);
+
+    // 플레이어가 움직이는 중인지 - 최근 5개 값이 전부 같으면 멈춤
+    public static volatile boolean playerIsMoving = false;
 
     public static volatile int trackedEntityId = -1;
 
@@ -82,12 +81,6 @@ public class MCRiderMain implements ModInitializer {
                 }
             }
         }
-
-        // 엔티티 타임아웃 체크 - 패킷이 안 와도 매 틱 확인
-        if (!entityWasStopped && lastEntityMovedAt != -1L
-                && System.nanoTime() - lastEntityMovedAt > ENTITY_STOP_TIMEOUT_NS) {
-            entityWasStopped = true;
-        }
     }
 
     public static boolean isRidingKart(PlayerEntity player) {
@@ -117,7 +110,7 @@ public class MCRiderMain implements ModInitializer {
         else return "none";
     }
 
-    static boolean hasCertainName(Entity entity, String saddleName) {
+    public static boolean hasCertainName(Entity entity, String saddleName) {
         if (entity != null && entity.getCustomName() != null) {
             return entity.getCustomName().getString().equals(saddleName);
         }
@@ -206,26 +199,18 @@ public class MCRiderMain implements ModInitializer {
         return overShootAngle / 2;
     }
 
-    public static void onFrameRender() {
+    public static void onFrameRender(float yaw) {
         if (!isPlayingInGame()) return;
 
-        float playerYaw = getRidingPlayer().getYaw();
-        boolean thisFrameMoved = !Float.isNaN(prevFramePlayerYaw) && playerYaw != prevFramePlayerYaw;
+        float playerYaw = yaw;
+        long now = System.nanoTime();
 
-        if (thisFrameMoved) {
-            if (playerWasStopped) {
-                lastPlayerYawChangedAt = System.nanoTime();
-                playerWasStopped = false;
-            }
-            stoppedFrameCount = 0;
-        } else {
-            stoppedFrameCount = Math.min(stoppedFrameCount + 1, STOP_WINDOW);
-            if (stoppedFrameCount >= STOP_WINDOW) {
-                playerWasStopped = true;
-            }
-        }
+        ArrayDeque<YawEntry> history = playerYawHistory;
 
-        prevFramePlayerYaw = playerYaw;
+        // 버퍼에 현재 yaw + 타임스탬프 추가
+        history.addLast(new YawEntry(MathHelper.wrapDegrees(playerYaw), now));
+        while (history.size() > YAW_BUFFER_SIZE) history.removeFirst();
+
         addToPlayerYawBuffer(playerYaw);
     }
 

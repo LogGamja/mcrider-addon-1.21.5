@@ -98,7 +98,7 @@ public abstract class GameRendererMixin {
     private void renderHead(RenderTickCounter tickCounter, boolean tick, CallbackInfo ci) {
         if (!MCRiderMain.isRidingKart || !MCRiderMain.isPlayingInGame()) return;
 
-        MCRiderMain.onFrameRender();
+
     }
     @Inject(method = "render", at = @At(value = "TAIL"))
     private void renderTail(RenderTickCounter tickCounter, boolean tick, CallbackInfo ci) {
@@ -119,6 +119,7 @@ public abstract class GameRendererMixin {
             if (this.lastYaw != player.getYaw()) {
                 player.networkHandler.sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(player.getYaw(), player.getPitch(), player.isOnGround(), player.horizontalCollision));
                 this.lastYaw = player.getYaw();
+
             }
 
             Entity vehicle = player.getRootVehicle();
@@ -126,6 +127,7 @@ public abstract class GameRendererMixin {
                 player.networkHandler.sendPacket(VehicleMoveC2SPacket.fromVehicle(vehicle));
             }
         }
+        MCRiderMain.onFrameRender(lastYaw);
     }
     @Unique
     private @NotNull PlayerInput getPlayerInput(ClientPlayerEntity player) {
