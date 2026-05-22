@@ -9,7 +9,8 @@
     "GameMenuScreenMixin",
     "GameRendererMixin",
     "LivingEntityRendererMixin",
-    "DisplayEntityRendererMixin"
+    "DisplayEntityRendererMixin",
+    "DisplayEntityRenderStateMixin"
   ],
   "injectors": {
     "defaultRequire": 1

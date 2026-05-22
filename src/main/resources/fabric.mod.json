@@ -19,7 +19,8 @@
           "loggamja.mcsync.MCRiderMain",
           "loggamja.mcsync.MCRiderRadar",
           "loggamja.mcsync.MCRiderDraft",
-          "loggamja.mcsync.MCRiderCamera"
+          "loggamja.mcsync.MCRiderCamera",
+          "loggamja.mcsync.MCRiderModelRoll"
 		],
 		"fabric-datagen": [
           "loggamja.mcsync.MCRiderDataGenerator"

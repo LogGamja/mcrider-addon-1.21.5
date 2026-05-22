@@ -1,5 +1,6 @@
 
 package loggamja.mcsync.mixin;
+import com.llamalad7.mixinextras.sugar.Local;
 import loggamja.mcsync.MCRiderCamera;
 import loggamja.mcsync.MCRiderMain;
 import loggamja.mcsync.MCRiderConfig;
@@ -10,6 +11,7 @@ import net.minecraft.client.option.Perspective;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.render.RenderTickCounter;
+import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
 import net.minecraft.network.packet.c2s.play.PlayerInputC2SPacket;
 import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
@@ -17,6 +19,7 @@ import net.minecraft.network.packet.c2s.play.VehicleMoveC2SPacket;
 import net.minecraft.util.PlayerInput;
 
 import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.RotationAxis;
 import org.jetbrains.annotations.NotNull;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -27,7 +30,12 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
+
+import static loggamja.mcsync.MCRiderModelRoll.rotation;
 
 @Mixin(GameRenderer.class)
 public abstract class GameRendererMixin {
@@ -46,6 +54,26 @@ public abstract class GameRendererMixin {
 
     @Unique int backupFov;
     @Unique double backupFovEffectScale;
+
+    @Unique List<Float> rollBuffer = new ArrayList<>(Collections.nCopies(1, 0f));
+
+    @Inject(method = "renderWorld", at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/client/render/GameRenderer;tiltViewWhenHurt(Lnet/minecraft/client/util/math/MatrixStack;F)V",
+            shift = At.Shift.AFTER
+    ))
+    private void injectCameraRoll(RenderTickCounter renderTickCounter, CallbackInfo ci, @Local MatrixStack matrixStack) {
+        rollBuffer.add((float) rotation.get());
+        if (rollBuffer.size() > 240) rollBuffer.removeFirst();
+
+        float avg = 0;
+        for (var i : rollBuffer) {
+            avg += i;
+        }
+        avg /= rollBuffer.size();
+
+        //matrixStack.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(avg));
+    }
 
     @Inject(method = "updateFovMultiplier", at = @At(value = "HEAD"))
     private void beforeFovMultiplierUpdate(CallbackInfo ci) {

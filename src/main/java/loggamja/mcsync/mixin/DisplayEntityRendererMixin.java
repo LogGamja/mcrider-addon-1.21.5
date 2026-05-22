@@ -3,6 +3,7 @@ package loggamja.mcsync.mixin;
 
 import loggamja.mcsync.MCRiderMain;
 import loggamja.mcsync.RollManager;
+import loggamja.mcsync.interfaces.DisplayEntityRenderStateAccessor;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.entity.LivingEntityRenderer;
 import net.minecraft.client.render.entity.state.DisplayEntityRenderState;
@@ -25,6 +26,8 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+import java.util.UUID;
 
 @Mixin(DisplayEntityRenderer.class)
 public class DisplayEntityRendererMixin {
@@ -50,15 +53,25 @@ public class DisplayEntityRendererMixin {
     ) {
         if (state.displayRenderState == null) return;
 
+        UUID uuid = ((DisplayEntityRenderStateAccessor) state).mcsync_getUuid();
+        if (uuid == null) return;
+
+        float rollDeg = RollManager.getCurrentRoll(uuid);
+        if (rollDeg == 0f) return;
+
         AffineTransformation affine = state.displayRenderState.transformation().interpolate(state.lerpProgress);
-
         Matrix4f m = new Matrix4f(affine.getMatrix());
-        Matrix4f q = new Matrix4f();
-
-        q.rotateZ((float) Math.toRadians(10));
+        Matrix4f roll = new Matrix4f().rotateZ((float) Math.toRadians(rollDeg));
 
         matrices.multiplyPositionMatrix(m.invert());
-        matrices.multiplyPositionMatrix(q);
+        matrices.multiplyPositionMatrix(roll);
         matrices.multiplyPositionMatrix(m.invert());
+    }
+    @Inject(
+            method = "updateRenderState(Lnet/minecraft/entity/decoration/DisplayEntity;Lnet/minecraft/client/render/entity/state/DisplayEntityRenderState;F)V",
+            at = @At("TAIL")
+    )
+    private void captureUuid(DisplayEntity entity, DisplayEntityRenderState state, float tickDelta, CallbackInfo ci) {
+        ((DisplayEntityRenderStateAccessor) state).mcsync_setUuid(entity.getUuid());
     }
 }
