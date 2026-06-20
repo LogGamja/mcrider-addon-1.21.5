@@ -138,13 +138,16 @@ public class MCRiderCamera implements ModInitializer {
 
         // 나 자신의 effect 감지
         var effect = client.player.getStatusEffect(StatusEffects.DOLPHINS_GRACE);
-        var boostState = MCRiderMain.getS2CValue(MCRiderMain.getRidingPlayer(), "boost-state");
+        var boostState = MCRiderMain.getS2CValue(MCRiderMain.getRidingPlayer(), "state-boost");
+        var exceedState = MCRiderMain.getS2CValue(MCRiderMain.getRidingPlayer(), "state-exceed");
+        if (boostState == 0) boostState += exceedState;
 
         if (effect != null && effect.getAmplifier() == 169) {
             isUsingBooster = true;
         }
         else {
-            isUsingBooster = boostState > 0;
+            if (MCRiderMain.kartEngine == 11) isUsingBooster = boostState > 1;
+            else isUsingBooster = boostState > 0;
         }
     }
     public static float interpolate(float current, float target, float temporalGradient) {

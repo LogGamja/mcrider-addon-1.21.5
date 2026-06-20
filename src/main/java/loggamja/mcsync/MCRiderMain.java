@@ -5,6 +5,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.Perspective;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.attribute.EntityAttributeInstance;
 import net.minecraft.entity.attribute.EntityAttributeModifier;
 import net.minecraft.entity.attribute.EntityAttributes;
@@ -15,6 +16,9 @@ import net.minecraft.util.math.MathHelper;
 import java.util.*;
 
 public class MCRiderMain implements ModInitializer {
+    static boolean useLegacyKartStopData = false;
+
+    public static int kartEngine = 0;
     public static String currentSaddleType = "none";
     public static List<Float> playerYawBuffer = new ArrayList<>(Collections.nCopies(1, 0f));
 
@@ -39,6 +43,12 @@ public class MCRiderMain implements ModInitializer {
 
         Entity vehicle = getRidingPlayer().getVehicle();
         currentSaddleType = getSaddleType(vehicle);
+        kartEngine = MCRiderMain.getS2CValue(MCRiderMain.getRidingPlayer(), "data-engine-real");
+        // legacy engine detecting
+        {
+            if (currentSaddleType.equals("1.0")) kartEngine = 7;
+            else if (currentSaddleType.equals("boat")) kartEngine = 1004;
+        }
 
         updateRidingState();
 
@@ -46,7 +56,7 @@ public class MCRiderMain implements ModInitializer {
             if (isRidingKart && getRidingPlayer() == client.player) {
                 Entity kartMobil = getRidingPlayer().getRootVehicle();
 
-                if (!hasCertainName(kartMobil, "mcrider-stop")) {
+                if (getAllowModelRotation(kartMobil)) {
                     simulateKartRotation(kartMobil);
                 }
             }
@@ -57,7 +67,15 @@ public class MCRiderMain implements ModInitializer {
         var kartSaddle = player.getVehicle();
         if (kartSaddle == null) return false;
 
-        return !Objects.equals(getSaddleType(kartSaddle), "none");
+        return !getSaddleType(kartSaddle).equals("none");
+    }
+    static boolean getAllowModelRotation(Entity kartMobil) {
+        if (hasCertainName(kartMobil, "mcrider-stop")) useLegacyKartStopData = true;
+
+        if (useLegacyKartStopData) {
+            return !hasCertainName(kartMobil, "mcrider-stop");
+        }
+        return getS2CValue(getRidingPlayer(), "state-allow-model-rotation") == 1;
     }
     public static boolean isPlayingInGame() {
         MinecraftClient client = MinecraftClient.getInstance();
@@ -73,7 +91,11 @@ public class MCRiderMain implements ModInitializer {
         return client.player;
     }
     static String getSaddleType(Entity saddle) {
-        if (hasCertainName(saddle, "mcrider-saddle-common")) {
+        if (hasCertainName(saddle, "mcrider-saddle")) {
+            return "common";
+        }
+        // 1.0, common and boat are for legacy support
+        else if (hasCertainName(saddle, "mcrider-saddle-common")) {
             return "common";
         }
         else if (hasCertainName(saddle, "mcrider-saddle-1.0")) {
@@ -158,7 +180,7 @@ public class MCRiderMain implements ModInitializer {
         var deltaAngle = MathHelper.wrapDegrees(playerYaw - directionYaw);
         var overShootAngle = getOverShootAngle(deltaAngle);
 
-        if (currentSaddleType.equals("boat"))
+        if (kartEngine == 1004)
             return MathHelper.wrapDegrees(playerYaw);
         else
             return MathHelper.wrapDegrees(playerYaw + overShootAngle);
@@ -173,7 +195,7 @@ public class MCRiderMain implements ModInitializer {
     }
     float getOverShootAngle(float deltaAngle) {
         var overShootAngle = deltaAngle;
-        if (currentSaddleType.equals("1.0")) {
+        if (kartEngine == 7) {
             if (deltaAngle <= -55) overShootAngle = -110f - deltaAngle;
             if (55 <= deltaAngle) overShootAngle = 110f - deltaAngle;
         }
@@ -212,7 +234,10 @@ public class MCRiderMain implements ModInitializer {
     static int getS2CValue(PlayerEntity player, String name) {
         Identifier id = Identifier.of("minecraft", name);
 
-        EntityAttributeInstance inst = player.getAttributeInstance(EntityAttributes.EXPLOSION_KNOCKBACK_RESISTANCE);
+        LivingEntity saddle = (LivingEntity) player.getVehicle();
+        if (saddle == null) return 0;
+
+        EntityAttributeInstance inst = saddle.getAttributeInstance(EntityAttributes.ARMOR);
         if (inst == null) return 0;
 
         EntityAttributeModifier mod = inst.getModifier(id);
