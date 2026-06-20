@@ -29,7 +29,7 @@ public class ClientPlayNetworkHandlerMixin {
         Text message = packet.text();
         var speed = extractSpeed(message.getString());
 
-        if (MCRiderMain.currentSaddleType.equals("1.0")) {
+        if (MCRiderMain.kartEngine == 7) {
             speed *= 2.59065f;
         }
 

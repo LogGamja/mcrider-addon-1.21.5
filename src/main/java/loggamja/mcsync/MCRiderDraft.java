@@ -33,7 +33,7 @@ public class MCRiderDraft implements ModInitializer {
         if (!MCRiderMain.isRidingKart || !MCRiderMain.isPlayingInGame() || !MCRiderConfig.INSTANCE.useDraftGauge) return;
 
         var effect = Objects.requireNonNull(client.player).getStatusEffect(StatusEffects.WIND_CHARGED);
-        var draftState = MCRiderMain.getS2CValue(MCRiderMain.getRidingPlayer(), "draft-state");
+        var draftState = MCRiderMain.getS2CValue(MCRiderMain.getRidingPlayer(), "state-draft");
 
         if (effect != null && effect.getAmplifier() == 169) {
             draftChargeTick = effect.getDuration() - 10;
@@ -115,23 +115,26 @@ public class MCRiderDraft implements ModInitializer {
             int anchorY = gaugeY - 3;
 
             float scale = 0.6f;
-            context.getMatrices().push();
-            context.getMatrices().translate(anchorX, anchorY, 0);
-            context.getMatrices().scale(scale, scale, 1.0f);
+            {
+                context.getMatrices().push();
+                context.getMatrices().translate(anchorX, anchorY, 0);
+                context.getMatrices().scale(scale, scale, 1.0f);
 
-            int localX = -textWidth / 2;
-            int localY = -renderer.fontHeight;
+                int localX = -textWidth / 2;
+                int localY = -renderer.fontHeight;
 
-            context.drawTextWithShadow(renderer, text, localX, localY, color);
-            context.getMatrices().pop();
-
+                context.drawTextWithShadow(renderer, text, localX, localY, color);
+                context.getMatrices().pop();
+            }
+            //{
             //context.getMatrices().translate(anchorX, anchorY);
             //context.getMatrices().scale(scale, scale);
 
             //int localX = -textWidth / 2;
-            //int localY = -renderer.fontHeigh t;
+            //int localY = -renderer.fontHeight;
 
             //context.drawTextWithShadow(renderer, text, localX, localY, color);
+            //}
         }
     }
 }
