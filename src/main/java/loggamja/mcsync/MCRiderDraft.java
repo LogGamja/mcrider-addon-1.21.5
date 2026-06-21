@@ -115,26 +115,26 @@ public class MCRiderDraft implements ModInitializer {
             int anchorY = gaugeY - 3;
 
             float scale = 0.6f;
-            {
-                context.getMatrices().push();
-                context.getMatrices().translate(anchorX, anchorY, 0);
-                context.getMatrices().scale(scale, scale, 1.0f);
-
-                int localX = -textWidth / 2;
-                int localY = -renderer.fontHeight;
-
-                context.drawTextWithShadow(renderer, text, localX, localY, color);
-                context.getMatrices().pop();
-            }
             //{
-            //context.getMatrices().translate(anchorX, anchorY);
-            //context.getMatrices().scale(scale, scale);
-
-            //int localX = -textWidth / 2;
-            //int localY = -renderer.fontHeight;
-
-            //context.drawTextWithShadow(renderer, text, localX, localY, color);
+            //    context.getMatrices().push();
+            //    context.getMatrices().translate(anchorX, anchorY, 0);
+            //    context.getMatrices().scale(scale, scale, 1.0f);
+//
+            //    int localX = -textWidth / 2;
+            //    int localY = -renderer.fontHeight;
+//
+            //    context.drawTextWithShadow(renderer, text, localX, localY, color);
+            //    context.getMatrices().pop();
             //}
+            {
+            context.getMatrices().translate(anchorX, anchorY);
+            context.getMatrices().scale(scale, scale);
+
+            int localX = -textWidth / 2;
+            int localY = -renderer.fontHeight;
+
+            context.drawTextWithShadow(renderer, text, localX, localY, color);
+            }
         }
     }
 }
