@@ -119,6 +119,8 @@ public class MCRiderMain implements ModInitializer {
     void updateRidingState() {
         if (currentSaddleType.equals("none") == isRidingKart) {
             isRidingKart = !isRidingKart;
+
+            if (!isRidingKart) useLegacyKartStopData = false;
             autoThirdPerson();
         }
     }
