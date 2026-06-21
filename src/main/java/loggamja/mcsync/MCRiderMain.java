@@ -236,10 +236,10 @@ public class MCRiderMain implements ModInitializer {
     static int getS2CValue(PlayerEntity player, String name) {
         Identifier id = Identifier.of("minecraft", name);
 
-        LivingEntity saddle = (LivingEntity) player.getVehicle();
-        if (saddle == null) return 0;
+        Entity saddle = player.getVehicle();
+        if (saddle == null || !saddle.isLiving()) return 0;
 
-        EntityAttributeInstance inst = saddle.getAttributeInstance(EntityAttributes.ARMOR);
+        EntityAttributeInstance inst = ((LivingEntity)saddle).getAttributeInstance(EntityAttributes.ARMOR);
         if (inst == null) return 0;
 
         EntityAttributeModifier mod = inst.getModifier(id);
