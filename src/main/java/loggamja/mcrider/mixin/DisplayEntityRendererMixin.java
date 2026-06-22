@@ -33,7 +33,7 @@ public class DisplayEntityRendererMixin {
                     target = "Lnet/minecraft/client/render/entity/DisplayEntityRenderer;render(Lnet/minecraft/client/render/entity/state/DisplayEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;IF)V"
             )
     )
-    private void injectRollRotation(
+    private void mcrider$injectRollRotation(
             DisplayEntityRenderState state,
             MatrixStack matrices,
             VertexConsumerProvider vertexConsumers,
@@ -42,7 +42,7 @@ public class DisplayEntityRendererMixin {
     ) {
         if (state.displayRenderState == null) return;
 
-        UUID uuid = ((DisplayEntityRenderStateAccessor) state).getUuid();
+        UUID uuid = ((DisplayEntityRenderStateAccessor) state).mcrider$getUuid();
         if (uuid == null) return;
 
         float rollDeg = EntityRollManager.getCurrentRoll(uuid);
@@ -60,7 +60,7 @@ public class DisplayEntityRendererMixin {
             method = "updateRenderState(Lnet/minecraft/entity/decoration/DisplayEntity;Lnet/minecraft/client/render/entity/state/DisplayEntityRenderState;F)V",
             at = @At("TAIL")
     )
-    private void captureUuid(DisplayEntity entity, DisplayEntityRenderState state, float tickDelta, CallbackInfo ci) {
-        ((DisplayEntityRenderStateAccessor) state).setUuid(entity.getUuid());
+    private void mcrider$captureUuid(DisplayEntity entity, DisplayEntityRenderState state, float tickDelta, CallbackInfo ci) {
+        ((DisplayEntityRenderStateAccessor) state).mcrider$setUuid(entity.getUuid());
     }
 }

@@ -3,6 +3,8 @@ package loggamja.mcrider;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import net.fabricmc.loader.api.FabricLoader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.FileReader;
@@ -10,6 +12,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 
 public class MCRiderConfig {
+    private static final Logger LOGGER = LoggerFactory.getLogger("mcrider");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final File CONFIG_FILE = new File(FabricLoader.getInstance().getConfigDir().toFile(), "mcsync-config.json");
 
@@ -31,27 +34,28 @@ public class MCRiderConfig {
         if (!CONFIG_FILE.exists()) return;
         try (FileReader reader = new FileReader(CONFIG_FILE)) {
             MCRiderConfig loaded = GSON.fromJson(reader, MCRiderConfig.class);
-            if (loaded != null) {
-                this.MCRiderRotationOption = loaded.MCRiderRotationOption;
-                this.MCRiderPacketAcceleration = loaded.MCRiderPacketAcceleration;
-                this.MCRiderRadarOption = loaded.MCRiderRadarOption;
-                this.useNoclipCamera = loaded.useNoclipCamera;
-                this.useDraftGauge = loaded.useDraftGauge;
-                this.useAutoThirdPerson = loaded.useAutoThirdPerson;
-                this.cameraMode = loaded.cameraMode;
-
-                this.MCRiderFOV = loaded.MCRiderFOV;
-                this.MCRiderFOVEffects = loaded.MCRiderFOVEffects;
-            }
+            if (loaded != null) copyFrom(loaded);
         } catch (IOException e) {
-            e.printStackTrace();
+            LOGGER.error("[MCRider] 설정 파일을 불러오는 데 실패했습니다.", e);
         }
+    }
+
+    private void copyFrom(MCRiderConfig other) {
+        this.MCRiderRotationOption     = other.MCRiderRotationOption;
+        this.MCRiderPacketAcceleration = other.MCRiderPacketAcceleration;
+        this.MCRiderRadarOption        = other.MCRiderRadarOption;
+        this.useNoclipCamera           = other.useNoclipCamera;
+        this.useDraftGauge             = other.useDraftGauge;
+        this.useAutoThirdPerson        = other.useAutoThirdPerson;
+        this.cameraMode                = other.cameraMode;
+        this.MCRiderFOV                = other.MCRiderFOV;
+        this.MCRiderFOVEffects         = other.MCRiderFOVEffects;
     }
     public void save() {
         try (FileWriter writer = new FileWriter(CONFIG_FILE)) {
             GSON.toJson(this, writer);
         } catch (IOException e) {
-            e.printStackTrace();
+            LOGGER.error("[MCRider] 설정 파일을 저장하는 데 실패했습니다.", e);
         }
     }
 }

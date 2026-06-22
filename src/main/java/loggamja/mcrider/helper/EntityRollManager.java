@@ -1,11 +1,11 @@
 package loggamja.mcrider.helper;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class EntityRollManager {
-    private static final Map<UUID, RollState> rollStates = new HashMap<>();
+    private static final Map<UUID, RollState> rollStates = new ConcurrentHashMap<>();
 
     public static void setRoll(UUID entityId, float targetRollDeg, int durationTicks) {
         float current = getCurrentRoll(entityId);

@@ -19,11 +19,11 @@ import java.util.regex.Pattern;
 @Mixin(ClientPlayNetworkHandler.class)
 public class ClientPlayNetworkHandlerMixin {
     @Inject(method = "onOverlayMessage", at = @At("HEAD"))
-    private void onHandleGameMessage(OverlayMessageS2CPacket packet, CallbackInfo ci) {
+    private void mcrider$onHandleGameMessage(OverlayMessageS2CPacket packet, CallbackInfo ci) {
         if (!MCRiderMain.isRidingKart || !MCRiderMain.isPlayingInGame()) return;
 
         Text message = packet.text();
-        var speed = extractSpeed(message.getString());
+        var speed = mcrider$extractSpeed(message.getString());
 
         if (MCRiderMain.kartEngine == 7) {
             speed *= 2.59065f;
@@ -34,7 +34,7 @@ public class ClientPlayNetworkHandlerMixin {
         else MCRiderCamera.timeAfterLastActionbar = 0;
     }
     @Unique
-    float extractSpeed(String text) {
+    float mcrider$extractSpeed(String text) {
         Pattern p = Pattern.compile("(\\d+(?:\\.\\d+)?)km/h");
         Matcher m = p.matcher(text);
         if (m.find()) {

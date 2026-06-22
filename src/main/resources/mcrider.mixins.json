@@ -3,6 +3,8 @@
   "package": "loggamja.mcrider.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+  ],
+  "client": [
     "CameraMixin",
     "ClientPlayNetworkHandlerMixin",
     "GameMenuScreenMixin",
@@ -16,7 +18,5 @@
   },
   "overwrites": {
     "requireAnnotations": true
-  },
-  "client": [
-  ]
+  }
 }

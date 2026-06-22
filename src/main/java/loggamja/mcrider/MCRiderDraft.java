@@ -1,6 +1,6 @@
 package loggamja.mcrider;
 
-import net.fabricmc.api.ModInitializer;
+import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
@@ -10,7 +10,7 @@ import net.minecraft.entity.effect.StatusEffects;
 
 import java.util.Objects;
 
-public class MCRiderDraft implements ModInitializer {
+public class MCRiderDraft implements ClientModInitializer {
     static MinecraftClient client = MinecraftClient.getInstance();
 
     static boolean isChargingDraft = false;
@@ -19,7 +19,7 @@ public class MCRiderDraft implements ModInitializer {
     static int draftChargeTick;
 
     @Override
-    public void onInitialize() {
+    public void onInitializeClient() {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             draftGauge();
         });

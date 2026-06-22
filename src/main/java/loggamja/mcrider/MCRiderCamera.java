@@ -1,6 +1,6 @@
 package loggamja.mcrider;
 
-import net.fabricmc.api.ModInitializer;
+import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.Perspective;
@@ -13,7 +13,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-public class MCRiderCamera implements ModInitializer {
+public class MCRiderCamera implements ClientModInitializer {
     static MinecraftClient client = MinecraftClient.getInstance();
 
     public static List<Float> targetFovBuffer = new ArrayList<>(Collections.nCopies(1, 0f));
@@ -39,7 +39,7 @@ public class MCRiderCamera implements ModInitializer {
     public static int timeAfterLastActionbar = 0;
 
     @Override
-    public void onInitialize() {
+    public void onInitializeClient() {
         ClientTickEvents.START_CLIENT_TICK.register(client -> {
             onClientTickStart();
         });

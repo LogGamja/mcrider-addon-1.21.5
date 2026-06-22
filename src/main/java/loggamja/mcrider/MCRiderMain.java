@@ -1,7 +1,9 @@
 package loggamja.mcrider;
 
-import net.fabricmc.api.ModInitializer;
+import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import loggamja.mcrider.helper.EntityRollManager;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.Perspective;
 import net.minecraft.entity.Entity;
@@ -15,7 +17,7 @@ import net.minecraft.util.math.MathHelper;
 
 import java.util.*;
 
-public class MCRiderMain implements ModInitializer {
+public class MCRiderMain implements ClientModInitializer {
     static boolean useLegacyKartStopData = false;
 
     public static int kartEngine = 0;
@@ -28,9 +30,14 @@ public class MCRiderMain implements ModInitializer {
     static MinecraftClient client = MinecraftClient.getInstance();
 
     @Override
-    public void onInitialize() {
+    public void onInitializeClient() {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             onClientTickEnd();
+        });
+
+        // 월드 언로드 시 롤 상태 전체 정리
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
+            EntityRollManager.clear();
         });
 
         MCRiderConfig.INSTANCE.load();
@@ -120,7 +127,10 @@ public class MCRiderMain implements ModInitializer {
         if (currentSaddleType.equals("none") == isRidingKart) {
             isRidingKart = !isRidingKart;
 
-            if (!isRidingKart) useLegacyKartStopData = false;
+            if (!isRidingKart) {
+                useLegacyKartStopData = false;
+                EntityRollManager.clear(); // 카트 하차 시 롤 상태 정리
+            }
             autoThirdPerson();
         }
     }
@@ -227,7 +237,7 @@ public class MCRiderMain implements ModInitializer {
         }
     }
     static long getNearestFrame(long criteriaTick) {
-        float fps = client.getCurrentFps();
+        float fps = Math.max(1f, client.getCurrentFps());
 
         float frameMs = 1000 / fps;
         long k = Math.round(criteriaTick / frameMs);

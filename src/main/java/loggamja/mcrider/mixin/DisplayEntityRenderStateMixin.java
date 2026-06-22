@@ -17,11 +17,11 @@ import java.util.UUID;
 })
 public class DisplayEntityRenderStateMixin implements DisplayEntityRenderStateAccessor {
     @Unique
-    private UUID mcsync_uuid;
+    private UUID mcrider$uuid;
 
     @Override
-    public UUID getUuid() { return mcsync_uuid; }
+    public UUID mcrider$getUuid() { return mcrider$uuid; }
 
     @Override
-    public void setUuid(UUID uuid) { this.mcsync_uuid = uuid; }
+    public void mcrider$setUuid(UUID uuid) { this.mcrider$uuid = uuid; }
 }

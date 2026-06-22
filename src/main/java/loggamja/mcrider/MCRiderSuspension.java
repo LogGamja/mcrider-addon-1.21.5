@@ -2,7 +2,7 @@ package loggamja.mcrider;
 
 import loggamja.mcrider.helper.EntityRollManager;
 import loggamja.mcrider.helper.SpringSimulator;
-import net.fabricmc.api.ModInitializer;
+import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
@@ -12,7 +12,7 @@ import net.minecraft.util.math.MathHelper;
 import java.util.ArrayList;
 import java.util.List;
 
-public class MCRiderSuspension implements ModInitializer {
+public class MCRiderSuspension implements ClientModInitializer {
     List<Float> steerGradientBuffer = new ArrayList<>();
 
     private static boolean isDrifting;
@@ -36,7 +36,7 @@ public class MCRiderSuspension implements ModInitializer {
     private final SpringSimulator.State state = new SpringSimulator.State();
 
     @Override
-    public void onInitialize() {
+    public void onInitializeClient() {
         ClientTickEvents.END_CLIENT_TICK.register(client -> onClientTick());
     }
     private void onClientTick() {

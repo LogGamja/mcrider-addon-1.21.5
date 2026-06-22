@@ -1,6 +1,6 @@
 package loggamja.mcrider;
 
-import net.fabricmc.api.ModInitializer;
+import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
@@ -9,7 +9,7 @@ import net.minecraft.util.math.Vec3d;
 
 import java.util.Objects;
 
-public class MCRiderRadar implements ModInitializer {
+public class MCRiderRadar implements ClientModInitializer {
     final int padding = 10;
     final int baseRadius = 50;
     final double baseDist = 25.0;
@@ -21,7 +21,7 @@ public class MCRiderRadar implements ModInitializer {
     final double maxDist = baseDist * distScale;
 
     @Override
-    public void onInitialize() {
+    public void onInitializeClient() {
         //HudRenderCallback.EVENT.register((context, context2) -> renderRadar(context, context2.getTickDelta(false)));
         HudRenderCallback.EVENT.register((context, context2) -> renderRadar(context, context2.getTickProgress(false)));
     }
@@ -42,7 +42,6 @@ public class MCRiderRadar implements ModInitializer {
         MinecraftClient client = MinecraftClient.getInstance();
         if (!MCRiderMain.isPlayingInGame()) return;
 
-        final int screenWidth = client.getWindow().getScaledWidth();
         final int screenHeight = client.getWindow().getScaledHeight();
 
         final int centerX = padding + radius;

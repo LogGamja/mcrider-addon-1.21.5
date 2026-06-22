@@ -38,47 +38,47 @@ public abstract class GameRendererMixin {
 
     @Shadow @Final private MinecraftClient client;
 
-    @Unique private PlayerInput lastPlayerInput = PlayerInput.DEFAULT;
-    @Unique final GameOptions options = MinecraftClient.getInstance().options;
+    @Unique private PlayerInput mcrider$lastPlayerInput = PlayerInput.DEFAULT;
+    @Unique final GameOptions mcrider$options = MinecraftClient.getInstance().options;
 
-    @Unique float lastYaw;
+    @Unique float mcrider$lastYaw;
 
-    @Unique boolean isFovBackupedThisFrame;
-    @Unique boolean isFovEffectScaleBackupedThisTick;
+    @Unique boolean mcrider$isFovBackupedThisFrame;
+    @Unique boolean mcrider$isFovEffectScaleBackupedThisTick;
 
-    @Unique int backupFov;
-    @Unique double backupFovEffectScale;
+    @Unique int mcrider$backupFov;
+    @Unique double mcrider$backupFovEffectScale;
 
     @Inject(method = "updateFovMultiplier", at = @At(value = "HEAD"))
-    private void beforeFovMultiplierUpdate(CallbackInfo ci) {
+    private void mcrider$beforeFovMultiplierUpdate(CallbackInfo ci) {
         if (!MCRiderMain.isRidingKart) return;
 
-        backupFovEffectScale = options.getFovEffectScale().getValue();
-        isFovEffectScaleBackupedThisTick = true;
+        mcrider$backupFovEffectScale = mcrider$options.getFovEffectScale().getValue();
+        mcrider$isFovEffectScaleBackupedThisTick = true;
 
         double customEffectScale = MCRiderConfig.INSTANCE.MCRiderFOVEffects / 100f;
         if (client.options.getPerspective() == Perspective.FIRST_PERSON) {
             customEffectScale /= 3;
         }
-        options.getFovEffectScale().setValue(customEffectScale);
+        mcrider$options.getFovEffectScale().setValue(customEffectScale);
     }
     @Inject(method = "updateFovMultiplier", at = @At(value = "TAIL"))
-    private void afterFovUpdate(CallbackInfo ci) {
-        if (!isFovEffectScaleBackupedThisTick) return;
+    private void mcrider$afterFovUpdate(CallbackInfo ci) {
+        if (!mcrider$isFovEffectScaleBackupedThisTick) return;
 
-        options.getFovEffectScale().setValue(backupFovEffectScale);
-        isFovEffectScaleBackupedThisTick = false;
+        mcrider$options.getFovEffectScale().setValue(mcrider$backupFovEffectScale);
+        mcrider$isFovEffectScaleBackupedThisTick = false;
     }
     @Inject(method = "getFov", at = @At(value = "HEAD"), cancellable = true)
-    private void beforeGetFov(Camera camera, float tickDelta, boolean changingFov, CallbackInfoReturnable<Float> cir) {
+    private void mcrider$beforeGetFov(Camera camera, float tickDelta, boolean changingFov, CallbackInfoReturnable<Float> cir) {
         if (!MCRiderMain.isRidingKart) return;
 
         if (MCRiderConfig.INSTANCE.cameraMode == 0) {
-            backupFov = options.getFov().getValue();
-            isFovBackupedThisFrame = true;
+            mcrider$backupFov = mcrider$options.getFov().getValue();
+            mcrider$isFovBackupedThisFrame = true;
 
             final int customFov = MCRiderConfig.INSTANCE.MCRiderFOV;
-            options.getFov().setValue(customFov);
+            mcrider$options.getFov().setValue(customFov);
         }
         else {
             var asdf = MathHelper.lerp(tickDelta, MCRiderCamera.filteredFOVAtPrevTick, MCRiderCamera.filteredFOV);
@@ -89,38 +89,38 @@ public abstract class GameRendererMixin {
         }
     }
     @Inject(method = "getFov", at = @At(value = "TAIL"))
-    private void afterGetFov(Camera camera, float tickDelta, boolean changingFov, CallbackInfoReturnable<Float> cir) {
-        if (!isFovBackupedThisFrame) return;
+    private void mcrider$afterGetFov(Camera camera, float tickDelta, boolean changingFov, CallbackInfoReturnable<Float> cir) {
+        if (!mcrider$isFovBackupedThisFrame) return;
 
-        options.getFov().setValue(backupFov);
-        isFovBackupedThisFrame = false;
+        mcrider$options.getFov().setValue(mcrider$backupFov);
+        mcrider$isFovBackupedThisFrame = false;
     }
 
     @Inject(method = "render", at = @At(value = "HEAD"))
-    private void renderHead(RenderTickCounter tickCounter, boolean tick, CallbackInfo ci) {
+    private void mcrider$renderHead(RenderTickCounter tickCounter, boolean tick, CallbackInfo ci) {
         if (!MCRiderMain.isRidingKart || !MCRiderMain.isPlayingInGame()) return;
 
         MCRiderMain.onFrameRender();
     }
     @Inject(method = "render", at = @At(value = "TAIL"))
-    private void renderTail(RenderTickCounter tickCounter, boolean tick, CallbackInfo ci) {
+    private void mcrider$renderTail(RenderTickCounter tickCounter, boolean tick, CallbackInfo ci) {
         if (!MCRiderMain.isRidingKart || !MCRiderMain.isPlayingInGame() || !MCRiderConfig.INSTANCE.MCRiderPacketAcceleration) return;
 
         ClientPlayerEntity player = Objects.requireNonNull(getClient().player);
 
         if (player == MCRiderMain.getRidingPlayer()) {
-            PlayerInput input = getPlayerInput(player);
+            PlayerInput input = mcrider$getPlayerInput(player);
 
             //키엔진 키 입력이 감지되면 패킷 발사
-            if (!this.lastPlayerInput.equals(input)) {
+            if (!this.mcrider$lastPlayerInput.equals(input)) {
                 player.networkHandler.sendPacket(new PlayerInputC2SPacket(input));
-                this.lastPlayerInput = input;
+                this.mcrider$lastPlayerInput = input;
             }
 
             //카메라의 가로 방향이 회전하면 패킷 발사
-            if (this.lastYaw != player.getYaw()) {
+            if (this.mcrider$lastYaw != player.getYaw()) {
                 player.networkHandler.sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(player.getYaw(), player.getPitch(), player.isOnGround(), player.horizontalCollision));
-                this.lastYaw = player.getYaw();
+                this.mcrider$lastYaw = player.getYaw();
             }
 
             Entity vehicle = player.getRootVehicle();
@@ -130,7 +130,7 @@ public abstract class GameRendererMixin {
         }
     }
     @Unique
-    private @NotNull PlayerInput getPlayerInput(ClientPlayerEntity player) {
+    private @NotNull PlayerInput mcrider$getPlayerInput(ClientPlayerEntity player) {
         GameOptions options = getClient().options;
         PlayerInput mcInput = player.input.playerInput;
 
