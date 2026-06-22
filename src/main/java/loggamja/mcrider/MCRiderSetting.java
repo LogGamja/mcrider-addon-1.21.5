@@ -23,7 +23,7 @@ public class MCRiderSetting extends Screen {
             { "Camera mode: Default[1]", "Camera mode: Balance[2]", "Camera mode: Normal[3]", "Camera mode: Kartrider[4]" },
 
             { "Suspension Effect: OFF", "Suspension Effect: Kart", "Suspension Effect: Kart and Camera" },
-            { "Bike Suspension: Default", "Bike Suspension: 4-Wheel", "Bike Suspension: Real", "Bike Suspension: Extreme!" }
+            { "Bike Suspension: Default", "Bike Suspension: 4-Wheel", "Bike Suspension: Realistic", "Bike Suspension: Extreme!" }
     };
     static String[] tooltips = {
             "Optimize the rotation of karts when riding a kart.",
