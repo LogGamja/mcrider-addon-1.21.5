@@ -49,6 +49,8 @@ public class CameraMixin {
 
     @Inject(method = "setRotation(FF)V", at = @At("TAIL"))
     private void mcrider$setRotation(float yaw, float pitch, CallbackInfo ci) {
+        if (MCRiderConfig.INSTANCE.suspensionEffect != 2) return;
+
         long now = System.nanoTime();
         float dt = (mcrider$lastTime == 0L) ? 0f : (now - mcrider$lastTime) / 1.0e9f;
         mcrider$lastTime = now;
@@ -63,6 +65,9 @@ public class CameraMixin {
 
         // 3) 이번 프레임 원본 롤(0 이어도 그대로 반영 → 평균이 0으로 수렴)
         float raw = EntityRollManager.getCurrentRoll(player.getUuid()) * mcrider$ROLL_MULTIPLIER;
+        if (MCRiderConfig.INSTANCE.bikeSuspension == 3) {
+            raw /= 5;
+        }
 
         // 4) FPS 무관 지수 평활. alpha 는 항상 (0,1] 이라 튀거나 발산하지 않음.
         float alpha = (mcrider$SMOOTH_TIME <= 0f) ? 1f

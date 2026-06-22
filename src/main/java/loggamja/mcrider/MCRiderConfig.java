@@ -24,6 +24,9 @@ public class MCRiderConfig {
     public boolean useAutoThirdPerson = true;
     public int cameraMode = 2;
 
+    public int suspensionEffect = 0;
+    public int bikeSuspension = 0;
+
     public int MCRiderFOV = 90;
     public int MCRiderFOVEffects = 80;
 
@@ -48,6 +51,10 @@ public class MCRiderConfig {
         this.useDraftGauge             = other.useDraftGauge;
         this.useAutoThirdPerson        = other.useAutoThirdPerson;
         this.cameraMode                = other.cameraMode;
+
+        this.suspensionEffect          = other.suspensionEffect;
+        this.bikeSuspension            = other.bikeSuspension;
+
         this.MCRiderFOV                = other.MCRiderFOV;
         this.MCRiderFOVEffects         = other.MCRiderFOVEffects;
     }

@@ -44,6 +44,22 @@ public class MCRiderSuspension implements ClientModInitializer {
 
         var player = MCRiderMain.getRidingPlayer();
         var kart = player.getRootVehicle();
+        List<Entity> passengers = kart.getPassengerList();
+
+        var isBike = MCRiderMain.getS2CValue(MCRiderMain.getRidingPlayer(), "data-is-bike");
+
+        if (MCRiderConfig.INSTANCE.suspensionEffect == 0) {
+            EntityRollManager.setRoll(player.getUuid(), 0f, 1);
+
+            for (var i : passengers) {
+                if (MCRiderMain.hasCertainName(i, "mcrider-modelsaddle")) {
+                    for (var j : i.getPassengerList()) {
+                        EntityRollManager.setRoll(j.getUuid(), 0f, 1);
+                    }
+                }
+            }
+            return;
+        }
 
         var playerYaw = player.getYaw();
         steerGradientBuffer.add(Math.abs(prevPlayerYaw - playerYaw));
@@ -60,6 +76,7 @@ public class MCRiderSuspension implements ClientModInitializer {
                 .average()
                 .orElse(0.0);
 
+        boolean disableSwingAnimation = isBike == 1 && MCRiderConfig.INSTANCE.bikeSuspension >= 2;
         boolean isDriftingTemp = detectDriftState(kart);
         if (isDriftingTemp != isDrifting) {
             isDrifting = isDriftingTemp;
@@ -68,7 +85,7 @@ public class MCRiderSuspension implements ClientModInitializer {
                 driftJustStartedTicks = DRIFT_START_TICKS;
             }
             else {
-                if (filteredSteerGradient > 2 && !isPlayingSwingAnimation) {
+                if (filteredSteerGradient > 2 && !isPlayingSwingAnimation && !disableSwingAnimation) {
                     swingAnimationTicks = SWING_ANIMATION_TICKS;
                 }
             }
@@ -82,23 +99,38 @@ public class MCRiderSuspension implements ClientModInitializer {
         if (clampedDriftAngle > 90) clampedDriftAngle = (180 - clampedDriftAngle) / 2;
         if (clampedDriftAngle < -90) clampedDriftAngle = (-180 - clampedDriftAngle) / 2;
 
-        final double a = (40 * 2 / Math.PI);
+        final double a = (45 * 2 / Math.PI);
         final double b = 0.5;
         clampedDriftAngle = (float) (a * Math.atan(b / a * clampedDriftAngle));
         if (isPlayingSwingAnimation) clampedDriftAngle = 0;
 
         // 스프링 물리 통과
         SpringSimulator.step(state, DT, FREQ, Q, -(clampedDriftAngle / 2f));
-        var value = Math.toDegrees(state.x);
+        var modelRollValue = Math.toDegrees(state.x);
+
+        // 바이크 옵션
+        if (isBike == 1) {
+            if (MCRiderConfig.INSTANCE.bikeSuspension == 0) {
+                modelRollValue = 0;
+            }
+            else if (MCRiderConfig.INSTANCE.bikeSuspension == 1) {
+                // 4-Wheel: 바이크가 아닌 것처럼 처리 (카트와 동일)
+            }
+            else if (MCRiderConfig.INSTANCE.bikeSuspension == 2) {
+                modelRollValue *= -1;
+            }
+            else if (MCRiderConfig.INSTANCE.bikeSuspension == 3) {
+                modelRollValue *= -5;
+            }
+        }
 
         // 실제 카트바디에 적용 + 동시에 Direction 얻기
         float moveDirection = 0f;
         float steerDirection = 0f;
-        List<Entity> passengers = kart.getPassengerList();
         for (var i : passengers) {
             if (MCRiderMain.hasCertainName(i, "mcrider-modelsaddle")) {
                 for (var j : i.getPassengerList()) {
-                    EntityRollManager.setRoll(j.getUuid(), (float) value, 1);
+                    EntityRollManager.setRoll(j.getUuid(), (float) modelRollValue, 1);
                 }
             }
             else if (MCRiderMain.hasCertainName(i, "mcrider-direction")) {
@@ -108,7 +140,7 @@ public class MCRiderSuspension implements ClientModInitializer {
                 steerDirection = i.getYaw();
             }
         }
-        EntityRollManager.setRoll(player.getUuid(), (float) value, 1);
+        EntityRollManager.setRoll(player.getUuid(), (float) modelRollValue, 1);
         driftAngle = MathHelper.subtractAngles(moveDirection, steerDirection);
     }
     boolean detectDriftState(Entity kart) {

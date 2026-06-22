@@ -129,7 +129,7 @@ public class MCRiderMain implements ClientModInitializer {
 
             if (!isRidingKart) {
                 useLegacyKartStopData = false;
-                EntityRollManager.clear(); // 카트 하차 시 롤 상태 정리
+                EntityRollManager.clear();
             }
             autoThirdPerson();
         }

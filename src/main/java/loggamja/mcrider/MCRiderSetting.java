@@ -20,7 +20,10 @@ public class MCRiderSetting extends Screen {
             { "Draft gauge: OFF", "Draft gauge: ON" },
             { "Auto third person: OFF", "Auto third person: ON" },
             { "Noclip camera: OFF", "Noclip camera: ON" },
-            { "Camera mode: Default[1]", "Camera mode: Balance[2]", "Camera mode: Normal[3]", "Camera mode: Kartrider[4]" }
+            { "Camera mode: Default[1]", "Camera mode: Balance[2]", "Camera mode: Normal[3]", "Camera mode: Kartrider[4]" },
+
+            { "Suspension Effect: OFF", "Suspension Effect: Kart", "Suspension Effect: Kart and Camera" },
+            { "Bike Suspension: Default", "Bike Suspension: 4-Wheel", "Bike Suspension: Real", "Bike Suspension: Extreme!" }
     };
     static String[] tooltips = {
             "Optimize the rotation of karts when riding a kart.",
@@ -29,7 +32,10 @@ public class MCRiderSetting extends Screen {
             "Show a draft gauge when riding a kart.",
             "Automatically change to 3rd person view when riding a kart.",
             "Third person camera goes through blocks when riding a kart.",
-            "Change camera mode when riding a kart."
+            "Change camera mode when riding a kart.",
+
+            "Change suspension effect when riding a kart.",
+            "Change bike suspension effect when enable suspension effect."
     };
 
     // 슬라이더 정의: {라벨, 최소값, 최대값, 기본값, 툴팁}
@@ -56,7 +62,10 @@ public class MCRiderSetting extends Screen {
                     { "드래프트 게이지: 꺼짐", "드래프트 게이지: 켜짐" },
                     { "자동 3인칭: 꺼짐", "자동 3인칭: 켜짐" },
                     { "카메라 통과: 꺼짐", "카메라 통과: 켜짐" },
-                    { "카메라 모드: 기본[1]", "카메라 모드: 균형[2]", "카메라 모드: 보통[3]", "카메라 모드: 원작[4]" }
+                    { "카메라 모드: 기본[1]", "카메라 모드: 균형[2]", "카메라 모드: 보통[3]", "카메라 모드: 원작[4]" },
+
+                    { "서스펜션 효과: 꺼짐", "서스펜션 효과: 카트바디", "서스펜션 효과: 카트와 카메라" },
+                    { "바이크 서스펜션: 기본", "바이크 서스펜션: 4륜 카트", "바이크 서스펜션: 현실적", "바이크 서스펜션: 익스트림" }
             };
             tooltips = new String[] {
                     "카트 탑승 시 조작감을 최적화합니다.",
@@ -65,7 +74,10 @@ public class MCRiderSetting extends Screen {
                     "카트 탑승 시 드래프트 게이지를 표시합니다.",
                     "카트 탑승 시 자동으로 3인칭으로 전환합니다.",
                     "카트 탑승 시 3인칭 카메라가 블록에 걸리지 않게 합니다.",
-                    "카트 탑승 시 카메라 연출 방식을 선택할 수 있습니다."
+                    "카트 탑승 시 카메라 연출 방식을 선택할 수 있습니다.",
+
+                    "카트 탑승 시 드리프트 서스펜션 효과를 선택합니다.",
+                    "서스펜션 효과 활성화 시 바이크의 서스펜션 연출을 변경합니다."
             };
             SLIDER_OPTIONS = new Object[][] {
                     { "주행 시야 범위", 30.0, 110.0, "카메라 모드 '기본' 상태에서만 적용됩니다." },
@@ -95,6 +107,8 @@ public class MCRiderSetting extends Screen {
         toggleIndices[4] = cfg.useAutoThirdPerson ? 1 : 0;
         toggleIndices[5] = cfg.useNoclipCamera ? 1 : 0;
         toggleIndices[6] = cfg.cameraMode;
+        toggleIndices[7] = cfg.suspensionEffect;
+        toggleIndices[8] = cfg.bikeSuspension;
 
         // slider load
         sliderValues[0] = cfg.MCRiderFOV;
@@ -187,6 +201,8 @@ public class MCRiderSetting extends Screen {
         else if (button == 4) cfg.useAutoThirdPerson = (index != 0);
         else if (button == 5) cfg.useNoclipCamera = (index != 0);
         else if (button == 6) cfg.cameraMode = index;
+        else if (button == 7) cfg.suspensionEffect = index;
+        else if (button == 8) cfg.bikeSuspension = index;
     }
 
     void onSliderChange(int slider, float value) {
