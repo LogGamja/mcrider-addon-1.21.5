@@ -36,9 +36,8 @@ import java.util.Objects;
 public abstract class GameRendererMixin {
     @Shadow public abstract MinecraftClient getClient();
 
-    @Shadow
-    @Final
-    private MinecraftClient client;
+    @Shadow @Final private MinecraftClient client;
+
     @Unique private PlayerInput lastPlayerInput = PlayerInput.DEFAULT;
     @Unique final GameOptions options = MinecraftClient.getInstance().options;
 

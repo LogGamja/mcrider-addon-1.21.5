@@ -5,7 +5,6 @@ import java.util.Map;
 import java.util.UUID;
 
 public class EntityRollManager {
-    // entityId -> (startRoll, targetRoll, startTime, duration)
     private static final Map<UUID, RollState> rollStates = new HashMap<>();
 
     public static void setRoll(UUID entityId, float targetRollDeg, int durationTicks) {

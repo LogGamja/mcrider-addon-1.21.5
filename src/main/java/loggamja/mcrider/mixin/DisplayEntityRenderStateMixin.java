@@ -20,8 +20,8 @@ public class DisplayEntityRenderStateMixin implements DisplayEntityRenderStateAc
     private UUID mcsync_uuid;
 
     @Override
-    public UUID mcsync_getUuid() { return mcsync_uuid; }
+    public UUID getUuid() { return mcsync_uuid; }
 
     @Override
-    public void mcsync_setUuid(UUID uuid) { this.mcsync_uuid = uuid; }
+    public void setUuid(UUID uuid) { this.mcsync_uuid = uuid; }
 }

@@ -32,35 +32,35 @@ public abstract class LivingEntityRendererMixin {
         }
     }
 
-    @Unique
-    private float roll = 0f;
-
-    @Unique
-    private double pivotDown = 0.0;
+    @Unique private float roll = 0f;
+    @Unique private double pivotOffset = 0.0;
 
     @Inject(
             method = "updateRenderState(Lnet/minecraft/entity/LivingEntity;Lnet/minecraft/client/render/entity/state/LivingEntityRenderState;F)V",
             at = @At("TAIL")
     )
-    private void captureRoll(LivingEntity entity, LivingEntityRenderState state,
-                             float tickDelta, CallbackInfo ci) {
-        this.roll = -EntityRollManager.getCurrentRoll(entity.getUuid());
+    private void captureRoll(LivingEntity entity, LivingEntityRenderState state, float tickDelta, CallbackInfo ci) {
+        if (entity instanceof PlayerEntity player && MCRiderMain.isRidingKart(player)) {
+            this.roll = -EntityRollManager.getCurrentRoll(player.getUuid());
 
-        Entity root = entity.getRootVehicle();
-        this.pivotDown = entity.getY() - root.getY(); // 플레이어 Y − 루트 탈것 Y
+            Entity root = entity.getRootVehicle();
+            this.pivotOffset = player.getY() - root.getY();
+        }
+        else {
+            this.roll = 0f;
+            this.pivotOffset = 0.0;
+        }
     }
-
     @Inject(
             method = "setupTransforms(Lnet/minecraft/client/render/entity/state/LivingEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;FF)V",
             at = @At("TAIL")
     )
-    private void applyRoll(LivingEntityRenderState state, MatrixStack matrices,
-                           float bodyYaw, float baseHeight, CallbackInfo ci) {
+    private void applyRoll(LivingEntityRenderState state, MatrixStack matrices, float bodyYaw, float baseHeight, CallbackInfo ci) {
         float rollDeg = this.roll;
         if (rollDeg == 0f) return;
 
-        matrices.translate(0.0, -this.pivotDown, 0.0);
+        matrices.translate(0.0, -this.pivotOffset, 0.0);
         matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(rollDeg));
-        matrices.translate(0.0,  this.pivotDown, 0.0);
+        matrices.translate(0.0, this.pivotOffset, 0.0);
     }
 }

@@ -42,7 +42,7 @@ public class DisplayEntityRendererMixin {
     ) {
         if (state.displayRenderState == null) return;
 
-        UUID uuid = ((DisplayEntityRenderStateAccessor) state).mcsync_getUuid();
+        UUID uuid = ((DisplayEntityRenderStateAccessor) state).getUuid();
         if (uuid == null) return;
 
         float rollDeg = EntityRollManager.getCurrentRoll(uuid);
@@ -61,6 +61,6 @@ public class DisplayEntityRendererMixin {
             at = @At("TAIL")
     )
     private void captureUuid(DisplayEntity entity, DisplayEntityRenderState state, float tickDelta, CallbackInfo ci) {
-        ((DisplayEntityRenderStateAccessor) state).mcsync_setUuid(entity.getUuid());
+        ((DisplayEntityRenderStateAccessor) state).setUuid(entity.getUuid());
     }
 }
