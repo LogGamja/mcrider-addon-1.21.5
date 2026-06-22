@@ -3,7 +3,7 @@ package loggamja.mcsync.mixin;
 import loggamja.mcsync.MCRiderCamera;
 import loggamja.mcsync.MCRiderConfig;
 import loggamja.mcsync.MCRiderMain;
-import loggamja.mcsync.EntityRollManager;
+import loggamja.mcsync.helper.EntityRollManager;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.Camera;
 import net.minecraft.entity.Entity;

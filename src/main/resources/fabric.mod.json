@@ -20,7 +20,7 @@
           "loggamja.mcsync.MCRiderRadar",
           "loggamja.mcsync.MCRiderDraft",
           "loggamja.mcsync.MCRiderCamera",
-          "loggamja.mcsync.KartWobbleTestClient"
+          "loggamja.mcsync.MCRiderSuspension"
 		],
 		"fabric-datagen": [
           "loggamja.mcsync.MCRiderDataGenerator"

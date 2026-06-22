@@ -1,5 +1,7 @@
 package loggamja.mcsync;
 
+import loggamja.mcsync.helper.EntityRollManager;
+import loggamja.mcsync.helper.SpringSimulator;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.entity.Entity;
@@ -10,7 +12,7 @@ import net.minecraft.util.math.MathHelper;
 import java.util.ArrayList;
 import java.util.List;
 
-public class KartWobbleTestClient implements ModInitializer {
+public class MCRiderSuspension implements ModInitializer {
     List<Float> steerGradientBuffer = new ArrayList<>();
 
     private static boolean isDrifting;
