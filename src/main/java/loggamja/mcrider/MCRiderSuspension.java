@@ -1,7 +1,7 @@
-package loggamja.mcsync;
+package loggamja.mcrider;
 
-import loggamja.mcsync.helper.EntityRollManager;
-import loggamja.mcsync.helper.SpringSimulator;
+import loggamja.mcrider.helper.EntityRollManager;
+import loggamja.mcrider.helper.SpringSimulator;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.entity.Entity;

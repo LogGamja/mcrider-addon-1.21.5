@@ -1,4 +1,4 @@
-package loggamja.mcsync.helper;
+package loggamja.mcrider.helper;
 
 import java.util.HashMap;
 import java.util.Map;

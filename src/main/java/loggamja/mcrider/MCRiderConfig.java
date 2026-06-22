@@ -1,4 +1,4 @@
-package loggamja.mcsync;
+package loggamja.mcrider;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;

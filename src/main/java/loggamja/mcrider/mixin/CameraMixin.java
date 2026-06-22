@@ -1,16 +1,15 @@
-package loggamja.mcsync.mixin;
+package loggamja.mcrider.mixin;
 
-import loggamja.mcsync.MCRiderCamera;
-import loggamja.mcsync.MCRiderConfig;
-import loggamja.mcsync.MCRiderMain;
-import loggamja.mcsync.helper.EntityRollManager;
+import loggamja.mcrider.MCRiderCamera;
+import loggamja.mcrider.MCRiderConfig;
+import loggamja.mcrider.MCRiderMain;
+import loggamja.mcrider.helper.EntityRollManager;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.Camera;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.math.MathHelper;
 import org.joml.Quaternionf;
-import org.joml.Vector3f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -23,8 +22,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public class CameraMixin {
 
     @Shadow private Quaternionf rotation; // final 이라도 객체 자체는 변경 가능
-    @Shadow private Vector3f horizontalPlane; // 추가
-    @Shadow private Vector3f verticalPlane;   // 추가
 
     // --- 카메라 롤 지수 평활(EMA) 상태 ---
     @Unique private float mcsync$smoothedRoll = 0f;
@@ -84,7 +81,7 @@ public class CameraMixin {
         this.rotation.rotateZ((float) Math.toRadians(mcsync$smoothedRoll));
 
         // rotation 이 완성된 뒤 방향 벡터를 재계산 → 컬링/파티클이 롤을 따라감
-        this.horizontalPlane.set(1f, 0f, 0f).rotate(this.rotation);
-        this.verticalPlane.set(0f, 1f, 0f).rotate(this.rotation);
+        //this.horizontalPlane.set(1f, 0f, 0f).rotate(this.rotation);
+        //this.verticalPlane.set(0f, 1f, 0f).rotate(this.rotation);
     }
 }

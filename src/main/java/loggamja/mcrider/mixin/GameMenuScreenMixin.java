@@ -1,6 +1,6 @@
-package loggamja.mcsync.mixin;
+package loggamja.mcrider.mixin;
 
-import loggamja.mcsync.MCRiderSetting;
+import loggamja.mcrider.MCRiderSetting;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;

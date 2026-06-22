@@ -1,4 +1,4 @@
-package loggamja.mcsync;
+package loggamja.mcrider;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;

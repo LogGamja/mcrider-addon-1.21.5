@@ -1,7 +1,7 @@
-package loggamja.mcsync.mixin;
+package loggamja.mcrider.mixin;
 
-import loggamja.mcsync.MCRiderMain;
-import loggamja.mcsync.helper.EntityRollManager;
+import loggamja.mcrider.MCRiderMain;
+import loggamja.mcrider.helper.EntityRollManager;
 import net.minecraft.client.render.entity.LivingEntityRenderer;
 import net.minecraft.client.render.entity.state.LivingEntityRenderState;
 import net.minecraft.client.util.math.MatrixStack;

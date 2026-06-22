@@ -1,4 +1,4 @@
-package loggamja.mcsync.helper;
+package loggamja.mcrider.helper;
 
 /**
 Claude Opus 4.9로 제작된 스프링 시뮬레이터 클래스입니다.

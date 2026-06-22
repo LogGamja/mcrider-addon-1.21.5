@@ -1,7 +1,7 @@
-package loggamja.mcsync.mixin;
+package loggamja.mcrider.mixin;
 
-import loggamja.mcsync.MCRiderCamera;
-import loggamja.mcsync.MCRiderMain;
+import loggamja.mcrider.MCRiderCamera;
+import loggamja.mcrider.MCRiderMain;
 
 import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.network.packet.s2c.play.OverlayMessageS2CPacket;

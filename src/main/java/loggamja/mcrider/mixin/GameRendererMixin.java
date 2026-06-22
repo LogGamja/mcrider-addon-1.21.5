@@ -1,9 +1,9 @@
 
-package loggamja.mcsync.mixin;
+package loggamja.mcrider.mixin;
 
-import loggamja.mcsync.MCRiderCamera;
-import loggamja.mcsync.MCRiderMain;
-import loggamja.mcsync.MCRiderConfig;
+import loggamja.mcrider.MCRiderCamera;
+import loggamja.mcrider.MCRiderMain;
+import loggamja.mcrider.MCRiderConfig;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.option.GameOptions;

@@ -1,6 +1,6 @@
 {
   "required": true,
-  "package": "loggamja.mcsync.mixin",
+  "package": "loggamja.mcrider.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "CameraMixin",

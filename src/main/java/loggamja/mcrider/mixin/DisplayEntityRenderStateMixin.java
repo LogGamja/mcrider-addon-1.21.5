@@ -1,21 +1,12 @@
 
-package loggamja.mcsync.mixin;
+package loggamja.mcrider.mixin;
 
-import loggamja.mcsync.MCRiderMain;
-import loggamja.mcsync.interfaces.DisplayEntityRenderStateAccessor;
-import net.minecraft.client.render.entity.LivingEntityRenderer;
+import loggamja.mcrider.interfaces.DisplayEntityRenderStateAccessor;
 import net.minecraft.client.render.entity.state.BlockDisplayEntityRenderState;
-import net.minecraft.client.render.entity.state.DisplayEntityRenderState;
 import net.minecraft.client.render.entity.state.ItemDisplayEntityRenderState;
 import net.minecraft.client.render.entity.state.TextDisplayEntityRenderState;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.util.math.MathHelper;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
-import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.UUID;
 

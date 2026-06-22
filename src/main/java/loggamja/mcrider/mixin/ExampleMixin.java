@@ -1,4 +1,4 @@
-package loggamja.mcsync.mixin;
+package loggamja.mcrider.mixin;
 
 import net.minecraft.server.MinecraftServer;
 import org.spongepowered.asm.mixin.Mixin;

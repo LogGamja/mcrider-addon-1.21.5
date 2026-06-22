@@ -1,4 +1,4 @@
-package loggamja.mcsync;
+package loggamja.mcrider;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -12,7 +12,6 @@ import net.minecraft.world.tick.TickManager;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Objects;
 
 public class MCRiderCamera implements ModInitializer {
     static MinecraftClient client = MinecraftClient.getInstance();

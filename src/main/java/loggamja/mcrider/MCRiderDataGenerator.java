@@ -1,4 +1,4 @@
-package loggamja.mcsync;
+package loggamja.mcrider;
 
 import net.fabricmc.fabric.api.datagen.v1.DataGeneratorEntrypoint;
 import net.fabricmc.fabric.api.datagen.v1.FabricDataGenerator;

@@ -1,8 +1,8 @@
 
-package loggamja.mcsync.mixin;
+package loggamja.mcrider.mixin;
 
-import loggamja.mcsync.helper.EntityRollManager;
-import loggamja.mcsync.interfaces.DisplayEntityRenderStateAccessor;
+import loggamja.mcrider.helper.EntityRollManager;
+import loggamja.mcrider.interfaces.DisplayEntityRenderStateAccessor;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.entity.state.DisplayEntityRenderState;
 import net.minecraft.util.math.AffineTransformation;
