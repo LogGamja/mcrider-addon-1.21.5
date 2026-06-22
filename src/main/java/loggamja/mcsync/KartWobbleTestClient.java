@@ -1,96 +1,42 @@
-package loggamja.mcsync; // TODO: 본인 모드 패키지로 변경
+package loggamja.mcsync;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.util.InputUtil;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.decoration.DisplayEntity;
 import net.minecraft.util.math.MathHelper;
-import org.lwjgl.glfw.GLFW;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * 질량-스프링 감쇠 시스템 테스트용 클라이언트 모드.
- *
- * <p>인게임에서:
- * <ul>
- *   <li><b>G</b> 누르고 있으면 → 왼쪽(-) 외력</li>
- *   <li><b>H</b> 누르고 있으면 → 오른쪽(+) 외력</li>
- * </ul>
- * 키를 떼면 외력이 0이 되고, 스프링이 질량체를 원점으로 끌어당기며 감쇠 진동하는 모습을
- * 매 틱 콘솔(로그)로 확인할 수 있다.
- */
 public class KartWobbleTestClient implements ModInitializer {
-    public static EasedValue rotation = new EasedValue(0.0, 1);
-    private static final Logger LOGGER = LoggerFactory.getLogger("kart-wobble-test");
+    List<Float> steerGradientBuffer = new ArrayList<>();
 
-    // --- 시뮬레이션 파라미터 (앞서 정한 기본값) ---
-    List<Float> buffer = new ArrayList<>();
-
-    private static float driftAngle = 0;
     private static boolean isDrifting;
+    private static float driftAngle = 0;
 
-
-    private static final double FREQ  = 1.66; // 공진주파수 (Hz), 이전 ω0=4 와 동일한 거동
+    private static final double DT  = 0.05;
+    private static final double FREQ  = 1.66; // 공진주파수 (Hz)
     private static final double Q     = 1;    // 공진 팩터
-    private static final double PUSH_ACC = 8; // G/H 가 주는 구동 가속도 (m/s²)
 
     float prevPlayerYaw = 0;
 
-    // 스윙 애니메이션 재생용 펄스 (이전 driftJustStarted* 의 실제 용도)
-    private static final int SWING_ANIMATION_TICKS = 6; // 6틱 = 0.3초
-    private boolean playSwingAnimation = false;         // 이 동안 asdf 를 0 으로 눌러 스윙 재생
-    private int swingAnimationTicks = 0;                // 남은 틱 카운터
+    // 스윙 애니메이션 재생용 펄스
+    private static final int SWING_ANIMATION_TICKS = 6;
+    private int swingAnimationTicks = 0;
 
-    // '진짜로' 드리프트가 시작된 직후 n틱을 세는 변수
-    private static final int DRIFT_START_TICKS = 10;     // n (원하는 값으로 변경)
-    private boolean driftJustStarted = false;           // 드리프트가 막 시작된 후 n틱 동안 true
-    private int driftJustStartedTicks = 0;              // 남은 틱 카운터
-
-
-
-
-    //   참고: 정상상태 변위 ≈ F/k = 400/800 = 0.5 m, ω0 = sqrt(K/M) = 4 rad/s (주기 약 31틱)
-
-    // 출력 노이즈 억제용: 거의 정지 상태면 로그를 찍지 않는다.
-    private static final double REST_EPS = 1.0e-4;
-
-    private static KeyBinding keyLeft;   // G
-    private static KeyBinding keyRight;  // H
+    // 드리프트가 시작된 직후 n틱을 세는 변수
+    private static final int DRIFT_START_TICKS = 10;
+    private int driftJustStartedTicks = 0;
 
     // 질량체의 현재 상태(위치/속도). 매 틱 갱신.
-    private final MassSpringDamper.State state = new MassSpringDamper.State();
-
-    // 정지 상태에서 막 멈춘 직후 한 번만 "정지" 로그를 찍기 위한 플래그.
-    private boolean wasMoving = false;
+    private final SpringSimulator.State state = new SpringSimulator.State();
 
     @Override
     public void onInitialize() {
-        keyLeft = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.kart_wobble_test.push_left",   // 번역 키 (lang 파일에 넣으면 설정 화면에 표시됨)
-                InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_G,
-                "category.kart_wobble_test"          // 키 설정 카테고리
-        ));
-        keyRight = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.kart_wobble_test.push_right",
-                InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_H,
-                "category.kart_wobble_test"
-        ));
-
         ClientTickEvents.END_CLIENT_TICK.register(client -> onClientTick());
-
-        LOGGER.info("[KartWobbleTest] 준비 완료. 인게임에서 G(왼쪽) / H(오른쪽)로 힘을 줘보세요.");
     }
-
     private void onClientTick() {
         if (!MCRiderMain.isPlayingInGame()) return;
 
@@ -98,84 +44,70 @@ public class KartWobbleTestClient implements ModInitializer {
         var kart = player.getRootVehicle();
 
         var playerYaw = player.getYaw();
-        buffer.add(Math.abs(prevPlayerYaw - playerYaw));
-        if (buffer.size() > 5) buffer.removeFirst();
+        steerGradientBuffer.add(Math.abs(prevPlayerYaw - playerYaw));
+        if (steerGradientBuffer.size() > 5) steerGradientBuffer.removeFirst();
         prevPlayerYaw = playerYaw;
 
-        var avg = buffer.stream().mapToDouble(Float::floatValue)
+        boolean isPlayingSwingAnimation = swingAnimationTicks > 0;
+        if (swingAnimationTicks > 0) swingAnimationTicks--;
+
+        boolean hasDriftStarted = driftJustStartedTicks > 0;
+        if (driftJustStartedTicks > 0) driftJustStartedTicks--;
+
+        var filteredSteerGradient = steerGradientBuffer.stream().mapToDouble(Float::floatValue)
                 .average()
                 .orElse(0.0);
 
         boolean isDriftingTemp = detectDriftState(kart);
         if (isDriftingTemp != isDrifting) {
             isDrifting = isDriftingTemp;
+
             if (isDrifting) {
                 driftJustStartedTicks = DRIFT_START_TICKS;
             }
             else {
-                //System.out.println(avg);
-                if (avg > 2 && swingAnimationTicks == 0) {
-                    swingAnimationTicks = SWING_ANIMATION_TICKS; // 드리프트 종료 시 스윙 재생
+                if (filteredSteerGradient > 2 && !isPlayingSwingAnimation) {
+                    swingAnimationTicks = SWING_ANIMATION_TICKS;
                 }
             }
         }
+        // 투드맆
+        //if (isDrifting && filteredSteerGradient > 10 && !isPlayingSwingAnimation && !hasDriftStarted) {
+        //  swingAnimationTicks = SWING_ANIMATION_TICKS;
+        //}
 
-        if (keyLeft.wasPressed()) swingAnimationTicks = SWING_ANIMATION_TICKS;
-
-        if (isDrifting && avg > 10 && swingAnimationTicks == 0 && !driftJustStarted) {
-            //swingAnimationTicks = SWING_ANIMATION_TICKS;
-        }
-
-        // 매 틱 실행: 스윙 애니메이션 펄스 카운트다운
-        playSwingAnimation = swingAnimationTicks > 0;
-        if (swingAnimationTicks > 0) swingAnimationTicks--;
-
-        // 매 틱 실행: '진짜' 드리프트 시작 직후 n틱 카운트다운
-        driftJustStarted = driftJustStartedTicks > 0;
-        if (driftJustStartedTicks > 0) driftJustStartedTicks--;
+        var clampedDriftAngle = driftAngle;
+        if (clampedDriftAngle > 90) clampedDriftAngle = (180 - clampedDriftAngle) / 2;
+        if (clampedDriftAngle < -90) clampedDriftAngle = (-180 - clampedDriftAngle) / 2;
 
         final double a = (40 * 2 / Math.PI);
-        var aaaa = driftAngle;
-        if (aaaa > 90) aaaa = (180 - aaaa) / 2;
-        if (aaaa < -90) aaaa = (-180 - aaaa) / 2;
+        final double b = 0.5;
+        clampedDriftAngle = (float) (a * Math.atan(b / a * clampedDriftAngle));
+        if (isPlayingSwingAnimation) clampedDriftAngle = 0;
 
-        //System.out.println(aaaa);
+        // 스프링 물리 통과
+        SpringSimulator.step(state, DT, FREQ, Q, -(clampedDriftAngle / 2f));
+        var value = Math.toDegrees(state.x);
 
-        var asdf = a * Math.atan(0.5 / a * aaaa);
-        if (playSwingAnimation) asdf = 0;
-
-        MassSpringDamper.step(state, 0.05, FREQ, Q, -(asdf / 2f));
-
-        rotation.set(Math.toDegrees(state.x));
-
+        // 실제 카트바디에 적용 + 동시에 Direction 얻기
+        float moveDirection = 0f;
+        float steerDirection = 0f;
         List<Entity> passengers = kart.getPassengerList();
-
-        float direction = 0f;
-        float datacarrier = 0f;
-
         for (var i : passengers) {
             if (MCRiderMain.hasCertainName(i, "mcrider-modelsaddle")) {
                 for (var j : i.getPassengerList()) {
-                    RollManager.setRoll(j.getUuid(), (float) rotation.get(), 1);
+                    EntityRollManager.setRoll(j.getUuid(), (float) value, 1);
                 }
             }
-            if (MCRiderMain.hasCertainName(i, "mcrider-direction")) {
-                direction = i.getYaw();
+            else if (MCRiderMain.hasCertainName(i, "mcrider-direction")) {
+                moveDirection = i.getYaw();
             }
-            if (MCRiderMain.hasCertainName(i, "mcrider-datacarrier")) {
-                datacarrier = i.getYaw();
+            else if (MCRiderMain.hasCertainName(i, "mcrider-datacarrier")) {
+                steerDirection = i.getYaw();
             }
         }
-        RollManager.setRoll(player.getUuid(), (float) rotation.get(), 1);
-
-        driftAngle = MathHelper.subtractAngles(direction, datacarrier);
-
-
-        //LOGGER.info(String.format(
-        //        "F=%+7.1f N | x=%+8.4f m | v=%+8.4f m/s",
-        //        force, state.x, state.v));
-        //wasMoving = true;
-
+        EntityRollManager.setRoll(player.getUuid(), (float) value, 1);
+        driftAngle = MathHelper.subtractAngles(moveDirection, steerDirection);
     }
     boolean detectDriftState(Entity kart) {
         if (kart.isPlayer()) return false;

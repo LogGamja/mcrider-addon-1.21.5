@@ -1,11 +1,10 @@
 package loggamja.mcsync;
 
-import net.minecraft.entity.Entity;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-public class RollManager {
+public class EntityRollManager {
     // entityId -> (startRoll, targetRoll, startTime, duration)
     private static final Map<UUID, RollState> rollStates = new HashMap<>();
 
@@ -15,7 +14,7 @@ public class RollManager {
                 current,
                 targetRollDeg,
                 System.currentTimeMillis(),
-                durationTicks * 50L // ticks -> ms
+                durationTicks * 50L
         ));
     }
 
@@ -38,6 +37,10 @@ public class RollManager {
 
     public static void remove(UUID entityId) {
         rollStates.remove(entityId);
+    }
+
+    public static void clear() {
+        rollStates.clear();
     }
 
     public record RollState(

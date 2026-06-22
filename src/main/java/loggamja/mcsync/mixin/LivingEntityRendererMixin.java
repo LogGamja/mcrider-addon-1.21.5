@@ -1,7 +1,7 @@
 package loggamja.mcsync.mixin;
 
 import loggamja.mcsync.MCRiderMain;
-import loggamja.mcsync.RollManager;
+import loggamja.mcsync.EntityRollManager;
 import net.minecraft.client.render.entity.LivingEntityRenderer;
 import net.minecraft.client.render.entity.state.LivingEntityRenderState;
 import net.minecraft.client.util.math.MatrixStack;
@@ -44,7 +44,7 @@ public abstract class LivingEntityRendererMixin {
     )
     private void captureRoll(LivingEntity entity, LivingEntityRenderState state,
                              float tickDelta, CallbackInfo ci) {
-        this.roll = -RollManager.getCurrentRoll(entity.getUuid());
+        this.roll = -EntityRollManager.getCurrentRoll(entity.getUuid());
 
         Entity root = entity.getRootVehicle();
         this.pivotDown = entity.getY() - root.getY(); // 플레이어 Y − 루트 탈것 Y

@@ -3,13 +3,14 @@ package loggamja.mcsync.mixin;
 import loggamja.mcsync.MCRiderCamera;
 import loggamja.mcsync.MCRiderConfig;
 import loggamja.mcsync.MCRiderMain;
-import loggamja.mcsync.RollManager;
+import loggamja.mcsync.EntityRollManager;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.Camera;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.math.MathHelper;
 import org.joml.Quaternionf;
+import org.joml.Vector3f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -21,8 +22,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(Camera.class)
 public class CameraMixin {
 
-    @Shadow
-    private Quaternionf rotation; // final 이라도 객체 자체는 변경 가능
+    @Shadow private Quaternionf rotation; // final 이라도 객체 자체는 변경 가능
+    @Shadow private Vector3f horizontalPlane; // 추가
+    @Shadow private Vector3f verticalPlane;   // 추가
 
     // --- 카메라 롤 지수 평활(EMA) 상태 ---
     @Unique private float mcsync$smoothedRoll = 0f;
@@ -66,11 +68,8 @@ public class CameraMixin {
         Entity focused = ((Camera) (Object) this).getFocusedEntity();
         if (!(focused instanceof PlayerEntity player)) return;
 
-        // 1인칭에서만 쓰려면 주석 해제
-        //if (!MinecraftClient.getInstance().options.getPerspective().isFirstPerson()) return;
-
         // 3) 이번 프레임 원본 롤(0 이어도 그대로 반영 → 평균이 0으로 수렴)
-        float raw = RollManager.getCurrentRoll(player.getUuid()) * MCSYNC$ROLL_SCALE;
+        float raw = EntityRollManager.getCurrentRoll(player.getUuid()) * MCSYNC$ROLL_SCALE;
 
         // 4) FPS 무관 지수 평활. alpha 는 항상 (0,1] 이라 튀거나 발산하지 않음.
         float alpha = (MCSYNC$SMOOTH_TIME <= 0f) ? 1f
@@ -83,5 +82,9 @@ public class CameraMixin {
         // 5) 적용
         if (Math.abs(mcsync$smoothedRoll) < 1.0e-4f) return;
         this.rotation.rotateZ((float) Math.toRadians(mcsync$smoothedRoll));
+
+        // rotation 이 완성된 뒤 방향 벡터를 재계산 → 컬링/파티클이 롤을 따라감
+        this.horizontalPlane.set(1f, 0f, 0f).rotate(this.rotation);
+        this.verticalPlane.set(0f, 1f, 0f).rotate(this.rotation);
     }
 }

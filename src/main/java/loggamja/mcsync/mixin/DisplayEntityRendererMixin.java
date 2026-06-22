@@ -1,30 +1,19 @@
 
 package loggamja.mcsync.mixin;
 
-import loggamja.mcsync.MCRiderMain;
-import loggamja.mcsync.RollManager;
+import loggamja.mcsync.EntityRollManager;
 import loggamja.mcsync.interfaces.DisplayEntityRenderStateAccessor;
 import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.entity.LivingEntityRenderer;
 import net.minecraft.client.render.entity.state.DisplayEntityRenderState;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.math.AffineTransformation;
-import net.minecraft.util.math.MathHelper;
 import org.joml.Matrix4f;
-import org.joml.Quaternionfc;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import net.minecraft.client.render.entity.DisplayEntityRenderer;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.decoration.DisplayEntity;
-import org.joml.Quaternionf;
-import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.UUID;
@@ -56,7 +45,7 @@ public class DisplayEntityRendererMixin {
         UUID uuid = ((DisplayEntityRenderStateAccessor) state).mcsync_getUuid();
         if (uuid == null) return;
 
-        float rollDeg = RollManager.getCurrentRoll(uuid);
+        float rollDeg = EntityRollManager.getCurrentRoll(uuid);
         if (rollDeg == 0f) return;
 
         AffineTransformation affine = state.displayRenderState.transformation().interpolate(state.lerpProgress);
