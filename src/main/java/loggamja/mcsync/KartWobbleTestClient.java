@@ -44,9 +44,15 @@ public class KartWobbleTestClient implements ModInitializer {
 
     float prevPlayerYaw = 0;
 
-    private static final int DRIFT_FLAG_TICKS = 6; // 0.2초 ÷ 0.05초 = 4틱
-    private boolean driftJustStarted = false;      // 드리프트 시작 후 0.2초 동안 true
-    private int driftJustStartedTicks = 0;         // 남은 틱 카운터
+    // 스윙 애니메이션 재생용 펄스 (이전 driftJustStarted* 의 실제 용도)
+    private static final int SWING_ANIMATION_TICKS = 6; // 6틱 = 0.3초
+    private boolean playSwingAnimation = false;         // 이 동안 asdf 를 0 으로 눌러 스윙 재생
+    private int swingAnimationTicks = 0;                // 남은 틱 카운터
+
+    // '진짜로' 드리프트가 시작된 직후 n틱을 세는 변수
+    private static final int DRIFT_START_TICKS = 10;     // n (원하는 값으로 변경)
+    private boolean driftJustStarted = false;           // 드리프트가 막 시작된 후 n틱 동안 true
+    private int driftJustStartedTicks = 0;              // 남은 틱 카운터
 
 
 
@@ -104,48 +110,43 @@ public class KartWobbleTestClient implements ModInitializer {
         if (isDriftingTemp != isDrifting) {
             isDrifting = isDriftingTemp;
             if (isDrifting) {
-
-
-                System.out.println(avg);
-                if (avg < 6 && driftJustStartedTicks == 0) {
-                    driftJustStartedTicks = DRIFT_FLAG_TICKS;
-                }
-                else {
-
-                }
+                driftJustStartedTicks = DRIFT_START_TICKS;
             }
             else {
-                driftJustStartedTicks = DRIFT_FLAG_TICKS; // 0.2초 펄스 시작
+                //System.out.println(avg);
+                if (avg > 2 && swingAnimationTicks == 0) {
+                    swingAnimationTicks = SWING_ANIMATION_TICKS; // 드리프트 종료 시 스윙 재생
+                }
             }
         }
 
-        if (keyLeft.wasPressed()) driftJustStartedTicks = DRIFT_FLAG_TICKS;
+        if (keyLeft.wasPressed()) swingAnimationTicks = SWING_ANIMATION_TICKS;
 
-        if (isDrifting && avg > 10 && driftJustStartedTicks == 0) {
-            driftJustStartedTicks = DRIFT_FLAG_TICKS;
+        if (isDrifting && avg > 10 && swingAnimationTicks == 0 && !driftJustStarted) {
+            //swingAnimationTicks = SWING_ANIMATION_TICKS;
         }
 
-        // 매 틱 실행: 0.2초 펄스 카운트다운
+        // 매 틱 실행: 스윙 애니메이션 펄스 카운트다운
+        playSwingAnimation = swingAnimationTicks > 0;
+        if (swingAnimationTicks > 0) swingAnimationTicks--;
+
+        // 매 틱 실행: '진짜' 드리프트 시작 직후 n틱 카운트다운
         driftJustStarted = driftJustStartedTicks > 0;
         if (driftJustStartedTicks > 0) driftJustStartedTicks--;
 
-        final double a = (50 * 2 / Math.PI);
-        var asdf = a * Math.atan(1 / a * driftAngle);
-        if (driftJustStarted) asdf = 0;
+        final double a = (40 * 2 / Math.PI);
+        var aaaa = driftAngle;
+        if (aaaa > 90) aaaa = (180 - aaaa) / 2;
+        if (aaaa < -90) aaaa = (-180 - aaaa) / 2;
+
+        //System.out.println(aaaa);
+
+        var asdf = a * Math.atan(0.5 / a * aaaa);
+        if (playSwingAnimation) asdf = 0;
 
         MassSpringDamper.step(state, 0.05, FREQ, Q, -(asdf / 2f));
 
-        var asdf2 = Math.clamp(driftAngle, -90, 90);
-        double value = 1.2 * Math.tan(Math.toRadians(asdf2));
-        //System.out.println(value);
-
-
-
-
-
         rotation.set(Math.toDegrees(state.x));
-
-
 
         List<Entity> passengers = kart.getPassengerList();
 
@@ -165,6 +166,8 @@ public class KartWobbleTestClient implements ModInitializer {
                 datacarrier = i.getYaw();
             }
         }
+        RollManager.setRoll(player.getUuid(), (float) rotation.get(), 1);
+
         driftAngle = MathHelper.subtractAngles(direction, datacarrier);
 
 

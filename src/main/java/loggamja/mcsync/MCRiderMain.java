@@ -233,7 +233,7 @@ public class MCRiderMain implements ModInitializer {
         long k = Math.round(criteriaTick / frameMs);
         return Math.max(1L, k);
     }
-    static int getS2CValue(PlayerEntity player, String name) {
+    public static int getS2CValue(PlayerEntity player, String name) {
         Identifier id = Identifier.of("minecraft", name);
 
         Entity saddle = player.getVehicle();
