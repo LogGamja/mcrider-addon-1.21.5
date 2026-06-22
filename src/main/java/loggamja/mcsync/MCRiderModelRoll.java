@@ -34,7 +34,7 @@ public class MCRiderModelRoll implements ModInitializer {
 
         var player = MCRiderMain.getRidingPlayer();
         var kart = player.getRootVehicle();
-        boolean isDrifting = detectDriftState(kart);
+
 
         var yaw = (int) player.getYaw();
         var yawDelta = (yaw - prevPlayerYaw);
@@ -45,57 +45,38 @@ public class MCRiderModelRoll implements ModInitializer {
 
         var driftDirection = Math.signum(yawDelta);
 
-        if (isDrifting) {
-            driftTick++;
+        //if (isDrifting) {
+        //    driftTick++;
+//
+        //    if (Math.abs(yawDeltaDelta) > 10) {
+        //        driftTick = 1;
+        //    }
+//
+        //    if (driftTick == 1) {
+        //        if (Math.abs(yawDeltaDelta) > 10) rotation.set(5 * driftDirection);
+        //        else rotation.set(-6 * driftDirection);
+        //    }
+        //    else if (driftTick == 7) {
+        //        rotation.set(-6 * driftDirection);
+        //    }
+        //}
+        //else {
+        //    if (driftTick > 0) {
+        //        rotation.set(0);
+        //    }
+//
+        //    driftTick = 0;
+        //}
 
-            if (Math.abs(yawDeltaDelta) > 10) {
-                driftTick = 1;
-            }
-
-            if (driftTick == 1) {
-                if (Math.abs(yawDeltaDelta) > 10) rotation.set(5 * driftDirection);
-                else rotation.set(-6 * driftDirection);
-            }
-            else if (driftTick == 7) {
-                rotation.set(-6 * driftDirection);
-            }
-        }
-        else {
-            if (driftTick > 0) {
-                rotation.set(0);
-            }
-
-            driftTick = 0;
-        }
-
-        List<Entity> passengers = kart.getPassengerList();
-        for (var i : passengers) {
-            if (MCRiderMain.hasCertainName(i, "mcrider-modelsaddle")) {
-                for (var j : i.getPassengerList()) {
-                    RollManager.setRoll(j.getUuid(), (float) rotation.get(), 1);
-                }
-                break;
-            }
-        }
+        //List<Entity> passengers = kart.getPassengerList();
+        //for (var i : passengers) {
+        //    if (MCRiderMain.hasCertainName(i, "mcrider-modelsaddle")) {
+        //        for (var j : i.getPassengerList()) {
+        //            RollManager.setRoll(j.getUuid(), (float) rotation.get(), 1);
+        //        }
+        //        break;
+        //    }
+        //}
     }
-    boolean detectDriftState(Entity kart) {
-        if (kart.isPlayer()) return false;
 
-        List<Entity> passengers = kart.getPassengerList();
-        for (var i : passengers) {
-            if (!MCRiderMain.hasCertainName(i, "mcrider-modelsaddle")) continue;
-
-            for (var j : i.getPassengerList()) {
-                if (!MCRiderMain.hasCertainName(j, "mcrider-drift-effect") || !isDisplayEntity(j)) continue;
-
-                return ((DisplayEntity) j).getViewRange() > 0;
-            }
-        }
-        return false;
-    }
-    static boolean isDisplayEntity(Entity entity) {
-        return entity.getType() == EntityType.ITEM_DISPLAY
-                || entity.getType() == EntityType.BLOCK_DISPLAY
-                || entity.getType() == EntityType.TEXT_DISPLAY;
-    }
 }

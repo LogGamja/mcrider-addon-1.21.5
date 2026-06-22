@@ -5,9 +5,16 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityType;
+import net.minecraft.entity.decoration.DisplayEntity;
+import net.minecraft.util.math.MathHelper;
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 질량-스프링 감쇠 시스템 테스트용 클라이언트 모드.
@@ -21,15 +28,29 @@ import org.slf4j.LoggerFactory;
  * 매 틱 콘솔(로그)로 확인할 수 있다.
  */
 public class KartWobbleTestClient implements ModInitializer {
-
+    public static EasedValue rotation = new EasedValue(0.0, 1);
     private static final Logger LOGGER = LoggerFactory.getLogger("kart-wobble-test");
 
     // --- 시뮬레이션 파라미터 (앞서 정한 기본값) ---
-    private static final double DT         = 0.05; // 마인크래프트 기본 틱 주기 (s)
-    private static final double K          = 800;  // 스프링 상수 (N/m)
-    private static final double M          = 50;   // 질량 (kg)
-    private static final double Q          = 4;    // 공진 팩터
-    private static final double PUSH_FORCE = 400;  // G/H 가 주는 외력 크기 (N)
+    List<Float> buffer = new ArrayList<>();
+
+    private static float driftAngle = 0;
+    private static boolean isDrifting;
+
+
+    private static final double FREQ  = 1.66; // 공진주파수 (Hz), 이전 ω0=4 와 동일한 거동
+    private static final double Q     = 1;    // 공진 팩터
+    private static final double PUSH_ACC = 8; // G/H 가 주는 구동 가속도 (m/s²)
+
+    float prevPlayerYaw = 0;
+
+    private static final int DRIFT_FLAG_TICKS = 6; // 0.2초 ÷ 0.05초 = 4틱
+    private boolean driftJustStarted = false;      // 드리프트 시작 후 0.2초 동안 true
+    private int driftJustStartedTicks = 0;         // 남은 틱 카운터
+
+
+
+
     //   참고: 정상상태 변위 ≈ F/k = 400/800 = 0.5 m, ω0 = sqrt(K/M) = 4 rad/s (주기 약 31틱)
 
     // 출력 노이즈 억제용: 거의 정지 상태면 로그를 찍지 않는다.
@@ -65,28 +86,112 @@ public class KartWobbleTestClient implements ModInitializer {
     }
 
     private void onClientTick() {
-        // --- 키 입력 → 외력 합산 ---
-        double force = 0.0;
-        if (keyLeft.isPressed())  force -= PUSH_FORCE; // G: 왼쪽
-        if (keyRight.isPressed()) force += PUSH_FORCE; // H: 오른쪽
+        if (!MCRiderMain.isPlayingInGame()) return;
 
-        // --- 한 틱 적분 (state 를 제자리 갱신) ---
-        MassSpringDamper.step(state, DT, K, M, Q, force);
+        var player = MCRiderMain.getRidingPlayer();
+        var kart = player.getRootVehicle();
 
-        // --- 콘솔 출력 ---
-        boolean moving = force != 0.0
-                || Math.abs(state.x) > REST_EPS
-                || Math.abs(state.v) > REST_EPS;
+        var playerYaw = player.getYaw();
+        buffer.add(Math.abs(prevPlayerYaw - playerYaw));
+        if (buffer.size() > 5) buffer.removeFirst();
+        prevPlayerYaw = playerYaw;
 
-        if (moving) {
-            LOGGER.info(String.format(
-                    "F=%+7.1f N | x=%+8.4f m | v=%+8.4f m/s",
-                    force, state.x, state.v));
-            wasMoving = true;
-        } else if (wasMoving) {
-            // 방금 정지함 → 한 번만 알림
-            LOGGER.info("[KartWobbleTest] 정지 (x≈0, v≈0).");
-            wasMoving = false;
+        var avg = buffer.stream().mapToDouble(Float::floatValue)
+                .average()
+                .orElse(0.0);
+
+        boolean isDriftingTemp = detectDriftState(kart);
+        if (isDriftingTemp != isDrifting) {
+            isDrifting = isDriftingTemp;
+            if (isDrifting) {
+
+
+                System.out.println(avg);
+                if (avg < 6 && driftJustStartedTicks == 0) {
+                    driftJustStartedTicks = DRIFT_FLAG_TICKS;
+                }
+                else {
+
+                }
+            }
+            else {
+                driftJustStartedTicks = DRIFT_FLAG_TICKS; // 0.2초 펄스 시작
+            }
         }
+
+        if (keyLeft.wasPressed()) driftJustStartedTicks = DRIFT_FLAG_TICKS;
+
+        if (isDrifting && avg > 10 && driftJustStartedTicks == 0) {
+            driftJustStartedTicks = DRIFT_FLAG_TICKS;
+        }
+
+        // 매 틱 실행: 0.2초 펄스 카운트다운
+        driftJustStarted = driftJustStartedTicks > 0;
+        if (driftJustStartedTicks > 0) driftJustStartedTicks--;
+
+        final double a = (50 * 2 / Math.PI);
+        var asdf = a * Math.atan(1 / a * driftAngle);
+        if (driftJustStarted) asdf = 0;
+
+        MassSpringDamper.step(state, 0.05, FREQ, Q, -(asdf / 2f));
+
+        var asdf2 = Math.clamp(driftAngle, -90, 90);
+        double value = 1.2 * Math.tan(Math.toRadians(asdf2));
+        //System.out.println(value);
+
+
+
+
+
+        rotation.set(Math.toDegrees(state.x));
+
+
+
+        List<Entity> passengers = kart.getPassengerList();
+
+        float direction = 0f;
+        float datacarrier = 0f;
+
+        for (var i : passengers) {
+            if (MCRiderMain.hasCertainName(i, "mcrider-modelsaddle")) {
+                for (var j : i.getPassengerList()) {
+                    RollManager.setRoll(j.getUuid(), (float) rotation.get(), 1);
+                }
+            }
+            if (MCRiderMain.hasCertainName(i, "mcrider-direction")) {
+                direction = i.getYaw();
+            }
+            if (MCRiderMain.hasCertainName(i, "mcrider-datacarrier")) {
+                datacarrier = i.getYaw();
+            }
+        }
+        driftAngle = MathHelper.subtractAngles(direction, datacarrier);
+
+
+        //LOGGER.info(String.format(
+        //        "F=%+7.1f N | x=%+8.4f m | v=%+8.4f m/s",
+        //        force, state.x, state.v));
+        //wasMoving = true;
+
+    }
+    boolean detectDriftState(Entity kart) {
+        if (kart.isPlayer()) return false;
+
+        List<Entity> passengers = kart.getPassengerList();
+        for (var i : passengers) {
+            if (!MCRiderMain.hasCertainName(i, "mcrider-modelsaddle")) continue;
+
+            for (var j : i.getPassengerList()) {
+                if (!MCRiderMain.hasCertainName(j, "mcrider-drift-effect") || !isDisplayEntity(j)) continue;
+
+                return ((DisplayEntity) j).getViewRange() > 0;
+            }
+        }
+        return false;
+    }
+    static boolean isDisplayEntity(Entity entity) {
+        return entity.getType() == EntityType.ITEM_DISPLAY
+                || entity.getType() == EntityType.BLOCK_DISPLAY
+                || entity.getType() == EntityType.TEXT_DISPLAY;
     }
 }
