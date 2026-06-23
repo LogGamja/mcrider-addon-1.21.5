@@ -1,6 +1,7 @@
 package loggamja.mcrider.mixin;
 
 import loggamja.mcrider.MCRiderMain;
+import loggamja.mcrider.MCRiderSuspension;
 import loggamja.mcrider.helper.EntityRollManager;
 import net.minecraft.client.render.entity.LivingEntityRenderer;
 import net.minecraft.client.render.entity.state.LivingEntityRenderState;
@@ -44,7 +45,7 @@ public abstract class LivingEntityRendererMixin {
             this.mcrider$roll = -EntityRollManager.getCurrentRoll(player.getUuid());
 
             Entity root = entity.getRootVehicle();
-            this.mcrider$pivotOffset = player.getY() - root.getY();
+            this.mcrider$pivotOffset = player.getY() - root.getY() - MCRiderSuspension.pivotYOffset;
         }
         else {
             this.mcrider$roll = 0f;

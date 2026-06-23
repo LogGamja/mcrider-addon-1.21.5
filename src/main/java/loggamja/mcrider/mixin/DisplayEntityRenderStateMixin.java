@@ -19,9 +19,18 @@ public class DisplayEntityRenderStateMixin implements DisplayEntityRenderStateAc
     @Unique
     private UUID mcrider$uuid;
 
+    @Unique
+    private double mcrider$pivotY;
+
     @Override
     public UUID mcrider$getUuid() { return mcrider$uuid; }
 
     @Override
     public void mcrider$setUuid(UUID uuid) { this.mcrider$uuid = uuid; }
+
+    @Override
+    public double mcrider$getPivotY() { return mcrider$pivotY; }
+
+    @Override
+    public void mcrider$setPivotY(double pivotY) { this.mcrider$pivotY = pivotY; }
 }

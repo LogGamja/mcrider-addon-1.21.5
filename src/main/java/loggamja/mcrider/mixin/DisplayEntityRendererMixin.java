@@ -1,6 +1,8 @@
 
 package loggamja.mcrider.mixin;
 
+import loggamja.mcrider.MCRiderMain;
+import loggamja.mcrider.MCRiderSuspension;
 import loggamja.mcrider.helper.EntityRollManager;
 import loggamja.mcrider.interfaces.DisplayEntityRenderStateAccessor;
 import net.minecraft.client.render.VertexConsumerProvider;
@@ -48,12 +50,16 @@ public class DisplayEntityRendererMixin {
         float rollDeg = EntityRollManager.getCurrentRoll(uuid);
         if (rollDeg == 0f) return;
 
+        double pivotY = ((DisplayEntityRenderStateAccessor) state).mcrider$getPivotY();
+
         AffineTransformation affine = state.displayRenderState.transformation().interpolate(state.lerpProgress);
         Matrix4f m = new Matrix4f(affine.getMatrix());
         Matrix4f roll = new Matrix4f().rotateZ((float) Math.toRadians(rollDeg));
 
         matrices.multiplyPositionMatrix(m.invert());
+        matrices.translate(0.0f, (float) -pivotY, 0.0f);
         matrices.multiplyPositionMatrix(roll);
+        matrices.translate(0.0f, (float) pivotY, 0.0f);
         matrices.multiplyPositionMatrix(m.invert());
     }
     @Inject(
@@ -61,6 +67,16 @@ public class DisplayEntityRendererMixin {
             at = @At("TAIL")
     )
     private void mcrider$captureUuid(DisplayEntity entity, DisplayEntityRenderState state, float tickDelta, CallbackInfo ci) {
-        ((DisplayEntityRenderStateAccessor) state).mcrider$setUuid(entity.getUuid());
+        DisplayEntityRenderStateAccessor accessor = (DisplayEntityRenderStateAccessor) state;
+        accessor.mcrider$setUuid(entity.getUuid());
+
+        // 회전 중심 y 오프셋: 엔티티 y - RootVehicle y - pivotYOffset
+        // pivotYOffset이 클수록 회전 중심이 위로 올라감
+        if (MCRiderMain.isRidingKart && entity.hasVehicle()) {
+            double pivotY = entity.getY() - entity.getRootVehicle().getY() - MCRiderSuspension.pivotYOffset;
+            accessor.mcrider$setPivotY(pivotY);
+        } else {
+            accessor.mcrider$setPivotY(0.0);
+        }
     }
 }

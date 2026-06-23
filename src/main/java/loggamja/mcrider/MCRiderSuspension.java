@@ -15,6 +15,8 @@ import java.util.List;
 public class MCRiderSuspension implements ClientModInitializer {
     List<Float> steerGradientBuffer = new ArrayList<>();
 
+    public static float pivotYOffset = 0.1f;
+
     private static boolean isDrifting;
 
     private static final double DT  = 0.05;
