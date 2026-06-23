@@ -47,7 +47,7 @@ public class MCRiderSuspension implements ClientModInitializer {
         List<Entity> passengers = kart.getPassengerList();
 
         var isBike = MCRiderMain.getS2CValue(MCRiderMain.getRidingPlayer(), "data-is-bike");
-        var isModelRotateAllowed = MCRiderMain.getS2CValue(MCRiderMain.getRidingPlayer(), "state-allow-model-rotation");
+        var isModelRotateAllowed = MCRiderMain.getAllowModelRotation(kart);
 
         if (MCRiderConfig.INSTANCE.suspensionEffect == 0) {
             EntityRollManager.setRoll(player.getUuid(), 0f, 1);
@@ -100,11 +100,11 @@ public class MCRiderSuspension implements ClientModInitializer {
         if (clampedDriftAngle > 90) clampedDriftAngle = (180 - clampedDriftAngle) / 2;
         if (clampedDriftAngle < -90) clampedDriftAngle = (-180 - clampedDriftAngle) / 2;
 
-        final double a = (45 * 2 / Math.PI);
+        final double a = (50 * 2 / Math.PI);
         final double b = 0.5;
         clampedDriftAngle = (float) (a * Math.atan(b / a * clampedDriftAngle));
 
-        if (isPlayingSwingAnimation || isModelRotateAllowed == 0) clampedDriftAngle = 0;
+        if (isPlayingSwingAnimation || !isModelRotateAllowed) clampedDriftAngle = 0;
 
         // 스프링 물리 통과
         SpringSimulator.step(state, DT, FREQ, Q, -(clampedDriftAngle / 2f));

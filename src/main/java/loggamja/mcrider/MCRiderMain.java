@@ -76,7 +76,7 @@ public class MCRiderMain implements ClientModInitializer {
 
         return !getSaddleType(kartSaddle).equals("none");
     }
-    static boolean getAllowModelRotation(Entity kartMobil) {
+    public static boolean getAllowModelRotation(Entity kartMobil) {
         if (hasCertainName(kartMobil, "mcrider-stop")) useLegacyKartStopData = true;
 
         if (useLegacyKartStopData) {
