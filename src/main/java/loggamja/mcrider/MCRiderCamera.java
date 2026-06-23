@@ -54,18 +54,18 @@ public class MCRiderCamera implements ClientModInitializer {
         int armSpeedMultiplier = 2;
         if (MCRiderConfig.INSTANCE.cameraMode == 1) {
             armSpeedMultiplier = 6;
-            linearTransformTargetBaseDistance = 600;
-            addToTargetFovBuffer(isUsingBooster ? 118f : 100f);
+            linearTransformTargetBaseDistance = 605;
+            addToTargetFovBuffer(isUsingBooster ? 118f : 102f);
         }
         else if (MCRiderConfig.INSTANCE.cameraMode == 2) {
             armSpeedMultiplier = 5;
-            linearTransformTargetBaseDistance = 595;
-            addToTargetFovBuffer(isUsingBooster ? 120f : 98f);
+            linearTransformTargetBaseDistance = 600;
+            addToTargetFovBuffer(isUsingBooster ? 120f : 100f);
         }
         else if (MCRiderConfig.INSTANCE.cameraMode == 3) {
             armSpeedMultiplier = 4;
-            linearTransformTargetBaseDistance = 590;
-            addToTargetFovBuffer(isUsingBooster ? 122f : 96f);
+            linearTransformTargetBaseDistance = 595;
+            addToTargetFovBuffer(isUsingBooster ? 122f : 98f);
         }
 
         filteredFOVAtPrevTick = filteredFOV;

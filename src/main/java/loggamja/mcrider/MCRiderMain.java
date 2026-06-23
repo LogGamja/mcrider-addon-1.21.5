@@ -236,11 +236,11 @@ public class MCRiderMain implements ClientModInitializer {
             playerYawBuffer.removeFirst();
         }
     }
-    static long getNearestFrame(long criteriaTick) {
+    static long getNearestFrame(long criteriaMs) {
         float fps = Math.max(1f, client.getCurrentFps());
 
         float frameMs = 1000 / fps;
-        long k = Math.round(criteriaTick / frameMs);
+        long k = Math.round(criteriaMs  / frameMs);
         return Math.max(1L, k);
     }
     public static int getS2CValue(PlayerEntity player, String name) {

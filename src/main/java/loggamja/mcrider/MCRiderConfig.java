@@ -14,7 +14,7 @@ import java.io.IOException;
 public class MCRiderConfig {
     private static final Logger LOGGER = LoggerFactory.getLogger("mcrider");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final File CONFIG_FILE = new File(FabricLoader.getInstance().getConfigDir().toFile(), "mcsync-config.json");
+    private static final File CONFIG_FILE = new File(FabricLoader.getInstance().getConfigDir().toFile(), "mcrider-config.json");
 
     public int MCRiderRotationOption = 2;
     public boolean MCRiderPacketAcceleration = true;

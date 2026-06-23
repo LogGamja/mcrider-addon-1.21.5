@@ -67,7 +67,7 @@ public class CameraMixin {
         float raw = EntityRollManager.getCurrentRoll(player.getUuid()) * mcrider$ROLL_MULTIPLIER;
         var isBike = MCRiderMain.getS2CValue(MCRiderMain.getRidingPlayer(), "data-is-bike");
         if (isBike == 1 && MCRiderConfig.INSTANCE.bikeSuspension == 3) {
-            raw /= 5;
+            raw /= 4;
         }
 
         // 4) FPS 무관 지수 평활. alpha 는 항상 (0,1] 이라 튀거나 발산하지 않음.

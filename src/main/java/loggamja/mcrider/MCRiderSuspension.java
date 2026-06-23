@@ -16,7 +16,6 @@ public class MCRiderSuspension implements ClientModInitializer {
     List<Float> steerGradientBuffer = new ArrayList<>();
 
     private static boolean isDrifting;
-    private static float driftAngle = 0;
 
     private static final double DT  = 0.05;
     private static final double FREQ  = 1.66; // 공진주파수 (Hz)
@@ -40,7 +39,7 @@ public class MCRiderSuspension implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> onClientTick());
     }
     private void onClientTick() {
-        if (!MCRiderMain.isPlayingInGame()) return;
+        if (!MCRiderMain.isPlayingInGame() || !MCRiderMain.isRidingKart) return;
 
         var player = MCRiderMain.getRidingPlayer();
         var kart = player.getRootVehicle();
@@ -95,14 +94,30 @@ public class MCRiderSuspension implements ClientModInitializer {
         //if (isDrifting && filteredSteerGradient > 10 && !isPlayingSwingAnimation && !hasDriftStarted) {
         //  swingAnimationTicks = SWING_ANIMATION_TICKS;
         //}
+        float moveDirection = 0f;
+        float steerDirection = 0f;
+        for (var i : passengers) {
+            if (MCRiderMain.hasCertainName(i, "mcrider-direction")) {
+                moveDirection = i.getYaw();
+            }
+            else if (MCRiderMain.hasCertainName(i, "mcrider-datacarrier")) {
+                steerDirection = i.getYaw();
+            }
+        }
+        var clampedDriftAngle = MathHelper.subtractAngles(moveDirection, steerDirection);
 
-        var clampedDriftAngle = driftAngle;
         if (clampedDriftAngle > 90) clampedDriftAngle = (180 - clampedDriftAngle) / 2;
         if (clampedDriftAngle < -90) clampedDriftAngle = (-180 - clampedDriftAngle) / 2;
 
         final double a = (50 * 2 / Math.PI);
         final double b = 0.5;
         clampedDriftAngle = (float) (a * Math.atan(b / a * clampedDriftAngle));
+
+        if (isBike == 1) {
+            if (MCRiderConfig.INSTANCE.bikeSuspension == 3) {
+                clampedDriftAngle *= 5;
+            }
+        }
 
         if (isPlayingSwingAnimation || !isModelRotateAllowed) clampedDriftAngle = 0;
 
@@ -118,32 +133,21 @@ public class MCRiderSuspension implements ClientModInitializer {
             else if (MCRiderConfig.INSTANCE.bikeSuspension == 1) {
                 // 4-Wheel: 바이크가 아닌 것처럼 처리 (카트와 동일)
             }
-            else if (MCRiderConfig.INSTANCE.bikeSuspension == 2) {
+            else {
                 modelRollValue *= -1;
-            }
-            else if (MCRiderConfig.INSTANCE.bikeSuspension == 3) {
-                modelRollValue *= -5;
             }
         }
 
-        // 실제 카트바디에 적용 + 동시에 Direction 얻기
-        float moveDirection = 0f;
-        float steerDirection = 0f;
+        // 실제 카트바디에 적용
         for (var i : passengers) {
             if (MCRiderMain.hasCertainName(i, "mcrider-modelsaddle")) {
                 for (var j : i.getPassengerList()) {
                     EntityRollManager.setRoll(j.getUuid(), (float) modelRollValue, 1);
                 }
             }
-            else if (MCRiderMain.hasCertainName(i, "mcrider-direction")) {
-                moveDirection = i.getYaw();
-            }
-            else if (MCRiderMain.hasCertainName(i, "mcrider-datacarrier")) {
-                steerDirection = i.getYaw();
-            }
         }
         EntityRollManager.setRoll(player.getUuid(), (float) modelRollValue, 1);
-        driftAngle = MathHelper.subtractAngles(moveDirection, steerDirection);
+
     }
     boolean detectDriftState(Entity kart) {
         if (kart.isPlayer()) return false;

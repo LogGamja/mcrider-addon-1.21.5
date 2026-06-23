@@ -81,11 +81,11 @@ public abstract class GameRendererMixin {
             mcrider$options.getFov().setValue(customFov);
         }
         else {
-            var asdf = MathHelper.lerp(tickDelta, MCRiderCamera.filteredFOVAtPrevTick, MCRiderCamera.filteredFOV);
+            var interpolatedFOV  = MathHelper.lerp(tickDelta, MCRiderCamera.filteredFOVAtPrevTick, MCRiderCamera.filteredFOV);
             if (client.options.getPerspective() == Perspective.FIRST_PERSON) {
-                asdf *= 0.825f;
+                interpolatedFOV  *= 0.825f;
             }
-            cir.setReturnValue(asdf);
+            cir.setReturnValue(interpolatedFOV);
         }
     }
     @Inject(method = "getFov", at = @At(value = "TAIL"))
