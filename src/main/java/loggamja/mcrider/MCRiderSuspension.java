@@ -108,8 +108,8 @@ public class MCRiderSuspension implements ClientModInitializer {
         }
         var clampedDriftAngle = MathHelper.subtractAngles(moveDirection, steerDirection);
 
-        if (clampedDriftAngle > 90) clampedDriftAngle = (180 - clampedDriftAngle) / 2;
-        if (clampedDriftAngle < -90) clampedDriftAngle = (-180 - clampedDriftAngle) / 2;
+        if (clampedDriftAngle > 90) clampedDriftAngle = 180 - clampedDriftAngle;
+        if (clampedDriftAngle < -90) clampedDriftAngle = -180 - clampedDriftAngle;
 
         final double a = (50 * 2 / Math.PI);
         final double b = 0.5;

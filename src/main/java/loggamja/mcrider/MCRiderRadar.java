@@ -104,7 +104,7 @@ public class MCRiderRadar implements ClientModInitializer {
 
         // 플레이어 yaw 기반 방향 벡터
         //final float yawDeg = client.gameRenderer.getCamera().getYaw();
-        final float yawDeg = Objects.requireNonNull(client.player).getYaw(tickDelta);
+        final float yawDeg = MCRiderMain.getRidingPlayer().getYaw(tickDelta);
         final double yawRad = Math.toRadians(yawDeg);
 
         final double fx = -Math.sin(yawRad);
