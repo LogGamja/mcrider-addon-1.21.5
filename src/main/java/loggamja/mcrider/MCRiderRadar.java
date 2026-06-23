@@ -15,8 +15,12 @@ import net.minecraft.util.math.Vec3d;
 import java.util.Objects;
 
 public class MCRiderRadar implements ClientModInitializer {
-    final int padding = 10;
-    final int baseRadius = 50;
+    // 원본 코드가 "GUI 배율 4" 환경에서 보기 좋게 튜닝되어 있었으므로,
+    // 그 시각적 크기를 기준(1920x1080, 배율무관 기준값)으로 그대로 가져오기 위한 보정 배수.
+    private static final double LEGACY_GUI_SCALE_BASIS = 4.0;
+
+    final int padding = (int) Math.round(10 * LEGACY_GUI_SCALE_BASIS);
+    final int baseRadius = (int) Math.round(50 * LEGACY_GUI_SCALE_BASIS);
     final double baseDist = 25.0;
 
     final double uiScale = 0.75;
@@ -30,21 +34,19 @@ public class MCRiderRadar implements ClientModInitializer {
     private static final Identifier KART_ICON_ENEMY =
             Identifier.of("mcrider-official", "textures/hud/kart_icon_enemy.png");
 
-    // 카트 실제 크기 (미터)
     private static final double KART_WIDTH  = 1.4;
     private static final double KART_HEIGHT = 1.7;
 
-    // 너무 작게 그려지는 것을 보정하는 배수 — 실제로 넣어보고 조절하세요
     private static final double KART_ICON_DISPLAY_SCALE = 2.0;
+    private static final float IMAGE_CORRECTION_TRICK  = 0.01f;
 
     private static final Identifier ARROW_ICON =
             Identifier.of("mcrider-official", "textures/hud/arrow_icon.png");
 
-    // 텍스처 원본 크기 (px)
     private static final int TEX_SIZE = 16;
+    private static final float ARROW_SIZE = (float) (10f * LEGACY_GUI_SCALE_BASIS);
+    private static final double ARC_RADIUS_BASE = 46.0 * LEGACY_GUI_SCALE_BASIS;
 
-    // 화살표 표시 크기 (px) — 실제로 넣어보고 조절하세요
-    private static final float ARROW_SIZE = 10f;
 
     @Override
     public void onInitializeClient() {
@@ -64,22 +66,45 @@ public class MCRiderRadar implements ClientModInitializer {
         }
     }
 
+    /**
+     * GUI 배율과 물리 해상도에 무관하게, "물리적으로 동일한 화면상 크기"를 만들기 위한 보정값.
+     *
+     * - physicalScale: 물리적 세로 해상도(window.getHeight())가 1080 기준 몇 배인지.
+     *   세로 해상도가 같으면(가로/화면비 무관) 항상 같은 값이 나온다.
+     * - scaleFactor: GUI 좌표계(scaledHeight) = 물리 해상도(getHeight()) / scaleFactor 관계이므로,
+     *   여기서 나눠주면 "GUI 좌표계에서 그려야 할 크기"가 되어 GUI 배율을 바꿔도
+     *   물리적으로 보이는 크기는 동일하게 유지된다.
+     *
+     * 즉 finalSize(GUI좌표) = baseSize(1920x1080, 배율무관 기준) * sizeFactor
+     */
+    private double getSizeFactor(MinecraftClient client) {
+        final double physicalScale = client.getWindow().getHeight() / 1080.0;
+        final double scaleFactor = client.getWindow().getScaleFactor();
+        return physicalScale / scaleFactor;
+    }
+
     private void renderRadarMode1(DrawContext context, float tickDelta) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (!MCRiderMain.isPlayingInGame()) return;
 
+        final double sizeFactor = getSizeFactor(client);
+
         final int screenHeight = client.getWindow().getScaledHeight();
 
-        final int centerX = padding + radius;
-        final int centerY = screenHeight - padding - radius;
+        final double scaledPadding = padding * sizeFactor;
+        final double scaledRadius = radius * sizeFactor;
+
+        final int centerX = (int) Math.round(scaledPadding + scaledRadius);
+        final int centerY = (int) Math.round(screenHeight - scaledPadding - scaledRadius);
 
         // 반투명 검은색 배경
-        context.fill(centerX - radius, centerY - radius,
-                centerX + radius, centerY + radius,
+        context.fill((int) Math.round(centerX - scaledRadius), (int) Math.round(centerY - scaledRadius),
+                (int) Math.round(centerX + scaledRadius), (int) Math.round(centerY + scaledRadius),
                 0x88000000);
 
         // 플레이어 yaw 기반 방향 벡터
-        final float yawDeg = client.gameRenderer.getCamera().getYaw();
+        //final float yawDeg = client.gameRenderer.getCamera().getYaw();
+        final float yawDeg = Objects.requireNonNull(client.player).getYaw(tickDelta);
         final double yawRad = Math.toRadians(yawDeg);
 
         final double fx = -Math.sin(yawRad);
@@ -89,15 +114,14 @@ public class MCRiderRadar implements ClientModInitializer {
 
         final Vec3d p = MCRiderMain.getRidingPlayer().getCameraPosVec(tickDelta);
 
-        final double scale = radius / maxDist;
+        final double scale = scaledRadius / maxDist;
         final float kartW = (float) Math.max(2, KART_WIDTH  * scale * KART_ICON_DISPLAY_SCALE);
         final float kartH = (float) Math.max(2, KART_HEIGHT * scale * KART_ICON_DISPLAY_SCALE);
 
         // 내 카트 (중앙)
-        // 레이더는 카메라 yaw 기준으로 회전한 좌표계이므로, 카트바디 실제 yaw에서 카메라 yaw를 뺀다.
-        // (회전 0도면 가장자리 픽셀이 튀어 보이므로, 0이 나와도 +0.01도를 더해 보간 경로를 타게 한다)
         final float myKartYaw = getKartBodyYaw(MCRiderMain.getRidingPlayer());
-        drawKartIcon(context, KART_ICON, centerX, centerY, kartW, kartH, (myKartYaw - yawDeg) + 0.01f);
+        final float delta = (myKartYaw - yawDeg) + IMAGE_CORRECTION_TRICK;
+        drawKartIcon(context, KART_ICON, centerX, centerY, kartW, kartH, delta);
 
         for (PlayerEntity other : Objects.requireNonNull(client.world).getPlayers()) {
             if (other == MCRiderMain.getRidingPlayer()) continue;
@@ -216,16 +240,16 @@ public class MCRiderRadar implements ClientModInitializer {
         MinecraftClient client = MinecraftClient.getInstance();
         if (!MCRiderMain.isPlayingInGame()) return;
 
+        final double sizeFactor = getSizeFactor(client);
+
         final int screenWidth  = client.getWindow().getScaledWidth();
         final int screenHeight = client.getWindow().getScaledHeight();
 
         final int centerX = screenWidth  / 2;
         final int centerY = screenHeight / 2;
 
-        final double resolutionScale = client.getWindow().getHeight() / 1080.0;
-        final double scaleMultiplier = (4 / client.getWindow().getScaleFactor());
-
-        final double arcRadius = 46 * scaleMultiplier * resolutionScale;
+        final double arcRadius = ARC_RADIUS_BASE * sizeFactor;
+        final float arrowSize = (float) (ARROW_SIZE * sizeFactor);
 
         final float yawDeg = client.gameRenderer.getCamera().getYaw();
         final double yawRad = Math.toRadians(yawDeg);
@@ -260,9 +284,9 @@ public class MCRiderRadar implements ClientModInitializer {
 
             // 화살표를 상대방 방향으로 회전
             // angle은 좌표계 기준이므로 degrees로 변환, +90도 보정(텍스처 위쪽=앞)
-            final float arrowRotDeg = (float)Math.toDegrees(angle) + 90f + 0.01f;
+            final float arrowRotDeg = (float)Math.toDegrees(angle) + 90f + IMAGE_CORRECTION_TRICK;
 
-            drawArrowIcon(context, arrowX, arrowY, ARROW_SIZE, arrowRotDeg, a);
+            drawArrowIcon(context, arrowX, arrowY, arrowSize, arrowRotDeg, a);
         }
     }
 }
