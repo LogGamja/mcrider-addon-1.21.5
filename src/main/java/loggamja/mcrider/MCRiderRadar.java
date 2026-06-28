@@ -37,8 +37,8 @@ public class MCRiderRadar implements ClientModInitializer {
     private static final double KART_WIDTH  = 1.4;
     private static final double KART_HEIGHT = 1.7;
 
-    private static final double KART_ICON_DISPLAY_SCALE = 2.0;
-    private static final float IMAGE_CORRECTION_TRICK  = 0.01f;
+    private static final double KART_ICON_DISPLAY_SCALE = 2;
+    private static final float IMAGE_CORRECTION_TRICK  = 0.001f;
 
     private static final Identifier ARROW_ICON =
             Identifier.of("mcrider-official", "textures/hud/arrow_icon.png");
