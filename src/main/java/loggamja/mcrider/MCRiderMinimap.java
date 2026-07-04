@@ -256,43 +256,32 @@ public class MCRiderMinimap implements ClientModInitializer {
         return client.world.getChunkManager().isChunkLoaded(x >> 4, z >> 4);
     }
 
+    static int tickCounter = 0;
+    static final int REDRAW_INTERVAL_TICKS = 20; // 1초 (20 TPS 기준)
+
     void onTickStart() {
         if (!MCRiderConfig.INSTANCE.useMinimap) return;
         if (client.player == null || client.world == null) return;
 
+        tickCounter++;
+        if (tickCounter < REDRAW_INTERVAL_TICKS) return;
+        tickCounter = 0;
+
         final int playerMargin = 5;
 
         BlockPos start = client.player.getBlockPos();
+        lastPlayerPos = start;
 
-        if (lastPlayerPos == null) lastPlayerPos = start;
+        // 1초에 한 번, visited/텍스처를 통째로 비우고 현재 위치 기준으로
+        // 처음부터 다시 플러드필한다. 이전 탐색 결과를 재사용하지 않으므로
+        // "이탈 구간이 누적되는" 문제는 애초에 발생할 수 없다.
+        clearAllMap();
+        rebuildTexture(start);
 
-        if (lastPlayerPos.getManhattanDistance(start) > playerMargin) {
-            lastPlayerPos = start;
-            isRequireKeepSearching = true;
-        }
-        else if (!visited.isEmpty() && !isColumnVisited(start.getX(), start.getZ())) {
-            clearAllMap();
-            lastPlayerPos = start;
-            isRequireKeepSearching = true;
-        }
-
-        // 텍스처 원점 관리: 최초 1회 설정, 이후 가장자리에 가까워지면 재앵커
-        if (!originSet) {
-            rebuildTexture(start);
-        }
-        else {
-            int cx = start.getX() - (originX + TEX_SIZE / 2);
-            int cz = start.getZ() - (originZ + TEX_SIZE / 2);
-            if (Math.abs(cx) > TEX_SIZE / 2 - REANCHOR_MARGIN
-                    || Math.abs(cz) > TEX_SIZE / 2 - REANCHOR_MARGIN) {
-                rebuildTexture(start);
-            }
-        }
-
-        if (isRequireKeepSearching) {
-            floodFillWithVertical(lastPlayerPos, (int) ((maxDist + playerMargin * 2) * 2), 256);
-        }
+        // updatePixel 예산을 사실상 무제한으로 줘서 이번 호출 안에 끝까지 그린다.
+        floodFillWithVertical(start, (int) ((maxDist + playerMargin * 2) * 2), Integer.MAX_VALUE);
     }
+
 
     static void floodFillWithVertical(BlockPos start, int maxRange, int updatePixel) {
         isRequireKeepSearching = false;
