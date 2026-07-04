@@ -20,7 +20,8 @@
           "loggamja.mcrider.MCRiderRadar",
           "loggamja.mcrider.MCRiderDraft",
           "loggamja.mcrider.MCRiderCamera",
-          "loggamja.mcrider.MCRiderSuspension"
+          "loggamja.mcrider.MCRiderSuspension",
+          "loggamja.mcrider.MCRiderMinimap"
 		]
 	},
 	"mixins": [

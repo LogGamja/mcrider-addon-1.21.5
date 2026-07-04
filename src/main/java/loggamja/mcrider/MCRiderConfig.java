@@ -19,6 +19,7 @@ public class MCRiderConfig {
     public int MCRiderRotationOption = 2;
     public boolean MCRiderPacketAcceleration = true;
     public int MCRiderRadarOption = 1;
+    public boolean useMinimap = false;
     public boolean useNoclipCamera = true;
     public boolean useDraftGauge = true;
     public boolean useAutoThirdPerson = true;
@@ -47,6 +48,7 @@ public class MCRiderConfig {
         this.MCRiderRotationOption     = other.MCRiderRotationOption;
         this.MCRiderPacketAcceleration = other.MCRiderPacketAcceleration;
         this.MCRiderRadarOption        = other.MCRiderRadarOption;
+        this.useMinimap                = other.useMinimap;
         this.useNoclipCamera           = other.useNoclipCamera;
         this.useDraftGauge             = other.useDraftGauge;
         this.useAutoThirdPerson        = other.useAutoThirdPerson;
