@@ -131,6 +131,7 @@ public class MCRiderMain implements ClientModInitializer {
                 useLegacyKartStopData = false;
                 EntityRollManager.clear();
             }
+            MCRiderMinimap.clearAllMap();
             autoThirdPerson();
         }
     }
