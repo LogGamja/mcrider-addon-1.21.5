@@ -132,6 +132,11 @@ public class MCRiderMinimap implements ClientModInitializer {
     // ── 예산 ─────────────────────────────────────────────────────────────
     static final int STAGING_BUDGET_PER_TICK = 512;
     static final long STAGING_TIME_BUDGET_NANOS = 500_000L; // 0.5ms
+    /** 플레이어 앵커 위치를 찾기 위해 아래로 뚫고 내려갈 수 있는 최대 칸 수.
+     *  일반적인 점프/공중 이동으로 뜨는 높이보다는 넉넉하되, 트랙 표면이
+     *  ignoreblock 태그라 "공기"처럼 보일 때 그 아래 전혀 다른 영역까지
+     *  무한정 뚫고 내려가지 않도록 막는 안전장치. */
+    static final int MAX_ANCHOR_DROP_SEARCH = 64;
 
     static { colorParentPtr.defaultReturnValue(NO_ID); cellColor.defaultReturnValue(NO_ID); }
 
@@ -634,6 +639,40 @@ public class MCRiderMinimap implements ClientModInitializer {
         return true;
     }
 
+    /**
+     * (x, y, z)에서 시작해 실제 기준 지점(플레이어가 서 있다고 볼 수 있는 칸)을 찾는다.
+     * floodFillWithVertical의 시드 위치 계산과 resolvePlayerCell(활성 영역 판정)이 완전히
+     * 같은 로직을 공유하도록 만든 공용 헬퍼다.
+     *
+     * [버그 수정 배경] 예전엔 이 하강 탐색이 floodFillWithVertical 안에만 있었고,
+     * resolvePlayerCell(플레이어가 지금 어느 색 위에 있는지 판정하는 함수)은 전혀 다른
+     * 방식(그 컬럼에서 이미 알려진 Y 중 가장 가까운 것, 단 플레이어와 4칸 이내)을 썼다.
+     * 그래서 탐색 시드는 고쳤어도, 정작 "지금 활성 영역이 어디인지" 판정은 여전히 얕은
+     * 방식이라 플레이어가 트랙 위로 4칸 넘게 뜨면 활성 판정 자체가 아예 안 됐다. 이제
+     * 두 곳 모두 이 함수를 통해 실제로 아래로 내려가며 확인한다.
+     *
+     * 내려가는 도중 이미 매핑된("서 있을 수 있는" 것으로 이미 기록된) 칸을 만나면 그게
+     * 실제 트랙 표면이므로 거기서 멈춘다(표면 블록 자체가 ignoreblock 태그라 공기처럼
+     * 보이는 경우, 이 체크가 없으면 계속 뚫고 내려가 버린다). 그런 칸이 없으면 진짜
+     * 단단한 블록을 만날 때까지 내려가되, MAX_ANCHOR_DROP_SEARCH만큼만 뚫고 내려간다
+     * (무한정 뚫고 내려가 전혀 다른 영역에 도달하는 것을 방지).
+     *
+     * 반환값: 기준 지점의 BlockPos.asLong. 월드 바닥까지 다 공기라 바닥을 못 찾으면 NO_ID.
+     */
+    static long findAnchorCell(int x, int y, int z, int bottomY) {
+        if (isAirAt(x, y, z)) {
+            int startY = y;
+            while (y > bottomY) {
+                if (cellColor.get(BlockPos.asLong(x, y, z)) != NO_ID) break;
+                if (!isAirAt(x, y - 1, z)) break;
+                if (startY - y >= MAX_ANCHOR_DROP_SEARCH) break;
+                y--;
+            }
+        }
+        if (y <= bottomY) return NO_ID;
+        return BlockPos.asLong(x, y, z);
+    }
+
     void onTickStart() {
         if (!MCRiderConfig.INSTANCE.useMinimap) return;
         if (client.player == null || client.world == null) return;
@@ -690,18 +729,18 @@ public class MCRiderMinimap implements ClientModInitializer {
     }
 
     static long resolvePlayerCell(BlockPos start) {
-        IntOpenHashSet ys = visitedColumns.get(packColumn(start.getX(), start.getZ()));
-        if (ys == null || ys.isEmpty()) return NO_ID;
-        int best = Integer.MIN_VALUE;
-        int bestDist = Integer.MAX_VALUE;
-        it.unimi.dsi.fastutil.ints.IntIterator yi = ys.iterator();
-        while (yi.hasNext()) {
-            int y = yi.nextInt();
-            int dist = Math.abs(y - start.getY());
-            if (dist < bestDist) { bestDist = dist; best = y; }
-        }
-        if (bestDist > 4) return NO_ID;
-        return BlockPos.asLong(start.getX(), best, start.getZ());
+        // [버그 수정] 예전엔 "그 컬럼에서 이미 알려진 Y 중 가장 가까운 것, 단 4칸 이내"만
+        // 봤다. 플레이어가 트랙 위로 4칸 넘게 뜨면 무조건 NO_ID(활성 영역 판정 불가)가
+        // 되어버렸다. 이제 floodFillWithVertical의 시드 위치 계산과 동일한 findAnchorCell로
+        // 실제로 아래로 내려가며 확인하므로, 얼마나 높이 떠 있든 실제로 그 아래 트랙이
+        // 있으면 정확히 찾는다.
+        var world = client.world;
+        if (world == null) return NO_ID;
+        if (!isChunkLoadedAt(start.getX(), start.getZ())) return NO_ID;
+        long anchor = findAnchorCell(start.getX(), start.getY(), start.getZ(), world.getBottomY());
+        if (anchor == NO_ID) return NO_ID;
+        if (cellColor.get(anchor) == NO_ID) return NO_ID; // 아직 매핑 안 된 곳
+        return anchor;
     }
 
     static void repaintAll() {
@@ -765,11 +804,10 @@ public class MCRiderMinimap implements ClientModInitializer {
             return false;
         }
 
-        int sx = start.getX(), sy = start.getY(), sz = start.getZ();
-        if (isAirAt(sx, sy, sz)) {
-            while (isAirAt(sx, sy - 1, sz) && sy > world.getBottomY()) sy--;
-        }
-        if (sy <= world.getBottomY()) return true;
+        int sx = start.getX(), sz = start.getZ();
+        long anchorCell = findAnchorCell(sx, start.getY(), sz, world.getBottomY());
+        if (anchorCell == NO_ID) return true; // 바닥(월드 최저)까지 다 공기 등 — 이번 틱은 스킵
+        int sy = BlockPos.unpackLongY(anchorCell);
 
         // 규칙1: 발밑 셀이 미방문이면 새 루트 색 시드.
         long startCell = BlockPos.asLong(sx, sy, sz);
