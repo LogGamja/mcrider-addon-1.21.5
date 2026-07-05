@@ -21,7 +21,7 @@
           "loggamja.mcrider.MCRiderDraft",
           "loggamja.mcrider.MCRiderCamera",
           "loggamja.mcrider.MCRiderSuspension",
-          "loggamja.mcrider.MCRiderMinimap"
+          "loggamja.mcrider.minimap.MCRiderMinimap"
 		]
 	},
 	"mixins": [
