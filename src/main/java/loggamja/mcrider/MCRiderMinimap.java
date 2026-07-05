@@ -1,17 +1,21 @@
 package loggamja.mcrider;
 
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
-import it.unimi.dsi.fastutil.longs.Long2LongMap;
+import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
+import it.unimi.dsi.fastutil.longs.LongArrayList;
 import it.unimi.dsi.fastutil.longs.LongIterator;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectIterator;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
+import net.minecraft.block.Blocks;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.RenderLayer;
@@ -30,68 +34,84 @@ import net.minecraft.world.chunk.Chunk;
 import java.util.function.Predicate;
 
 /**
- * (WIP) 플러드필 기반 트랙 미니맵.
+ * (WIP) 플러드필 기반 트랙 미니맵 — "색깔 관계 그래프" 방식.
  *
- * 성능 설계:
- *  - 방문/프론티어/보류 자료구조는 전부 fastutil(long 패킹) 기반. Pair 박싱 없음.
- *  - 블록 접근은 마지막 청크를 캐시해서 청크 룩업을 줄이고, BlockPos.Mutable을 재사용.
- *  - 미니맵 텍스처는 "북쪽 고정(world-aligned)"으로 유지하며,
- *    플러드필이 새 컬럼을 발견한 순간에만 픽셀을 찍는다(증분 갱신).
- *    아무것도 탐색되지 않은 프레임에는 GPU 업로드가 발생하지 않는다.
- *  - 회전·확대·스크롤은 렌더 시점에 MatrixStack + UV 오프셋으로 처리하므로
- *    프레임당 비용은 쿼드 몇 개 수준(GPU 정점 변환)이다.
+ * 이론 요약:
+ *  · 규칙0(암묵): 확장 중인 색이 "양방향" 이동으로 새 칸 진입 → 같은 색 유지.
+ *  · 규칙1: 고아(어떤 색 확장도 아님) 상태로 빈 칸 진입 → 새 루트 색.
+ *           TP/리스폰을 명시 감지하지 않고 "빈 칸에 시드가 놓이는" 범용 동작으로 처리.
+ *  · 규칙2: "단방향" 이동으로 새 칸 도달 → 새 색 + 직전 색의 자식으로 종속.
+ *  · 규칙3: 두 색이 "양방향"으로 인접하면 병합. 단방향 인접은 병합하지 않음.
+ *  · 규칙4(표시): resolve(플레이어 위치 색)과 그 자손 전체만 표시.
+ *           DEBUG_COLORS=true면 모든 색을 각자 다른 색으로 표시.
+ *  병합은 포인터 딕셔너리(resolve)만 갱신(경로 압축). 조상-자손 조우 시 사이 사슬 전체 붕괴.
  */
 public class MCRiderMinimap implements ClientModInitializer {
+
+    /** true면 모든 색을 각자 다른 색으로 표시(디버그). 기본 true. */
+    public static final boolean DEBUG_COLORS = true;
+
     static MinecraftClient client = MinecraftClient.getInstance();
+
+    private static final long NO_ID = Long.MIN_VALUE;
 
     // ── 탐색 상태 ────────────────────────────────────────────────────────
     static boolean isRequireKeepSearching = false;
     static BlockPos lastPlayerPos;
 
-    /** 프론티어 큐 (BlockPos.asLong 패킹, FIFO) */
     static LongArrayFIFOQueue frontierQueue = new LongArrayFIFOQueue();
-    /** 미로딩/범위 밖 청크에 보류된 프론티어: ChunkPos.toLong → BlockPos.asLong */
-    static Long2LongOpenHashMap exiledFrontierChunkHash = new Long2LongOpenHashMap();
-    /** 방문 기록: packColumn(x,z) → 방문한 Y 집합 */
-    static Long2ObjectOpenHashMap<IntOpenHashSet> visited = new Long2ObjectOpenHashMap<>();
+    /** 미로딩/범위 밖 청크에 보류된 프론티어: ChunkPos.toLong → 셀 목록(청크당 여러 개, 유실 방지) */
+    static Long2ObjectOpenHashMap<LongArrayList> exiledFrontierChunkHash = new Long2ObjectOpenHashMap<>();
+
+    /** 방문 셀 → 색 ID. 키 BlockPos.asLong, 값 색 ID(불변). */
+    static Long2LongOpenHashMap cellColor = new Long2LongOpenHashMap();
+    /** packColumn(x,z) → 방문 Y 집합(텍스처 도색 대상). */
+    static Long2ObjectOpenHashMap<IntOpenHashSet> visitedColumns = new Long2ObjectOpenHashMap<>();
+
+    // ── 색 관계 그래프 & 포인터 딕셔너리 ─────────────────────────────────
+    static Long2LongOpenHashMap colorParentPtr = new Long2LongOpenHashMap();
+    static Long2ObjectOpenHashMap<LongOpenHashSet> childToParents = new Long2ObjectOpenHashMap<>();
+    static Long2ObjectOpenHashMap<LongOpenHashSet> parentToChildren = new Long2ObjectOpenHashMap<>();
+    static Long2IntOpenHashMap colorBirth = new Long2IntOpenHashMap();
+
+    static long nextColorId = 0;
+    static int birthCounter = 0;
+
+    static long activeColor = NO_ID;
+    static boolean needsFullRepaint = false;
 
     // ── 레이아웃 (MCRiderRadar와 동일 스킴) ──────────────────────────────
     private static final double LEGACY_GUI_SCALE_BASIS = 4.0;
-
     final int padding = (int) Math.round(10 * LEGACY_GUI_SCALE_BASIS);
     final int baseRadius = (int) Math.round(50 * LEGACY_GUI_SCALE_BASIS);
     static final double baseDist = 100;
-
     final double uiScale = 0.75;
     static final double distScale = 1;
-
     final int radius = (int) Math.round(baseRadius * uiScale);
     static final double maxDist = baseDist * distScale;
 
     // ── 북쪽 고정 텍스처 ─────────────────────────────────────────────────
-    /** 텍스처 한 변(px). 1px = 1블록. 표시에 필요한 지름(2·maxDist·√2 ≈ 284)보다 넉넉하게. */
     private static final int TEX_SIZE = 512;
-    /** 회전해도 정사각 뷰포트가 항상 채워지도록 하는 대각선 여유 계수 */
     private static final double SQRT2 = Math.sqrt(2.0);
-    /** 플레이어가 텍스처 가장자리에 이만큼 가까워지면 원점을 재설정하고 다시 그린다 */
     private static final int REANCHOR_MARGIN = (int) Math.ceil(maxDist * SQRT2) + 8;
-
     private static final Identifier MINIMAP_ID = Identifier.of("mcrider-official", "minimap");
     private static final int VISITED_COLOR = 0xBBFFFFFF;
 
     private static NativeImage image;
     private static NativeImageBackedTexture texture;
     private static boolean textureDirty = false;
-    /** 텍스처 (0,0) 픽셀이 가리키는 월드 좌표 */
     private static int originX, originZ;
     private static boolean originSet = false;
 
+    // ── 예산 ─────────────────────────────────────────────────────────────
+    static final int STAGING_BUDGET_PER_TICK = 512;
+    static final long STAGING_TIME_BUDGET_NANOS = 500_000L; // 0.5ms
+
+    static { colorParentPtr.defaultReturnValue(NO_ID); cellColor.defaultReturnValue(NO_ID); }
+
     @Override
     public void onInitializeClient() {
-        ClientTickEvents.START_CLIENT_TICK.register(client -> {
-            onTickStart();
-        });
-
+        ClientTickEvents.START_CLIENT_TICK.register(client -> onTickStart());
         HudRenderCallback.EVENT.register((context, context2) -> renderMinimap(context, context2.getTickProgress(false)));
     }
 
@@ -99,24 +119,19 @@ public class MCRiderMinimap implements ClientModInitializer {
 
     private static void ensureTexture() {
         if (texture != null) return;
-
         image = new NativeImage(NativeImage.Format.RGBA, TEX_SIZE, TEX_SIZE, false);
         image.fillRect(0, 0, TEX_SIZE, TEX_SIZE, 0);
         texture = new NativeImageBackedTexture(() -> "mcrider-minimap", image);
         client.getTextureManager().registerTexture(MINIMAP_ID, texture);
     }
 
-    /** 원점을 플레이어 중심으로 잡고 visited 전체를 다시 그린다 (재앵커 시 1회성 비용) */
     private static void rebuildTexture(BlockPos center) {
         ensureTexture();
-
         originX = center.getX() - TEX_SIZE / 2;
         originZ = center.getZ() - TEX_SIZE / 2;
         originSet = true;
-
         image.fillRect(0, 0, TEX_SIZE, TEX_SIZE, 0);
-
-        LongIterator it = visited.keySet().longIterator();
+        LongIterator it = visitedColumns.keySet().longIterator();
         while (it.hasNext()) {
             long key = it.nextLong();
             plotColumn(unpackColumnX(key), unpackColumnZ(key));
@@ -124,57 +139,129 @@ public class MCRiderMinimap implements ClientModInitializer {
         textureDirty = true;
     }
 
-    /** 방문 컬럼 1개를 텍스처에 기록. 새 컬럼 발견 시에만 호출된다. */
     private static void plotColumn(int worldX, int worldZ) {
         if (image == null || !originSet) return;
-
         int tx = worldX - originX;
         int tz = worldZ - originZ;
         if (tx < 0 || tx >= TEX_SIZE || tz < 0 || tz >= TEX_SIZE) return;
-
-        image.setColorArgb(tx, tz, VISITED_COLOR);
+        image.setColorArgb(tx, tz, computeColumnColor(worldX, worldZ));
         textureDirty = true;
+    }
+
+    /** 비디버그 모드에서 "활성 색 + 그 자손"의 resolve된 집합. 재도색 시작 시 1회 계산해 캐시.
+     *  (컬럼마다 BFS하면 O(컬럼수 × 그래프크기)로 폭발하므로, 틱당 1회로 상각.) */
+    private static final LongOpenHashSet activeSet = new LongOpenHashSet();
+
+    private static void rebuildActiveSet() {
+        activeSet.clear();
+        if (activeColor == NO_ID) return;
+        LongArrayFIFOQueue q = new LongArrayFIFOQueue();
+        activeSet.add(activeColor);
+        q.enqueue(activeColor);
+        while (!q.isEmpty()) {
+            long cur = q.dequeueLong();
+            LongOpenHashSet kids = parentToChildren.get(cur);
+            if (kids == null) continue;
+            LongIterator it = kids.iterator();
+            while (it.hasNext()) {
+                long kid = resolve(it.nextLong());
+                if (activeSet.add(kid)) q.enqueue(kid);
+            }
+        }
+    }
+
+    private static int computeColumnColor(int x, int z) {
+        IntOpenHashSet ys = visitedColumns.get(packColumn(x, z));
+        if (ys == null || ys.isEmpty()) return 0;
+
+        if (DEBUG_COLORS) {
+            int repY = Integer.MIN_VALUE;
+            long repRoot = NO_ID;
+            it.unimi.dsi.fastutil.ints.IntIterator yi = ys.iterator();
+            while (yi.hasNext()) {
+                int y = yi.nextInt();
+                long id = cellColor.get(BlockPos.asLong(x, y, z));
+                if (id == NO_ID) continue;
+                long root = resolve(id);
+                if (y >= repY) { repY = y; repRoot = root; }
+            }
+            return colorForRoot(repRoot);
+        } else {
+            if (activeColor == NO_ID) return 0;
+            it.unimi.dsi.fastutil.ints.IntIterator yi = ys.iterator();
+            while (yi.hasNext()) {
+                int y = yi.nextInt();
+                long id = cellColor.get(BlockPos.asLong(x, y, z));
+                if (id == NO_ID) continue;
+                if (activeSet.contains(resolve(id))) return VISITED_COLOR;
+            }
+            return 0;
+        }
+    }
+
+    private static int colorForRoot(long root) {
+        if (root == NO_ID) return 0;
+        long h = splitMix64(root);
+        float hue = ((h >>> 40) & 0xFFFF) / 65535f;
+        return 0xCC000000 | hsvToRgb(hue, 0.75f, 1.0f);
+    }
+
+    private static long splitMix64(long x) {
+        x += 0x9E3779B97F4A7C15L;
+        x = (x ^ (x >>> 30)) * 0xBF58476D1CE4E5B9L;
+        x = (x ^ (x >>> 27)) * 0x94D049BB133111EBL;
+        return x ^ (x >>> 31);
+    }
+
+    private static int hsvToRgb(float hue, float sat, float val) {
+        float h6 = (hue - (float) Math.floor(hue)) * 6f;
+        int i = (int) h6;
+        float f = h6 - i;
+        float p = val * (1f - sat);
+        float q = val * (1f - sat * f);
+        float t = val * (1f - sat * (1f - f));
+        float r, g, b;
+        switch (i) {
+            case 0:  r = val; g = t;   b = p;   break;
+            case 1:  r = q;   g = val; b = p;   break;
+            case 2:  r = p;   g = val; b = t;   break;
+            case 3:  r = p;   g = q;   b = val; break;
+            case 4:  r = t;   g = p;   b = val; break;
+            default: r = val; g = p;   b = q;   break;
+        }
+        return (Math.round(r * 255f) << 16) | (Math.round(g * 255f) << 8) | Math.round(b * 255f);
     }
 
     private void renderMinimap(DrawContext context, float tickDelta) {
         if (!MCRiderConfig.INSTANCE.useMinimap) return;
-        if (visited.isEmpty() || !originSet) return;
+        if (visitedColumns.isEmpty() || !originSet) return;
         if (!MCRiderMain.isPlayingInGame()) return;
 
         ensureTexture();
-
-        // 탐색으로 픽셀이 바뀐 프레임에만 GPU 업로드
         if (textureDirty) {
             texture.upload();
             textureDirty = false;
         }
 
         final double sizeFactor = getSizeFactor(client);
-
         final int screenHeight = client.getWindow().getScaledHeight();
-
         final double scaledPadding = padding * sizeFactor;
         final double scaledRadius = radius * sizeFactor;
-
         final int centerX = (int) Math.round(scaledPadding + scaledRadius);
         final int centerY = (int) Math.round(screenHeight - scaledPadding - scaledRadius);
-
         final int viewX1 = (int) Math.round(centerX - scaledRadius);
         final int viewY1 = (int) Math.round(centerY - scaledRadius);
         final int viewX2 = (int) Math.round(centerX + scaledRadius);
         final int viewY2 = (int) Math.round(centerY + scaledRadius);
 
-        // 반투명 검은색 배경
         context.fill(viewX1, viewY1, viewX2, viewY2, 0x88000000);
 
         final float yawDeg = client.gameRenderer.getCamera().getYaw();
         final Vec3d p = MCRiderMain.getRidingPlayer().getCameraPosVec(tickDelta);
 
-        // 회전한 쿼드의 모서리가 잘려 보이지 않도록 √2 만큼 크게 그리고,
-        // 정사각 뷰포트는 scissor로 자른다.
         final double blockToScreen = scaledRadius / maxDist;
-        final int texRegion = 2 * (int) Math.ceil(maxDist * SQRT2);            // 텍스처에서 잘라올 영역(px = 블록)
-        final int drawSize = (int) Math.round(texRegion * blockToScreen);       // 화면에 그릴 크기
+        final int texRegion = 2 * (int) Math.ceil(maxDist * SQRT2);
+        final int drawSize = (int) Math.round(texRegion * blockToScreen);
         final float u0 = (float) (p.x - originX - texRegion / 2.0);
         final float v0 = (float) (p.z - originZ - texRegion / 2.0);
 
@@ -182,154 +269,422 @@ public class MCRiderMinimap implements ClientModInitializer {
 
         MatrixStack matrices = context.getMatrices();
         matrices.push();
-        // 1) 미니맵 중앙으로 이동
         matrices.translate(centerX, centerY, 0);
-        // 2) "플레이어 진행 방향 = 화면 위"가 되도록 회전.
-        //    북쪽 고정 텍스처(u=+X, v=+Z)를 기존 CPU 샘플링과 동일한 방향으로 매핑하면 180° - yaw.
         matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(180f - yawDeg));
-        // 3) 플레이어(=텍스처 영역 중심)를 회전 피벗에 정렬
         matrices.translate(-drawSize / 2f, -drawSize / 2f, 0);
-
         context.drawTexture(
-                RenderLayer::getGuiTextured,
-                MINIMAP_ID,
-                0, 0,
-                u0, v0,                 // 소수 UV → 블록 단위 이하의 부드러운 스크롤
-                drawSize, drawSize,
-                texRegion, texRegion,
-                TEX_SIZE, TEX_SIZE
-        );
-
+                RenderLayer::getGuiTextured, MINIMAP_ID,
+                0, 0, u0, v0, drawSize, drawSize, texRegion, texRegion, TEX_SIZE, TEX_SIZE);
         matrices.pop();
         context.disableScissor();
-
-        // 플레이어 위치 표시 (중앙 점)
-        context.fill(centerX - 2, centerY - 2, centerX + 2, centerY + 2, 0xFFFFFFFF);
     }
 
-    /** MCRiderRadar.getSizeFactor와 동일: GUI 배율/해상도 무관하게 동일한 물리 크기 유지 */
     private double getSizeFactor(MinecraftClient client) {
         final double physicalScale = client.getWindow().getHeight() / 1080.0;
         final double scaleFactor = client.getWindow().getScaleFactor();
         return physicalScale / scaleFactor;
     }
 
+    // ═══════════════════════════ 포인터 딕셔너리(resolve) ═══════════════════════════
+
+    static void ensureColor(long id) {
+        if (!colorParentPtr.containsKey(id)) {
+            colorParentPtr.put(id, id);
+            colorBirth.put(id, birthCounter++);
+        }
+    }
+
+    static long resolve(long id) {
+        long root = id;
+        long p;
+        while ((p = colorParentPtr.get(root)) != root) {
+            if (p == NO_ID) return id;
+            root = p;
+        }
+        long cur = id;
+        while (cur != root) {
+            long next = colorParentPtr.get(cur);
+            colorParentPtr.put(cur, root);
+            cur = next;
+        }
+        return root;
+    }
+
+    static long newColor(long parentId) {
+        long id = nextColorId++;
+        ensureColor(id);
+        if (parentId != NO_ID) {
+            long pr = resolve(parentId);
+            addEdge(pr, id);
+        }
+        return id;
+    }
+
+    static void addEdge(long parent, long child) {
+        if (parent == child) return;
+        parentToChildren.computeIfAbsent(parent, k -> new LongOpenHashSet()).add(child);
+        childToParents.computeIfAbsent(child, k -> new LongOpenHashSet()).add(parent);
+    }
+
+    // ═══════════════════════════ 병합 ═══════════════════════════
+
+    static void mergeColors(long aId, long bId) {
+        long a = resolve(aId);
+        long b = resolve(bId);
+        if (a == b) return;
+
+        LongOpenHashSet group = new LongOpenHashSet();
+        group.add(a);
+        group.add(b);
+        collectChainIfAncestor(a, b, group);
+        collectChainIfAncestor(b, a, group);
+
+        long survivor = NO_ID;
+        int bestBirth = Integer.MAX_VALUE;
+        LongIterator git = group.iterator();
+        while (git.hasNext()) {
+            long c = git.nextLong();
+            int birth = colorBirth.get(c);
+            if (birth < bestBirth) { bestBirth = birth; survivor = c; }
+        }
+
+        git = group.iterator();
+        while (git.hasNext()) {
+            long c = git.nextLong();
+            if (c != survivor) colorParentPtr.put(c, survivor);
+        }
+
+        if (group.contains(activeColor) && activeColor != survivor) {
+            activeColor = survivor;
+        }
+
+        rescanCycles(survivor);
+        needsFullRepaint = true;
+    }
+
+    /**
+     * from이 to의 조상이면, 그 사이 경로 위의 모든 색을 out에 추가한다.
+     *
+     * 최적화: 자식은 항상 부모보다 나중에 태어난다(birth 값이 큼)는 성질을 이용해 두 번 가지치기한다.
+     *  1) birth(from) >= birth(to)면 from은 애초에 to의 조상일 수 없으므로 즉시 반환(O(1)).
+     *     — 무관한 두 색(사촌)이 만날 때, 호출 두 번(a→b, b→a) 중 하나는 항상 이걸로 즉시 끝난다.
+     *  2) 정방향 도달 탐색 중, birth가 이미 to보다 큰 노드는 가지치기(그 아래 자손은 birth가
+     *     더 커질 뿐이므로 to에 닿을 수 없다) — 그래프 전체가 아니라 "to보다 먼저 태어난 부분"만 훑는다.
+     * 재귀 대신 반복문(큐) 기반이라 아주 긴 사슬에서도 스택 오버플로 위험이 없다.
+     */
+    static void collectChainIfAncestor(long from, long to, LongOpenHashSet out) {
+        from = resolve(from);
+        to = resolve(to);
+        if (from == to) return;
+
+        int fromBirth = colorBirth.get(from);
+        int toBirth = colorBirth.get(to);
+        if (fromBirth >= toBirth) return; // 가지치기1: from이 to보다 늦게(또는 같이) 태어남 → 조상 불가
+
+        // R1: from에서 자식 방향으로 도달 가능한 노드(단, to보다 늦게 태어난 가지는 잘라냄)
+        LongOpenHashSet reachable = new LongOpenHashSet();
+        LongArrayFIFOQueue q = new LongArrayFIFOQueue();
+        reachable.add(from);
+        q.enqueue(from);
+        while (!q.isEmpty()) {
+            long cur = q.dequeueLong();
+            LongOpenHashSet kids = parentToChildren.get(cur);
+            if (kids == null) continue;
+            LongIterator kit = kids.iterator();
+            while (kit.hasNext()) {
+                long kid = resolve(kit.nextLong());
+                if (kid == cur) continue;
+                if (colorBirth.get(kid) > toBirth) continue; // 가지치기2
+                if (reachable.add(kid)) q.enqueue(kid);
+            }
+        }
+        if (!reachable.contains(to)) return; // to에 도달 불가 → 조상 아님
+
+        // R2: to의 조상 집합(보통 단일 계보라 훨씬 작음) — 기존 함수 재사용.
+        LongOpenHashSet ancestorsOfTo = new LongOpenHashSet();
+        ancestorsOfTo.add(to);
+        collectAncestors(to, ancestorsOfTo);
+
+        // 교집합 = from→to 경로 위의 색들.
+        LongIterator it = reachable.iterator();
+        while (it.hasNext()) {
+            long n = it.nextLong();
+            if (ancestorsOfTo.contains(n)) out.add(n);
+        }
+    }
+
+    static void rescanCycles(long survivor) {
+        survivor = resolve(survivor);
+        LongOpenHashSet descendants = new LongOpenHashSet();
+        collectDescendants(survivor, descendants);
+        LongOpenHashSet ancestors = new LongOpenHashSet();
+        collectAncestors(survivor, ancestors);
+
+        boolean merged = false;
+        LongIterator it = descendants.iterator();
+        while (it.hasNext()) {
+            long d = it.nextLong();
+            if (d != survivor && ancestors.contains(d)) {
+                colorParentPtr.put(d, survivor);
+                if (activeColor == d) activeColor = survivor;
+                merged = true;
+            }
+        }
+        if (merged) rescanCycles(survivor);
+    }
+
+    static void collectDescendants(long start, LongOpenHashSet out) {
+        start = resolve(start);
+        LongArrayFIFOQueue q = new LongArrayFIFOQueue();
+        LongOpenHashSet seen = new LongOpenHashSet();
+        q.enqueue(start); seen.add(start);
+        while (!q.isEmpty()) {
+            long cur = q.dequeueLong();
+            LongOpenHashSet kids = parentToChildren.get(cur);
+            if (kids == null) continue;
+            LongIterator it = kids.iterator();
+            while (it.hasNext()) {
+                long kid = resolve(it.nextLong());
+                if (seen.add(kid)) { out.add(kid); q.enqueue(kid); }
+            }
+        }
+    }
+
+    static void collectAncestors(long start, LongOpenHashSet out) {
+        start = resolve(start);
+        LongArrayFIFOQueue q = new LongArrayFIFOQueue();
+        LongOpenHashSet seen = new LongOpenHashSet();
+        q.enqueue(start); seen.add(start);
+        while (!q.isEmpty()) {
+            long cur = q.dequeueLong();
+            LongOpenHashSet pars = childToParents.get(cur);
+            if (pars == null) continue;
+            LongIterator it = pars.iterator();
+            while (it.hasNext()) {
+                long par = resolve(it.nextLong());
+                if (seen.add(par)) { out.add(par); q.enqueue(par); }
+            }
+        }
+    }
+
     // ═════════════════════════════ 탐색 ═════════════════════════════
 
     static final TagKey<Block> KART_WALL = TagKey.of(RegistryKeys.BLOCK, Identifier.of("kartmobil", "stones"));
     static final Predicate<BlockState> isWall = state -> state.isIn(KART_WALL);
-
     static final TagKey<Block> KART_AIR = TagKey.of(RegistryKeys.BLOCK, Identifier.of("kartmobil", "ignoreblock"));
     static final Predicate<BlockState> isAir = state -> state.isIn(KART_AIR);
 
-    // 블록 접근 최적화: 마지막 청크 캐시 + Mutable 재사용
-    private static Chunk cachedChunk;
-    private static long cachedChunkKey = Long.MIN_VALUE;
+    private static final int CHUNK_CACHE_SLOTS = 4;
+    private static final long[] cacheKeys = new long[CHUNK_CACHE_SLOTS];
+    private static final Chunk[] cacheChunks = new Chunk[CHUNK_CACHE_SLOTS];
+    private static int cacheNextSlot = 0;
     private static final BlockPos.Mutable MUTABLE = new BlockPos.Mutable();
 
     private static void invalidateChunkCache() {
-        cachedChunk = null;
-        cachedChunkKey = Long.MIN_VALUE;
+        java.util.Arrays.fill(cacheKeys, Long.MIN_VALUE);
+        java.util.Arrays.fill(cacheChunks, null);
+        cacheNextSlot = 0;
     }
 
     private static BlockState stateAt(int x, int y, int z) {
         long key = ChunkPos.toLong(x >> 4, z >> 4);
-        if (key != cachedChunkKey || cachedChunk == null) {
-            cachedChunk = client.world.getChunk(x >> 4, z >> 4);
-            cachedChunkKey = key;
+        for (int i = 0; i < CHUNK_CACHE_SLOTS; i++) {
+            if (cacheKeys[i] == key && cacheChunks[i] != null) {
+                return cacheChunks[i].getBlockState(MUTABLE.set(x, y, z));
+            }
         }
-        return cachedChunk.getBlockState(MUTABLE.set(x, y, z));
+        Chunk chunk = client.world.getChunk(x >> 4, z >> 4);
+        cacheKeys[cacheNextSlot] = key;
+        cacheChunks[cacheNextSlot] = chunk;
+        cacheNextSlot = (cacheNextSlot + 1) % CHUNK_CACHE_SLOTS;
+        return chunk.getBlockState(MUTABLE.set(x, y, z));
     }
 
     static boolean isAirAt(int x, int y, int z) {
         if (client.world == null) return false;
         return isAir.test(stateAt(x, y, z));
     }
-
-    /**
-     * 해당 좌표의 청크가 클라이언트에 실제로 로딩되어 있는지 확인한다.
-     * 언로드된 청크의 getBlockState()는 예외 없이 공기를 반환하므로,
-     * 이 검사 없이 확장하면 미탐색 영역이 전부 뚫린 것으로 오인되어 블리딩이 발생한다.
-     */
+    static boolean isWallAt(int x, int y, int z) {
+        if (client.world == null) return false;
+        return isWall.test(stateAt(x, y, z));
+    }
+    static boolean isVoidAt(int x, int y, int z) {
+        if (client.world == null) return false;
+        return stateAt(x, y, z).isOf(Blocks.STRUCTURE_VOID);
+    }
+    static boolean isVoidFloorUnder(int x, int y, int z) {
+        return isVoidAt(x, y - 1, z);
+    }
     static boolean isChunkLoadedAt(int x, int z) {
         if (client.world == null) return false;
         return client.world.getChunkManager().isChunkLoaded(x >> 4, z >> 4);
     }
 
-    static int tickCounter = 0;
-    static final int REDRAW_INTERVAL_TICKS = 20; // 1초 (20 TPS 기준)
+    /** 서 있을 수 있는 칸: 머리(y+1) 공간 + void 바닥 아님 + 발밑 지지(y,y-1 둘 다 공기가 아니어야). */
+    /** 서 있을 수 있는 칸: 머리(y+1) 공간 + void 바닥 아님 + 발밑 지지.
+     *  headAlreadyChecked=true면 머리 공간 검사를 건너뛴다(호출자가 이미 같은 좌표를 확인한 경우 —
+     *  평지/계단 이동은 resolveTargetY가 이미 같은 좌표의 머리 공간을 검사했으므로 중복 조회를 피함.
+     *  낙하는 최종 착지 높이의 머리 공간을 resolveTargetY가 검사하지 않으므로 반드시 false로 호출). */
+    static boolean isStandable(int x, int y, int z, boolean headAlreadyChecked) {
+        if (!headAlreadyChecked && !isAirAt(x, y + 1, z)) return false;
+        if (isVoidFloorUnder(x, y, z)) return false;
+        if (isAirAt(x, y, z) && isAirAt(x, y - 1, z)) return false;
+        return true;
+    }
 
     void onTickStart() {
         if (!MCRiderConfig.INSTANCE.useMinimap) return;
         if (client.player == null || client.world == null) return;
 
-        tickCounter++;
-        if (tickCounter < REDRAW_INTERVAL_TICKS) return;
-        tickCounter = 0;
-
         final int playerMargin = 5;
-
         BlockPos start = client.player.getBlockPos();
         lastPlayerPos = start;
 
-        // 1초에 한 번, visited/텍스처를 통째로 비우고 현재 위치 기준으로
-        // 처음부터 다시 플러드필한다. 이전 탐색 결과를 재사용하지 않으므로
-        // "이탈 구간이 누적되는" 문제는 애초에 발생할 수 없다.
-        clearAllMap();
-        rebuildTexture(start);
+        floodFillWithVertical(start, (int) ((maxDist + playerMargin * 2) * 2), STAGING_BUDGET_PER_TICK);
 
-        // updatePixel 예산을 사실상 무제한으로 줘서 이번 호출 안에 끝까지 그린다.
-        floodFillWithVertical(start, (int) ((maxDist + playerMargin * 2) * 2), Integer.MAX_VALUE);
+        if (!originSet) {
+            rebuildTexture(start);
+        } else {
+            int cx = start.getX() - (originX + TEX_SIZE / 2);
+            int cz = start.getZ() - (originZ + TEX_SIZE / 2);
+            if (Math.abs(cx) > TEX_SIZE / 2 - REANCHOR_MARGIN
+                    || Math.abs(cz) > TEX_SIZE / 2 - REANCHOR_MARGIN) {
+                rebuildTexture(start);
+                needsFullRepaint = false;
+            }
+        }
+
+        updateActiveColor(start);
+
+        // 비디버그 모드: 이번 틱의 "활성+자손" 집합을 미리 계산(컬럼마다 BFS 방지).
+        if (!DEBUG_COLORS) rebuildActiveSet();
+
+        if (needsFullRepaint && originSet) {
+            repaintAll();
+            needsFullRepaint = false;
+        }
     }
 
+    static void updateActiveColor(BlockPos start) {
+        long cell = resolvePlayerCell(start);
+        if (cell == NO_ID) return;
+        long id = cellColor.get(cell);
+        if (id == NO_ID) return;
+        long root = resolve(id);
+        if (root != activeColor) {
+            activeColor = root;
+            if (!DEBUG_COLORS) needsFullRepaint = true;
+        }
+    }
 
-    static void floodFillWithVertical(BlockPos start, int maxRange, int updatePixel) {
+    static long resolvePlayerCell(BlockPos start) {
+        IntOpenHashSet ys = visitedColumns.get(packColumn(start.getX(), start.getZ()));
+        if (ys == null || ys.isEmpty()) return NO_ID;
+        int best = Integer.MIN_VALUE;
+        int bestDist = Integer.MAX_VALUE;
+        it.unimi.dsi.fastutil.ints.IntIterator yi = ys.iterator();
+        while (yi.hasNext()) {
+            int y = yi.nextInt();
+            int dist = Math.abs(y - start.getY());
+            if (dist < bestDist) { bestDist = dist; best = y; }
+        }
+        if (bestDist > 4) return NO_ID;
+        return BlockPos.asLong(start.getX(), best, start.getZ());
+    }
+
+    static void repaintAll() {
+        if (image == null || !originSet) return;
+        image.fillRect(0, 0, TEX_SIZE, TEX_SIZE, 0);
+        LongIterator it = visitedColumns.keySet().longIterator();
+        while (it.hasNext()) {
+            long key = it.nextLong();
+            plotColumn(unpackColumnX(key), unpackColumnZ(key));
+        }
+        textureDirty = true;
+    }
+
+    /** 색이 달라도, 플레이어와 이 거리(블록) 이내면 무조건 최우선 큐로 취급한다.
+     *  "곧 밟을 다음 구간"이 활성 색과 아직 안 합쳐졌다는 이유로 계속 후순위로 밀려서,
+     *  플레이어가 미탐색 칸에 직접 들어가야만 갑자기 뚫리는 현상을 막기 위한 예외. */
+    static final int VERY_CLOSE_RADIUS = 16;
+
+    /**
+     * 프론티어 셀을 분류한다. 최우선 큐(frontierQueue) 아니면 동결(exile) 둘 중 하나뿐이다.
+     * (중간에 "2차 큐"를 뒀던 이전 버전은, 한 번 그 큐에 들어간 셀이 플레이어가 아무리
+     * 가까워져도 다시 검사되지 않는 버그가 있었다 — frontierQueue가 안 비니까 사실상 영원히
+     * 대기. 동결은 다르다: 매 틱 도는 exile 복귀 루프가 청크 단위로 거리를 다시 확인하므로,
+     * 플레이어가 다가오면 다음 틱에 자동으로 재평가되어 여기(enqueueFrontier)로 다시 들어온다.
+     * 즉 "재평가가 매 틱 일어나는 것"은 오직 exile뿐이라, 우선순위 밖의 모든 것은 exile로
+     * 보내는 게 맞다.)
+     */
+    static void enqueueFrontier(long cell, int cx, int cz, int sx, int sz, int maxRange) {
+        long color = cellColor.get(cell);
+        boolean sameColor = (color != NO_ID && resolve(color) == resolve(activeColor));
+        boolean veryClose = taxiDistance2D(cx, cz, sx, sz) <= VERY_CLOSE_RADIUS;
+
+        if (sameColor || veryClose) {
+            frontierQueue.enqueue(cell);
+        } else {
+            parkInExiledFrontier(cell, cx >> 4, cz >> 4);
+        }
+    }
+
+    static boolean floodFillWithVertical(BlockPos start, int maxRange, int updatePixel) {
         isRequireKeepSearching = false;
-
         var world = client.world;
-        if (world == null) return;
+        if (world == null) return false;
 
-        invalidateChunkCache();
+        // 청크 캐시는 틱 사이에 유지한다(더 이상 매 틱 초기화하지 않음). 플레이어가 크게 안 움직이면
+        // 직전 틱에 캐싱된 청크가 여전히 유효해서 재조회를 줄인다. 안전성: 이 코드가 stateAt()을
+        // 부르는 모든 좌표는 사전에 isChunkLoadedAt()으로 로딩 확인을 거치므로, 언로드된 청크의
+        // 낡은 데이터를 읽을 위험은 없다(단, 극히 드물게 청크가 언로드 후 재로드되며 블록이 그
+        // 사이에 바뀐 경우, 캐시가 그 변경 전 스냅샷을 잠깐 들고 있을 수는 있다 — 트랙이 대체로
+        // 정적이라 실질적 영향은 미미하다고 보고 성능을 우선함).
 
-        // 시작 청크가 아직 로딩 전이면 이번 틱은 건너뛰고 다음 틱에 재시도
         if (!isChunkLoadedAt(start.getX(), start.getZ())) {
             isRequireKeepSearching = true;
-            return;
+            return false;
         }
 
         int sx = start.getX(), sy = start.getY(), sz = start.getZ();
         if (isAirAt(sx, sy, sz)) {
-            while (isAirAt(sx, sy - 1, sz) && sy > world.getBottomY()) {
-                sy--;
-            }
+            while (isAirAt(sx, sy - 1, sz) && sy > world.getBottomY()) sy--;
         }
-        if (sy <= world.getBottomY()) {
-            return;
+        if (sy <= world.getBottomY()) return true;
+
+        // 규칙1: 발밑 셀이 미방문이면 새 루트 색 시드.
+        long startCell = BlockPos.asLong(sx, sy, sz);
+        if (cellColor.get(startCell) == NO_ID && isStandable(sx, sy, sz, false)) {
+            long c = newColor(NO_ID);
+            paintCell(sx, sy, sz, c);
+            frontierQueue.enqueue(startCell);
         }
 
-        if (frontierQueue.isEmpty()) {
-            appendToQueueAndVisited(sx, sy, sz);
-        }
         final int[][] dirs = { {1,0}, {-1,0}, {0,1}, {0,-1} };
 
-        // 보류된 프론티어 복귀: 범위 안 + 대상 청크가 로딩 완료된 경우에만
-        ObjectIterator<Long2LongMap.Entry> exiledIt = exiledFrontierChunkHash.long2LongEntrySet().iterator();
+        // 보류 프론티어 복귀(청크당 목록 전체).
+        ObjectIterator<Long2ObjectMap.Entry<LongArrayList>> exiledIt = exiledFrontierChunkHash.long2ObjectEntrySet().iterator();
         while (exiledIt.hasNext()) {
-            Long2LongMap.Entry e = exiledIt.next();
+            Long2ObjectMap.Entry<LongArrayList> e = exiledIt.next();
             long chunkKey = e.getLongKey();
             int chunkX = ChunkPos.getPackedX(chunkKey);
             int chunkZ = ChunkPos.getPackedZ(chunkKey);
-
             if (taxiDistanceFromChunkToPos(chunkX, chunkZ, sx, sz) < maxRange
-                    && client.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
-                frontierQueue.enqueue(e.getLongValue());
+                    && world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
+                LongArrayList pending = e.getValue();
+                for (int i = 0, n = pending.size(); i < n; i++) {
+                    long cell = pending.getLong(i);
+                    enqueueFrontier(cell, BlockPos.unpackLongX(cell), BlockPos.unpackLongZ(cell), sx, sz, maxRange);
+                }
                 exiledIt.remove();
             }
         }
 
+        final long deadline = System.nanoTime() + STAGING_TIME_BUDGET_NANOS;
+
         while (!frontierQueue.isEmpty()) {
             updatePixel--;
-            if (updatePixel <= 0) {
+            if (updatePixel <= 0 || System.nanoTime() >= deadline) {
                 isRequireKeepSearching = true;
                 break;
             }
@@ -343,12 +698,13 @@ public class MCRiderMinimap implements ClientModInitializer {
                 parkInExiledFrontier(curPacked, cx >> 4, cz >> 4);
                 continue;
             }
-
-            // 큐에 있는 동안 청크가 언로드된 경우: 판정하지 말고 보류
             if (!isChunkLoadedAt(cx, cz)) {
                 parkInExiledFrontier(curPacked, cx >> 4, cz >> 4);
                 continue;
             }
+
+            long curColor = cellColor.get(curPacked);
+            if (curColor == NO_ID) continue;
 
             boolean hasBlockAt2Meter = !isAirAt(cx, cy + 2, cz);
 
@@ -356,78 +712,94 @@ public class MCRiderMinimap implements ClientModInitializer {
                 int nx = cx + d[0];
                 int nz = cz + d[1];
 
-                // 이웃 칸이 미로딩 청크에 속하면 확장하지 않고,
-                // 현재 경계 셀(cur)을 그 청크 키로 보류해 두었다가 로딩되면 재개한다.
                 if (!isChunkLoadedAt(nx, nz)) {
                     parkInExiledFrontier(curPacked, nx >> 4, nz >> 4);
                     continue;
                 }
 
-                if (isWall.test(stateAt(nx, cy, nz))) continue;
+                if (isWallAt(nx, cy, nz)) {
+                    // 1칸 벽이라도 땅에서 절대 올라설 수 없다(단방향 예외 없음).
+                    // 벽 꼭대기는 오직 카트가 날아서 우연히 착지할 때(고아 시드, 규칙1)만
+                    // 그래프에 들어오고, 거기서 서킷 쪽으로 내려가는 것만 별도로 단방향 성립한다.
+                    continue;
+                }
 
-                if (isPosVisited(nx, cy, nz)) continue;
-                if (isPosVisited(nx, cy + 1, nz)) continue;
-                if (!isAirAt(nx, cy + 1, nz)) continue;
+                int ty = resolveTargetY(nx, cy, nz, hasBlockAt2Meter, world.getBottomY());
+                if (ty == Integer.MIN_VALUE) continue;
 
-                if (!isAirAt(nx, cy, nz)) {
-                    if (isAirAt(nx, cy + 2, nz) && !hasBlockAt2Meter) {
-                        appendToQueueAndVisited(nx, cy + 1, nz);
-                    }
-                }
-                else if (isAirAt(nx, cy - 1, nz)) {
-                    int fy = cy;
-                    while (isAirAt(nx, fy - 1, nz) && fy > world.getBottomY()) {
-                        fy--;
-                    }
-                    if (!isPosVisited(nx, fy, nz)) {
-                        appendToQueueAndVisited(nx, fy, nz);
-                    }
-                }
-                else {
-                    appendToQueueAndVisited(nx, cy, nz);
-                }
+                boolean twoWay = canMoveBetween(nx, ty, nz, cx, cy, cz, world.getBottomY());
+                handleReach(cx, cy, cz, curColor, nx, ty, nz, twoWay, sx, sz, maxRange);
             }
+        }
+
+        return true;
+    }
+
+    static int resolveTargetY(int nx, int cy, int nz, boolean fromHasBlockAt2Meter, int bottomY) {
+        if (!isAirAt(nx, cy + 1, nz)) return Integer.MIN_VALUE;
+        if (!isAirAt(nx, cy, nz)) {
+            // 기저가 벽 태그면 1칸이라도 절대 올라설 수 없다(단방향 예외 없음).
+            if (isWallAt(nx, cy, nz)) return Integer.MIN_VALUE;
+            if (isAirAt(nx, cy + 2, nz) && !fromHasBlockAt2Meter) return cy + 1;
+            return Integer.MIN_VALUE;
+        } else if (isAirAt(nx, cy - 1, nz)) {
+            int fy = cy;
+            while (isAirAt(nx, fy - 1, nz) && fy > bottomY) fy--;
+            return fy;
+        } else {
+            return cy;
         }
     }
 
-    static void appendToQueueAndVisited(int x, int y, int z) {
-        if (isPosVisited(x, y, z)) return;
-        if (!isAirAt(x, y + 1, z)) return;
-
-        addToVisited(x, y, z);
-        frontierQueue.enqueue(BlockPos.asLong(x, y, z));
+    /** 목적지에서 출발지로 되돌아가는 이동이 규칙상 성립하면 양방향. */
+    static boolean canMoveBetween(int tx, int ty, int tz, int fx, int fy, int fz, int bottomY) {
+        if (isWallAt(fx, ty, fz)) return false; // 되돌아갈 칸 기저가 벽이면 역방향 불가
+        boolean tHasBlockAt2 = !isAirAt(tx, ty + 2, tz);
+        int back = resolveTargetY(fx, ty, fz, tHasBlockAt2, bottomY);
+        return back == fy;
     }
 
-    // ── 방문 기록 (fastutil, long 패킹) ─────────────────────────────────
+    static void handleReach(int cx, int cy, int cz, long curColor, int tx, int ty, int tz, boolean twoWay,
+                            int sx, int sz, int maxRange) {
+        long targetCell = BlockPos.asLong(tx, ty, tz);
+        long existing = cellColor.get(targetCell);
+        if (existing == NO_ID) {
+            // 평지(ty==cy)·계단(ty==cy+1)은 resolveTargetY가 이미 같은 좌표의 머리 공간을
+            // 확인했으므로 재조회하지 않는다. 낙하(ty<cy)는 최종 착지 높이를 아직 안 봤으므로 재확인.
+            boolean headAlreadyChecked = (ty >= cy);
+            if (!isStandable(tx, ty, tz, headAlreadyChecked)) return;
+            long color = twoWay ? curColor : newColor(curColor);
+            paintCell(tx, ty, tz, color);
+            enqueueFrontier(targetCell, tx, tz, sx, sz, maxRange);
+        } else {
+            if (twoWay) mergeColors(curColor, existing);
+            // 단방향이면 병합하지 않음.
+        }
+    }
+
+    static void paintCell(int x, int y, int z, long color) {
+        long cell = BlockPos.asLong(x, y, z);
+        cellColor.put(cell, color);
+        long colKey = packColumn(x, z);
+        IntOpenHashSet ys = visitedColumns.get(colKey);
+        if (ys == null) {
+            ys = new IntOpenHashSet(4);
+            visitedColumns.put(colKey, ys);
+        }
+        ys.add(y);
+        // DEBUG: 즉시 그 컬럼만 도색(가벼움, resolve만).
+        // 비디버그: activeSet 기반 판정이라, 이번 틱 끝에 repaintAll로 일괄 반영.
+        if (DEBUG_COLORS) plotColumn(x, z);
+        else needsFullRepaint = true;
+    }
+
+    // ── 좌표 유틸 ──────────────────────────────────────────────────────
 
     static long packColumn(int x, int z) {
         return ((long) x << 32) | (z & 0xFFFFFFFFL);
     }
-    static int unpackColumnX(long key) {
-        return (int) (key >> 32);
-    }
-    static int unpackColumnZ(long key) {
-        return (int) key;
-    }
-
-    static void addToVisited(int x, int y, int z) {
-        long key = packColumn(x, z);
-        IntOpenHashSet ys = visited.get(key);
-        if (ys == null) {
-            ys = new IntOpenHashSet(4);
-            visited.put(key, ys);
-            // 새 컬럼 → 미니맵 텍스처에 증분 기록
-            plotColumn(x, z);
-        }
-        ys.add(y);
-    }
-    static boolean isPosVisited(int x, int y, int z) {
-        IntOpenHashSet ys = visited.get(packColumn(x, z));
-        return ys != null && ys.contains(y);
-    }
-    static boolean isColumnVisited(int x, int z) {
-        return visited.containsKey(packColumn(x, z));
-    }
+    static int unpackColumnX(long key) { return (int) (key >> 32); }
+    static int unpackColumnZ(long key) { return (int) key; }
 
     static int taxiDistance2D(int ax, int az, int bx, int bz) {
         return Math.abs(ax - bx) + Math.abs(az - bz);
@@ -437,10 +809,19 @@ public class MCRiderMinimap implements ClientModInitializer {
     }
 
     static void clearAllMap() {
-        visited.clear();
+        cellColor.clear();
+        visitedColumns.clear();
         frontierQueue.clear();
         exiledFrontierChunkHash.clear();
-
+        colorParentPtr.clear();
+        childToParents.clear();
+        parentToChildren.clear();
+        colorBirth.clear();
+        nextColorId = 0;
+        birthCounter = 0;
+        activeColor = NO_ID;
+        needsFullRepaint = false;
+        invalidateChunkCache();
         if (image != null) {
             image.fillRect(0, 0, TEX_SIZE, TEX_SIZE, 0);
             textureDirty = true;
@@ -449,6 +830,12 @@ public class MCRiderMinimap implements ClientModInitializer {
     }
 
     static void parkInExiledFrontier(long packedPos, int chunkX, int chunkZ) {
-        exiledFrontierChunkHash.put(ChunkPos.toLong(chunkX, chunkZ), packedPos);
+        long key = ChunkPos.toLong(chunkX, chunkZ);
+        LongArrayList pending = exiledFrontierChunkHash.get(key);
+        if (pending == null) {
+            pending = new LongArrayList(4);
+            exiledFrontierChunkHash.put(key, pending);
+        }
+        pending.add(packedPos);
     }
 }
