@@ -57,7 +57,7 @@ public class MCRiderMinimap implements ClientModInitializer {
     private static final long NO_ID = Long.MIN_VALUE;
 
     // ── 탐색 상태 ────────────────────────────────────────────────────────
-    static boolean isRequireKeepSearching = false;
+    static boolean needsMoreSearching = false;
     static BlockPos lastPlayerPos;
 
     /** [개선] 활성 프론티어를 청크 단위로 묶어서 보관한다: chunkKey(ChunkPos.toLong) → 그
@@ -300,30 +300,35 @@ public class MCRiderMinimap implements ClientModInitializer {
         }
     }
 
+    /** (x,y,z)의 cellColor를 조회해 resolve까지 마친 root를 돌려준다. 매핑이 없으면 NO_ID.
+     *  computeColumnColor의 두 분기가 반복하던 "get + resolve" 두 줄을 뽑아낸 것뿐이라 동작·
+     *  호출 비용은 이전과 동일하다(콜백/람다 없이 평범한 메서드 호출 하나만 추가됨). */
+    private static long resolvedRootAt(int x, int y, int z) {
+        long id = cellColor.get(BlockPos.asLong(x, y, z));
+        return id == NO_ID ? NO_ID : resolve(id);
+    }
+
     private static int computeColumnColor(int x, int z) {
         IntOpenHashSet ys = visitedColumns.get(packColumn(x, z));
         if (ys == null || ys.isEmpty()) return 0;
 
+        it.unimi.dsi.fastutil.ints.IntIterator yi = ys.iterator();
         if (DEBUG_COLORS) {
             int repY = Integer.MIN_VALUE;
             long repRoot = NO_ID;
-            it.unimi.dsi.fastutil.ints.IntIterator yi = ys.iterator();
             while (yi.hasNext()) {
                 int y = yi.nextInt();
-                long id = cellColor.get(BlockPos.asLong(x, y, z));
-                if (id == NO_ID) continue;
-                long root = resolve(id);
+                long root = resolvedRootAt(x, y, z);
+                if (root == NO_ID) continue;
                 if (y >= repY) { repY = y; repRoot = root; }
             }
             return colorForRoot(repRoot);
         } else {
             if (activeColor == NO_ID) return 0;
-            it.unimi.dsi.fastutil.ints.IntIterator yi = ys.iterator();
             while (yi.hasNext()) {
                 int y = yi.nextInt();
-                long id = cellColor.get(BlockPos.asLong(x, y, z));
-                if (id == NO_ID) continue;
-                if (activeSet.contains(resolve(id))) return VISITED_COLOR;
+                long root = resolvedRootAt(x, y, z);
+                if (root != NO_ID && activeSet.contains(root)) return VISITED_COLOR;
             }
             return 0;
         }
@@ -459,12 +464,39 @@ public class MCRiderMinimap implements ClientModInitializer {
 
     // ═══════════════════════════ 병합 ═══════════════════════════
 
+    // [개선] 병합/사이클 재검사가 도는 동안 쓰이는 그래프 BFS 스크래치. 예전엔 mergeColors/
+    // collectChainIfAncestor/collectReachable/rescanCycles가 호출될 때마다 각자 새
+    // LongOpenHashSet·LongArrayFIFOQueue를 만들었다(병합이 잦으면 GC 압박). 아래 필드들은
+    // 역할별로 하나씩만 두어 재사용한다 — 같은 필드를 서로 다른 역할에 겹쳐 쓰지 않도록
+    // 주의했다(예: collectChainIfAncestor의 reachable과 그 안에서 호출되는 collectReachable의
+    // seen은 서로 다른 필드). 각 함수는 호출 시작 시 자기 몫의 필드를 clear()하고 쓰므로,
+    // "A가 자기 스크래치 사용을 완전히 끝낸 뒤에만 B가 같은 스크래치를 재사용한다"는 순서만
+    // 지키면 값이 섞일 일이 없다 — 아래 함수들이 정확히 그 순서(순차 호출, 후행 재귀는
+    // 선행 프레임이 자기 데이터를 다 읽은 뒤에만 재귀)로 되어 있음을 각 함수에 주석으로 남겼다.
+    private static final LongOpenHashSet scratchGroup = new LongOpenHashSet();
+    private static final LongOpenHashSet scratchReachable = new LongOpenHashSet();
+    private static final LongArrayFIFOQueue scratchReachQueue = new LongArrayFIFOQueue();
+    private static final LongOpenHashSet scratchAncestorsOfTo = new LongOpenHashSet();
+    private static final LongOpenHashSet scratchSeen = new LongOpenHashSet();
+    private static final LongArrayFIFOQueue scratchSeenQueue = new LongArrayFIFOQueue();
+    private static final LongOpenHashSet scratchDescendants = new LongOpenHashSet();
+    private static final LongOpenHashSet scratchAncestors = new LongOpenHashSet();
+    /** handleReach의 단방향-재조우 분기(사이클 방지용 조상 집합 계산) 전용 스크래치.
+     *  예전엔 이 분기에서만 매번 new LongOpenHashSet()을 새로 할당했다(다른 모든 병합/
+     *  재조회 경로는 이미 스크래치를 재사용하는데 여기만 예외였음). handleReach는 재귀하지
+     *  않고 한 틱의 프론티어 루프 안에서 순차 호출되므로 재사용해도 값이 섞이지 않는다. */
+    private static final LongOpenHashSet scratchParentAncestors = new LongOpenHashSet();
+
     static void mergeColors(long aId, long bId) {
         long a = resolve(aId);
         long b = resolve(bId);
         if (a == b) return;
 
-        LongOpenHashSet group = new LongOpenHashSet();
+        // scratchGroup 재사용: collectChainIfAncestor 두 호출(아래)이 자기 몫의 스크래치
+        // (scratchReachable/scratchAncestorsOfTo, 서로 다른 필드)만 건드리고 group에는 add()로만
+        // 쓰기 때문에, 이 병합 호출이 끝날 때까지 group 내용이 다른 데서 지워지거나 섞이지 않는다.
+        LongOpenHashSet group = scratchGroup;
+        group.clear();
         group.add(a);
         group.add(b);
         collectChainIfAncestor(a, b, group);
@@ -487,13 +519,8 @@ public class MCRiderMinimap implements ClientModInitializer {
                 // 모드의 색상이 달라질 수 있고, 화이트 모드에서도 활성 여부가 바뀔 수 있다)
                 // 한 뒤, 그 컬럼들을 생존 루트(survivor) 쪽 버킷으로 이전한다. 이 비용은
                 // "이 병합에 실제로 관련된 컬럼 수"에만 비례하므로, visitedColumns 전체를
-                // 훑는 것보다 훨씬 저렴하다.
-                markColumnsDirtyForRoot(c);
-                LongOpenHashSet cols = columnsByRoot.remove(c);
-                if (cols != null) {
-                    columnsByRoot.computeIfAbsent(survivor, k -> new LongOpenHashSet()).addAll(cols);
-                }
-                colorParentPtr.put(c, survivor);
+                // 훑는 것보다 훨씬 저렴하다. (rescanCycles와 동일한 로직 → absorbInto로 공유)
+                absorbInto(c, survivor);
             }
         }
         bumpColorGraphVersion();
@@ -525,8 +552,13 @@ public class MCRiderMinimap implements ClientModInitializer {
         if (fromBirth >= toBirth) return; // 가지치기1: from이 to보다 늦게(또는 같이) 태어남 → 조상 불가
 
         // R1: from에서 자식 방향으로 도달 가능한 노드(단, to보다 늦게 태어난 가지는 잘라냄)
-        LongOpenHashSet reachable = new LongOpenHashSet();
-        LongArrayFIFOQueue q = new LongArrayFIFOQueue();
+        // scratchReachable/scratchReachQueue 재사용: 아래에서 호출하는 collectAncestors(→
+        // collectReachable)는 별개 필드(scratchSeen/scratchSeenQueue)를 쓰므로 reachable의
+        // 내용이 그 호출 중에 훼손되지 않는다.
+        LongOpenHashSet reachable = scratchReachable;
+        reachable.clear();
+        LongArrayFIFOQueue q = scratchReachQueue;
+        q.clear();
         reachable.add(from);
         q.enqueue(from);
         while (!q.isEmpty()) {
@@ -544,7 +576,8 @@ public class MCRiderMinimap implements ClientModInitializer {
         if (!reachable.contains(to)) return; // to에 도달 불가 → 조상 아님
 
         // R2: to의 조상 집합(보통 단일 계보라 훨씬 작음) — 기존 함수 재사용.
-        LongOpenHashSet ancestorsOfTo = new LongOpenHashSet();
+        LongOpenHashSet ancestorsOfTo = scratchAncestorsOfTo;
+        ancestorsOfTo.clear();
         ancestorsOfTo.add(to);
         collectAncestors(to, ancestorsOfTo);
 
@@ -556,11 +589,53 @@ public class MCRiderMinimap implements ClientModInitializer {
         }
     }
 
+    /** loser에 속한 컬럼들을 survivor 쪽으로 이전하고(dirty 표시 포함), loser가 그래프상
+     *  자신의 키로 갖고 있던 부모/자식 간선을 survivor로 옮긴 뒤, loser의 부모 포인터를
+     *  survivor로 재지정한다. mergeColors/rescanCycles가 각자 인라인으로 반복하던 동일
+     *  로직을 하나로 합친 것 — 동작은 완전히 동일하다. activeColor 갱신은 두 호출부의 조건이
+     *  서로 달라(mergeColors는 group 전체 기준, rescanCycles는 개별 d 기준) 호출부에 남겨둔다. */
+    static void absorbInto(long loser, long survivor) {
+        markColumnsDirtyForRoot(loser);
+        LongOpenHashSet cols = columnsByRoot.remove(loser);
+        if (cols != null) {
+            columnsByRoot.computeIfAbsent(survivor, k -> new LongOpenHashSet()).addAll(cols);
+        }
+        // [버그 수정] parentToChildren/childToParents는 loser 자신의 id를 키로 갖고
+        // 있을 수 있다. 순회(collectReachable 등)는 항상 "현재 resolve된 root"를 키로만
+        // adj.get(cur)를 조회하므로, colorParentPtr만 survivor로 돌려놓고 이 맵들을 그대로
+        // 두면 loser가 부모/자식으로 직접 기록해둔 간선은 이후 어떤 순회에서도 다시
+        // 발견되지 못하고 조용히 유실된다(다른 노드가 loser를 가리키는 값 쪽은 읽을 때
+        // resolve()로 정규화되므로 문제없지만, loser 자신이 키인 쪽은 그 정규화 대상이 아님).
+        // 그래서 loser 키의 버킷을 survivor 키 쪽으로 합쳐(migrate) 옮긴다.
+        migrateAdjacency(parentToChildren, loser, survivor);
+        migrateAdjacency(childToParents, loser, survivor);
+        colorParentPtr.put(loser, survivor);
+    }
+
+    /** adj[loser]의 이웃 전부를 adj[survivor]로 옮기고(합집합) loser 항목은 제거한다.
+     *  self-loop(옮긴 뒤 이웃이 survivor 자신이 되는 경우)는 걸러낸다. absorbInto가
+     *  parentToChildren/childToParents 양쪽에 동일하게 적용하기 위한 공용 헬퍼. */
+    private static void migrateAdjacency(Long2ObjectOpenHashMap<LongOpenHashSet> adj, long loser, long survivor) {
+        LongOpenHashSet moved = adj.remove(loser);
+        if (moved == null || moved.isEmpty()) return;
+        LongOpenHashSet target = adj.computeIfAbsent(survivor, k -> new LongOpenHashSet());
+        LongIterator it = moved.iterator();
+        while (it.hasNext()) {
+            long v = it.nextLong();
+            if (v != survivor) target.add(v);
+        }
+    }
+
     static void rescanCycles(long survivor) {
         survivor = resolve(survivor);
-        LongOpenHashSet descendants = new LongOpenHashSet();
+        // scratchDescendants/scratchAncestors 재사용: 아래 두 collectReachable 호출은 순차적으로
+        // 끝나고(첫 호출이 완전히 반환된 뒤에만 둘째 호출 시작), 재귀 호출은 이 프레임이
+        // descendants/ancestors를 다 읽은(while 루프 종료) 뒤에만 일어나므로 값이 섞이지 않는다.
+        LongOpenHashSet descendants = scratchDescendants;
+        descendants.clear();
         collectDescendants(survivor, descendants);
-        LongOpenHashSet ancestors = new LongOpenHashSet();
+        LongOpenHashSet ancestors = scratchAncestors;
+        ancestors.clear();
         collectAncestors(survivor, ancestors);
 
         boolean merged = false;
@@ -568,12 +643,7 @@ public class MCRiderMinimap implements ClientModInitializer {
         while (it.hasNext()) {
             long d = it.nextLong();
             if (d != survivor && ancestors.contains(d)) {
-                markColumnsDirtyForRoot(d);
-                LongOpenHashSet cols = columnsByRoot.remove(d);
-                if (cols != null) {
-                    columnsByRoot.computeIfAbsent(survivor, k -> new LongOpenHashSet()).addAll(cols);
-                }
-                colorParentPtr.put(d, survivor);
+                absorbInto(d, survivor);
                 if (activeColor == d) activeColor = survivor;
                 merged = true;
             }
@@ -589,8 +659,12 @@ public class MCRiderMinimap implements ClientModInitializer {
      *  collectAncestors가 인접 맵만 달리해 공유하던 동일 로직을 하나로 합친 것이다. */
     static void collectReachable(long start, Long2ObjectOpenHashMap<LongOpenHashSet> adj, LongOpenHashSet out) {
         start = resolve(start);
-        LongArrayFIFOQueue q = new LongArrayFIFOQueue();
-        LongOpenHashSet seen = new LongOpenHashSet();
+        // scratchSeen/scratchSeenQueue 재사용: 이 함수는 재귀하지 않고, 호출자(rescanCycles 등)가
+        // 앞선 collectReachable 호출을 완전히 끝낸 뒤에만 다음 호출을 하므로 안전하다.
+        LongArrayFIFOQueue q = scratchSeenQueue;
+        q.clear();
+        LongOpenHashSet seen = scratchSeen;
+        seen.clear();
         q.enqueue(start); seen.add(start);
         while (!q.isEmpty()) {
             long cur = q.dequeueLong();
@@ -622,10 +696,14 @@ public class MCRiderMinimap implements ClientModInitializer {
     /** 4방향 이웃 오프셋. 내용이 불변이므로 매 틱 재할당하지 않고 상수로 공유한다. */
     private static final int[][] DIRS = { {1, 0}, {-1, 0}, {0, 1}, {0, -1} };
 
+    // [개선] 4슬롯을 "0번 = 가장 최근 사용"이 되도록 move-to-front 방식으로 유지한다(LRU화).
+    // 예전엔 히트해도 슬롯 위치를 그대로 두고, miss일 때만 라운드로빈(cacheNextSlot)으로
+    // 다음 슬롯을 갈아치웠다 — 즉 순수 FIFO라 자주 재사용되는 청크도 로컬리티와 무관하게
+    // 밀려날 수 있었다. 슬롯이 4개뿐이라 배열을 통째로 한 칸씩 옮기는 비용은 무시할 만하고,
+    // 대신 실제로 자주 쓰이는 청크가 캐시에 더 오래 남게 되어 히트율이 개선된다.
     private static final int CHUNK_CACHE_SLOTS = 4;
     private static final long[] cacheKeys = new long[CHUNK_CACHE_SLOTS];
     private static final Chunk[] cacheChunks = new Chunk[CHUNK_CACHE_SLOTS];
-    private static int cacheNextSlot = 0;
     private static final BlockPos.Mutable MUTABLE = new BlockPos.Mutable();
 
     // [개선] 프론티어 청크를 거리순 정렬할 때 쓰는 재사용 스크래치. 예전엔 매 라운드
@@ -643,34 +721,52 @@ public class MCRiderMinimap implements ClientModInitializer {
     private static void invalidateChunkCache() {
         java.util.Arrays.fill(cacheKeys, Long.MIN_VALUE);
         java.util.Arrays.fill(cacheChunks, null);
-        cacheNextSlot = 0;
     }
 
     private static BlockState stateAt(int x, int y, int z) {
         long key = ChunkPos.toLong(x >> 4, z >> 4);
         for (int i = 0; i < CHUNK_CACHE_SLOTS; i++) {
             if (cacheKeys[i] == key && cacheChunks[i] != null) {
-                return cacheChunks[i].getBlockState(MUTABLE.set(x, y, z));
+                if (i != 0) {
+                    // 히트한 슬롯을 맨 앞(최근 사용)으로 옮긴다. 4칸뿐이라 배열 셔프트 비용은
+                    // 무시할 만하다.
+                    long hitKey = cacheKeys[i];
+                    Chunk hitChunk = cacheChunks[i];
+                    System.arraycopy(cacheKeys, 0, cacheKeys, 1, i);
+                    System.arraycopy(cacheChunks, 0, cacheChunks, 1, i);
+                    cacheKeys[0] = hitKey;
+                    cacheChunks[0] = hitChunk;
+                }
+                return cacheChunks[0].getBlockState(MUTABLE.set(x, y, z));
             }
         }
         Chunk chunk = client.world.getChunk(x >> 4, z >> 4);
-        cacheKeys[cacheNextSlot] = key;
-        cacheChunks[cacheNextSlot] = chunk;
-        cacheNextSlot = (cacheNextSlot + 1) % CHUNK_CACHE_SLOTS;
+        // miss: 가장 오래 안 쓰인 마지막 슬롯을 밀어내고 새 청크를 맨 앞에 넣는다.
+        System.arraycopy(cacheKeys, 0, cacheKeys, 1, CHUNK_CACHE_SLOTS - 1);
+        System.arraycopy(cacheChunks, 0, cacheChunks, 1, CHUNK_CACHE_SLOTS - 1);
+        cacheKeys[0] = key;
+        cacheChunks[0] = chunk;
         return chunk.getBlockState(MUTABLE.set(x, y, z));
     }
 
-    static boolean isAirAt(int x, int y, int z) {
+    /** world==null 가드 + 좌표의 BlockState에 predicate 적용을 한데 묶은 헬퍼.
+     *  isAirAt/isWallAt/isVoidAt이 각자 반복하던 "world null 체크 → stateAt → 판정" 골격을
+     *  하나로 합친 것뿐이라 동작은 이전과 동일하다. */
+    private static boolean testAt(Predicate<BlockState> predicate, int x, int y, int z) {
         if (client.world == null) return false;
-        return isAir.test(stateAt(x, y, z));
+        return predicate.test(stateAt(x, y, z));
+    }
+
+    private static final Predicate<BlockState> isVoid = state -> state.isOf(Blocks.STRUCTURE_VOID);
+
+    static boolean isAirAt(int x, int y, int z) {
+        return testAt(isAir, x, y, z);
     }
     static boolean isWallAt(int x, int y, int z) {
-        if (client.world == null) return false;
-        return isWall.test(stateAt(x, y, z));
+        return testAt(isWall, x, y, z);
     }
     static boolean isVoidAt(int x, int y, int z) {
-        if (client.world == null) return false;
-        return stateAt(x, y, z).isOf(Blocks.STRUCTURE_VOID);
+        return testAt(isVoid, x, y, z);
     }
     static boolean isVoidFloorUnder(int x, int y, int z) {
         return isVoidAt(x, y - 1, z);
@@ -812,17 +908,26 @@ public class MCRiderMinimap implements ClientModInitializer {
      * 체스판처럼 듬성듬성 비어버렸다. 색은 순전히 "어느 구간이 연결돼 있는지"를 나타내는
      * 라벨일 뿐, 탐색을 진행할지 말지를 결정하는 조건이 되면 안 된다.)
      */
+    /** map[key]의 LongArrayList 버킷을 가져오거나, 없으면 initialCapacity로 새로 만들어 등록한
+     *  뒤 반환한다. frontierPush/parkInExiledFrontier가 각자 반복하던 "get-or-create" 로직을
+     *  하나로 합친 것 — 동작은 이전과 동일하다. */
+    private static LongArrayList getOrCreateBucket(Long2ObjectOpenHashMap<LongArrayList> map, long key, int initialCapacity) {
+        LongArrayList bucket = map.get(key);
+        if (bucket == null) {
+            bucket = new LongArrayList(initialCapacity);
+            map.put(key, bucket);
+        }
+        return bucket;
+    }
+
     /** 셀을 활성 프론티어의 청크 버킷에 추가한다. 그 청크가 처음 생기는 것이면
      *  frontierChunkKeys에도 등록해 다음 정렬 스냅샷에 포함되게 한다. */
     static void frontierPush(long cell, int cx, int cz) {
         long chunkKey = ChunkPos.toLong(cx >> 4, cz >> 4);
-        LongArrayList bucket = frontierByChunk.get(chunkKey);
-        if (bucket == null) {
-            bucket = new LongArrayList(8);
-            frontierByChunk.put(chunkKey, bucket);
-            frontierChunkKeys.add(chunkKey);
-        }
-        bucket.add(cell);
+        getOrCreateBucket(frontierByChunk, chunkKey, 8).add(cell);
+        // frontierChunkKeys는 Set이라 이미 등록된 키를 다시 add해도 무해한 no-op이다(내용
+        // 불변, 결과 동일). "새로 생긴 버킷일 때만" 분기하던 조건을 없애 코드를 단순화했다.
+        frontierChunkKeys.add(chunkKey);
     }
 
     static void enqueueFrontier(long cell, int cx, int cz, int sx, int sz, int maxRange) {
@@ -834,7 +939,7 @@ public class MCRiderMinimap implements ClientModInitializer {
     }
 
     static boolean floodFillWithVertical(BlockPos start, int maxRange, int updatePixel) {
-        isRequireKeepSearching = false;
+        needsMoreSearching = false;
         var world = client.world;
         if (world == null) return false;
 
@@ -846,7 +951,7 @@ public class MCRiderMinimap implements ClientModInitializer {
         // 정적이라 실질적 영향은 미미하다고 보고 성능을 우선함).
 
         if (!isChunkLoadedAt(start.getX(), start.getZ())) {
-            isRequireKeepSearching = true;
+            needsMoreSearching = true;
             return false;
         }
 
@@ -890,6 +995,14 @@ public class MCRiderMinimap implements ClientModInitializer {
         // "서킷 위에 있는데 탐색이 끊기는" 상황을 새로 만들지 않는다(안전 우선).
         final boolean containToActive = playerCell != NO_ID;
 
+        // [개선] deadline을 exile 부활 단계보다 앞으로 끌어와, 부활 단계와 메인 탐색 루프가
+        // 같은 0.5ms 예산을 공유하게 한다. 예전엔 이 deadline이 부활 단계 "다음"에 선언돼
+        // 있어서, 부활 단계(특히 exile 맵 스캔의 isChunkLoaded 호출들) 자체는 시간 제한이
+        // 전혀 없었다 — 텔레포트 등으로 한꺼번에 많은 청크가 로드 범위에 들어오면 부활
+        // 단계만으로 틱 예산을 초과해 프레임 스파이크가 날 수 있었다. 아래 두 루프 모두
+        // 이 deadline을 존중하도록 고쳤다.
+        final long deadline = System.nanoTime() + STAGING_TIME_BUDGET_NANOS;
+
         // 보류 프론티어 복귀(청크당 목록 전체).
         // [버그 수정] 예전에는 이 순회 도중 enqueueFrontier → (범위 밖이면) parkInExiledFrontier를
         // 호출해서, 지금 순회 중인 바로 그 exiledFrontierChunkHash 맵에 새 항목을 추가했다.
@@ -900,8 +1013,18 @@ public class MCRiderMinimap implements ClientModInitializer {
         // 제거하고, 맵 순회가 완전히 끝난 뒤에 그 셀들을 안전하게 재분류(enqueueFrontier)한다.
         LongArrayList revivedCells = revivedScratch;
         revivedCells.clear();
+        // [개선] exile 맵 자체가 아주 커진 상태(예: 텔레포트 직후 다수 청크가 한꺼번에 로드
+        // 범위로 들어옴)에서 이 스캔만으로 예산을 다 쓸 수 있어 deadline을 체크한다. 초과 시
+        // 그냥 순회를 멈춘다 — 아직 안 본 항목은 exiledFrontierChunkHash에 손대지 않은 채
+        // 그대로 남아있으므로 유실이 아니라 다음 틱으로 재평가가 미뤄지는 것뿐이다.
+        boolean revivalTimedOut = false;
         ObjectIterator<Long2ObjectMap.Entry<LongArrayList>> exiledIt = exiledFrontierChunkHash.long2ObjectEntrySet().iterator();
         while (exiledIt.hasNext()) {
+            if (System.nanoTime() >= deadline) {
+                needsMoreSearching = true;
+                revivalTimedOut = true;
+                break;
+            }
             Long2ObjectMap.Entry<LongArrayList> e = exiledIt.next();
             long chunkKey = e.getLongKey();
             int chunkX = ChunkPos.getPackedX(chunkKey);
@@ -917,10 +1040,34 @@ public class MCRiderMinimap implements ClientModInitializer {
         }
         for (int i = 0, n = revivedCells.size(); i < n; i++) {
             long cell = revivedCells.getLong(i);
-            enqueueFrontier(cell, BlockPos.unpackLongX(cell), BlockPos.unpackLongZ(cell), sx, sz, maxRange);
+            int cellX = BlockPos.unpackLongX(cell);
+            int cellZ = BlockPos.unpackLongZ(cell);
+            // [개선] 위 스캔 단계에서 이미 deadline을 넘겼거나, 여기서 처리하는 도중 넘긴
+            // 경우 모두 같은 방식으로 처리한다: 이 셀들은 이미 exiledFrontierChunkHash에서
+            // 꺼내온 상태라(1단계에서 exiledIt.remove()됨), 그냥 break하면 어디에도 속하지
+            // 않은 채 이번 틱이 끝나면서 revivedScratch가 다음 틱에 clear()되어 통째로
+            // 유실된다. 그래서 반드시 남은 셀들을 다시 parkInExiledFrontier로 exile에
+            // 되돌려 넣은 뒤에 넘어간다 — 재분류 판정만 다음 틱으로 미뤄질 뿐, 유실은 없다.
+            if (!revivalTimedOut && System.nanoTime() >= deadline) revivalTimedOut = true;
+            if (revivalTimedOut) {
+                parkInExiledFrontier(cell, cellX >> 4, cellZ >> 4);
+                needsMoreSearching = true;
+                continue;
+            }
+            // [개선] 활성 트리 조건(아래 메인 라운드 루프의 containToActive 검사와 완전히
+            // 동일한 조건)을 프론티어 재등록 이전에 미리 검사한다. 이 조건에 안 맞는 셀은
+            // 어차피 frontierByChunk에 들어갔다가 dequeue되자마자 곧바로 다시 exile로
+            // park되므로, 그 등록→정렬 스냅샷 포함→dequeue→재park의 왕복을 건너뛰고 곧장
+            // exile로 되돌린다. curColor==NO_ID인 셀도 마찬가지로 메인 라운드 루프에서
+            // 아무 부작용 없이 조용히 버려지던 셀이라 여기서 그대로 버려도 최종 상태는 같다.
+            long curColor = cellColor.get(cell);
+            if (curColor == NO_ID) continue;
+            if (containToActive && !activeSet.contains(resolve(curColor))) {
+                parkInExiledFrontier(cell, cellX >> 4, cellZ >> 4);
+                continue;
+            }
+            enqueueFrontier(cell, cellX, cellZ, sx, sz, maxRange);
         }
-
-        final long deadline = System.nanoTime() + STAGING_TIME_BUDGET_NANOS;
 
         // [개선] 프론티어를 청크 단위로 묶어 처리하되, 매 "라운드"마다 현재 대기 중인
         // 청크들을 플레이어와의 거리순으로 정렬해 가까운 청크부터 완전히 비운다.
@@ -962,7 +1109,7 @@ public class MCRiderMinimap implements ClientModInitializer {
 
                 while (!bucket.isEmpty()) {
                     if (System.nanoTime() >= deadline) {
-                        isRequireKeepSearching = true;
+                        needsMoreSearching = true;
                         stop = true;
                         break;
                     }
@@ -1018,7 +1165,13 @@ public class MCRiderMinimap implements ClientModInitializer {
                             continue;
                         }
 
-                        if (!isAirAt(nx, cy, nz) && isWallAt(nx, cy, nz)) {
+                        // [개선] (nx,cy,nz)의 air/wall을 여기서 한 번만 조회해 게이트와
+                        // resolveTargetY 양쪽에 재사용한다. 원래 게이트 표현식(!isAirAt && isWallAt)의
+                        // 단축 평가 순서를 그대로 재현한다 — baseIsAir가 참이면 baseIsWall은
+                        // 애초에 값이 안 쓰이므로(아래 두 분기 모두 거짓) isWallAt을 아예 안 부른다.
+                        boolean baseIsAir = isAirAt(nx, cy, nz);
+                        boolean baseIsWall = !baseIsAir && isWallAt(nx, cy, nz);
+                        if (baseIsWall) {
                             // [버그 수정] 이전 코드는 목적지가 공기인지 먼저 보지 않고 isWallAt만으로
                             // 곧장 continue 했다. 그 결과 "벽 위에 서 있다가(고아 시드) 서킷 쪽으로
                             // 내려가는" 이동까지 이 시점에서 걸러져 resolveTargetY까지 가보지도 못하고
@@ -1033,7 +1186,7 @@ public class MCRiderMinimap implements ClientModInitializer {
                             continue;
                         }
 
-                        int ty = resolveTargetY(nx, cy, nz, hasBlockAt2Meter, world.getBottomY());
+                        int ty = resolveTargetY(nx, cy, nz, baseIsAir, baseIsWall, hasBlockAt2Meter, world.getBottomY());
                         if (ty == Integer.MIN_VALUE) continue;
 
                         boolean twoWay = canMoveBetween(nx, ty, nz, cx, cy, cz, world.getBottomY());
@@ -1045,7 +1198,7 @@ public class MCRiderMinimap implements ClientModInitializer {
                     // 재분류 churn이 활성 트랙의 탐색 예산을 굶기지 않는다(시간 상한 deadline은 위에서
                     // 매 iteration 확인하므로 전체 소요 시간은 여전히 0.5ms로 제한된다).
                     if (--updatePixel <= 0) {
-                        isRequireKeepSearching = true;
+                        needsMoreSearching = true;
                         stop = true;
                         break;
                     }
@@ -1062,16 +1215,33 @@ public class MCRiderMinimap implements ClientModInitializer {
         return true;
     }
 
-    static int resolveTargetY(int nx, int cy, int nz, boolean fromHasBlockAt2Meter, int bottomY) {
+    /** [개선] (nx,cy,nz)의 air/wall 판정을 호출부에서 미리 구해 넘겨받는다. 예전엔 이 함수가
+     *  내부에서 isAirAt(nx,cy,nz)/isWallAt(nx,cy,nz)를 다시 조회했는데, 두 호출부
+     *  (DIRS 루프의 게이트, canMoveBetween)가 이미 같은 좌표를 직전에 조회해둔 상태라
+     *  완전히 같은 값을 또 조회하는 중복이었다. 월드는 이 짧은 동기 호출 체인 사이에
+     *  절대 바뀌지 않으므로(같은 스레드·같은 틱), baseIsAir/baseIsWall을 그대로 재사용해도
+     *  반환값은 기존과 100% 동일하다. */
+    static int resolveTargetY(int nx, int cy, int nz, boolean baseIsAir, boolean baseIsWall,
+                              boolean fromHasBlockAt2Meter, int bottomY) {
         if (!isAirAt(nx, cy + 1, nz)) return Integer.MIN_VALUE;
-        if (!isAirAt(nx, cy, nz)) {
+        if (!baseIsAir) {
             // 기저가 벽 태그면 1칸이라도 절대 올라설 수 없다(단방향 예외 없음).
-            if (isWallAt(nx, cy, nz)) return Integer.MIN_VALUE;
+            if (baseIsWall) return Integer.MIN_VALUE;
             if (isAirAt(nx, cy + 2, nz) && !fromHasBlockAt2Meter) return cy + 1;
             return Integer.MIN_VALUE;
         } else if (isAirAt(nx, cy - 1, nz)) {
+            // [개선/버그 수정] findAnchorCell의 하강 탐색과 동일하게 MAX_ANCHOR_DROP_SEARCH로
+            // 낙하 깊이를 제한한다. 예전엔 여기 상한이 없어서, void 위 공중 트랙처럼 발밑이
+            // 뻥 뚫린 구간을 만나면 프론티어 셀 하나당 최대 수백 칸(bottomY까지)을 훑을 수
+            // 있었다 — 0.5ms 예산 안에서 처리 가능한 셀 수가 그 틱만 급격히 줄어드는 스파이크
+            // 원인이 됐다. findAnchorCell이 "무한정 뚫고 내려가 전혀 다른 영역에 도달하는 것"을
+            // 막던 것과 같은 이유로, 여기서도 한계를 넘는 낙하는 착지 불가(도달 불가)로 취급한다.
             int fy = cy;
-            while (isAirAt(nx, fy - 1, nz) && fy > bottomY) fy--;
+            int dropped = 0;
+            while (isAirAt(nx, fy - 1, nz) && fy > bottomY) {
+                fy--;
+                if (++dropped >= MAX_ANCHOR_DROP_SEARCH) return Integer.MIN_VALUE;
+            }
             return fy;
         } else {
             return cy;
@@ -1080,9 +1250,15 @@ public class MCRiderMinimap implements ClientModInitializer {
 
     /** 목적지에서 출발지로 되돌아가는 이동이 규칙상 성립하면 양방향. */
     static boolean canMoveBetween(int tx, int ty, int tz, int fx, int fy, int fz, int bottomY) {
-        if (isWallAt(fx, ty, fz)) return false; // 되돌아갈 칸 기저가 벽이면 역방향 불가
+        // [개선] (fx,ty,fz)의 wall/air를 여기서 한 번씩만 조회해 resolveTargetY에 그대로 넘긴다.
+        // 예전엔 여기서 isWallAt 1회 + resolveTargetY 내부에서 isAirAt 1회 + (조건부) isWallAt
+        // 1회, 최대 3회 조회했다. 순서(먼저 wall, 그다음 air)는 원래 단축 평가 순서와 동일하게
+        // 유지해 값도 동일하다.
+        boolean baseIsWall = isWallAt(fx, ty, fz); // 되돌아갈 칸 기저가 벽이면 역방향 불가
+        if (baseIsWall) return false;
+        boolean baseIsAir = isAirAt(fx, ty, fz);
         boolean tHasBlockAt2 = !isAirAt(tx, ty + 2, tz);
-        int back = resolveTargetY(fx, ty, fz, tHasBlockAt2, bottomY);
+        int back = resolveTargetY(fx, ty, fz, baseIsAir, baseIsWall, tHasBlockAt2, bottomY);
         return back == fy;
     }
 
@@ -1132,7 +1308,8 @@ public class MCRiderMinimap implements ClientModInitializer {
                     // (A→B가 이미 있는데 B→A를 또 추가)이 생기지 않는지 확인한다.
                     boolean safeToAdd = colorBirth.get(childRoot) > colorBirth.get(parentRoot);
                     if (!safeToAdd) {
-                        LongOpenHashSet parentAncestors = new LongOpenHashSet();
+                        LongOpenHashSet parentAncestors = scratchParentAncestors;
+                        parentAncestors.clear();
                         collectAncestors(parentRoot, parentAncestors);
                         safeToAdd = !parentAncestors.contains(childRoot);
                     }
@@ -1231,11 +1408,6 @@ public class MCRiderMinimap implements ClientModInitializer {
 
     static void parkInExiledFrontier(long packedPos, int chunkX, int chunkZ) {
         long key = ChunkPos.toLong(chunkX, chunkZ);
-        LongArrayList pending = exiledFrontierChunkHash.get(key);
-        if (pending == null) {
-            pending = new LongArrayList(4);
-            exiledFrontierChunkHash.put(key, pending);
-        }
-        pending.add(packedPos);
+        getOrCreateBucket(exiledFrontierChunkHash, key, 4).add(packedPos);
     }
 }
