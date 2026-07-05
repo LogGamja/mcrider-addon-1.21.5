@@ -537,7 +537,7 @@ public class MCRiderMinimap implements ClientModInitializer {
         if (client.player == null || client.world == null) return;
 
         final int playerMargin = 5;
-        BlockPos start = client.player.getBlockPos();
+        BlockPos start = client.player.getBlockPos().up();
         lastPlayerPos = start;
 
         floodFillWithVertical(start, (int) ((maxDist + playerMargin * 2) * 2), STAGING_BUDGET_PER_TICK);
@@ -603,26 +603,20 @@ public class MCRiderMinimap implements ClientModInitializer {
         textureDirty = true;
     }
 
-    /** 색이 달라도, 플레이어와 이 거리(블록) 이내면 무조건 최우선 큐로 취급한다.
-     *  "곧 밟을 다음 구간"이 활성 색과 아직 안 합쳐졌다는 이유로 계속 후순위로 밀려서,
-     *  플레이어가 미탐색 칸에 직접 들어가야만 갑자기 뚫리는 현상을 막기 위한 예외. */
-    static final int VERY_CLOSE_RADIUS = 16;
-
     /**
-     * 프론티어 셀을 분류한다. 최우선 큐(frontierQueue) 아니면 동결(exile) 둘 중 하나뿐이다.
-     * (중간에 "2차 큐"를 뒀던 이전 버전은, 한 번 그 큐에 들어간 셀이 플레이어가 아무리
-     * 가까워져도 다시 검사되지 않는 버그가 있었다 — frontierQueue가 안 비니까 사실상 영원히
-     * 대기. 동결은 다르다: 매 틱 도는 exile 복귀 루프가 청크 단위로 거리를 다시 확인하므로,
-     * 플레이어가 다가오면 다음 틱에 자동으로 재평가되어 여기(enqueueFrontier)로 다시 들어온다.
-     * 즉 "재평가가 매 틱 일어나는 것"은 오직 exile뿐이라, 우선순위 밖의 모든 것은 exile로
-     * 보내는 게 맞다.)
+     * 프론티어 셀을 분류한다. 색이나 플레이어와의 거리와는 무관하게, 오직 실제 환경적
+     * 제약(탐색 범위 안인가)만으로 판단한다. exile은 어디까지나 "지금 당장은 범위 밖"인
+     * 셀을 위한 것이고, 매 틱 도는 exile 복귀 루프가 범위 안으로 들어오면 자동으로
+     * frontierQueue로 되돌린다.
+     *
+     * (이전에는 색이 활성 색과 다르면 플레이어와 아무리 가까워도 사실상 영원히 exile에
+     * 갇히는 버그가 있었다 — 좁은 외길에서는 경로가 죄다 같은 색이라 안 드러났지만,
+     * 넓은 도로에서 옆 차선이 지형 조건 때문에 다른 색으로 갈라지면 그 차선 전체가
+     * 체스판처럼 듬성듬성 비어버렸다. 색은 순전히 "어느 구간이 연결돼 있는지"를 나타내는
+     * 라벨일 뿐, 탐색을 진행할지 말지를 결정하는 조건이 되면 안 된다.)
      */
     static void enqueueFrontier(long cell, int cx, int cz, int sx, int sz, int maxRange) {
-        long color = cellColor.get(cell);
-        boolean sameColor = (color != NO_ID && resolve(color) == resolve(activeColor));
-        boolean veryClose = taxiDistance2D(cx, cz, sx, sz) <= VERY_CLOSE_RADIUS;
-
-        if (sameColor || veryClose) {
+        if (taxiDistance2D(cx, cz, sx, sz) <= maxRange) {
             frontierQueue.enqueue(cell);
         } else {
             parkInExiledFrontier(cell, cx >> 4, cz >> 4);
@@ -713,7 +707,15 @@ public class MCRiderMinimap implements ClientModInitializer {
                 int nz = cz + d[1];
 
                 if (!isChunkLoadedAt(nx, nz)) {
-                    parkInExiledFrontier(curPacked, nx >> 4, nz >> 4);
+                    // 미로딩 이웃 좌표(nx,nz)가 아니라, 이미 색이 확정된 부모 셀(curPacked)을
+                    // 그 부모가 속한 청크(cx,cz)에 park해야 한다. nx,nz는 아직 cellColor에
+                    // 등록되지 않은 미확정 좌표라, 나중에 이 값이 그대로 exile 복귀 → frontierQueue로
+                    // 들어가도 메인 루프의 `if (curColor == NO_ID) continue;`에서 즉시 버려져
+                    // 이 방향의 확장이 영구히 유실된다(플레이어가 직접 그 칸을 밟아 규칙1로
+                    // 새로 시드하기 전까지 재시도되지 않음 — 보고된 "막다른 길처럼 보이는" 버그의 원인).
+                    // curPacked를 park하면, 청크가 로딩되는 즉시 curPacked가 프론티어로 복귀해
+                    // 4방향을 처음부터 다시 검사하므로 실패했던 방향도 재시도된다.
+                    parkInExiledFrontier(curPacked, cx >> 4, cz >> 4);
                     continue;
                 }
 
