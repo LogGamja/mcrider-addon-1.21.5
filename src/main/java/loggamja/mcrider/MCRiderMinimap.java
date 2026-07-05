@@ -49,7 +49,7 @@ import java.util.function.Predicate;
 public class MCRiderMinimap implements ClientModInitializer {
 
     /** true면 모든 색을 각자 다른 색으로 표시(디버그). 기본 true. */
-    public static final boolean DEBUG_COLORS = true;
+    public static final boolean DEBUG_COLORS = false;
 
     static MinecraftClient client = MinecraftClient.getInstance();
 
@@ -59,7 +59,21 @@ public class MCRiderMinimap implements ClientModInitializer {
     static boolean isRequireKeepSearching = false;
     static BlockPos lastPlayerPos;
 
-    static LongArrayFIFOQueue frontierQueue = new LongArrayFIFOQueue();
+    /** [개선] 활성 프론티어를 청크 단위로 묶어서 보관한다: chunkKey(ChunkPos.toLong) → 그
+     *  청크 안의 대기 중인 셀 목록. 예전의 단일 FIFO 큐(frontierQueue)는 인접한 셀이라도
+     *  서로 다른 청크에서 뒤섞여 나올 수 있어, 매번 청크 캐시(4슬롯)를 갈아치우게 만들었다.
+     *  청크별로 묶어서 "한 청크를 다 처리하고 다음 청크로" 넘어가면 stateAt() 호출이 대부분
+     *  캐시에 걸린다.
+     *  주의(과거에 프론티어 관련 버그가 많았던 부분): 이 구조는 오직 "어떤 순서로 처리
+     *  하느냐"만 바꾼다. 각 셀에 적용되는 검사(범위 안인가, 청크 로딩됐는가, 활성 영역인가,
+     *  벽인가 등)는 이전 코드와 한 글자도 다르지 않다. 즉 "최종적으로 어떤 셀이 결국
+     *  탐색되는가"라는 정확성에는 전혀 영향을 주지 않는다 — 오직 처리 순서(와 그에 따른
+     *  캐시 효율)만 바뀐다. 유실 방지를 위해, 어떤 셀이든 반드시 frontierByChunk 아니면
+     *  exiledFrontierChunkHash 둘 중 하나에는 항상 들어있다(두 구조 다 청크별 리스트라
+     *  형태가 동일 — enqueueFrontier가 조건에 따라 둘 중 하나로만 보낸다). */
+    static Long2ObjectOpenHashMap<LongArrayList> frontierByChunk = new Long2ObjectOpenHashMap<>();
+    /** frontierByChunk에 현재 대기 중인 셀이 있는 청크 키 집합(거리순 정렬 대상 스냅샷용). */
+    static LongOpenHashSet frontierChunkKeys = new LongOpenHashSet();
     /** 미로딩/범위 밖 청크에 보류된 프론티어: ChunkPos.toLong → 셀 목록(청크당 여러 개, 유실 방지) */
     static Long2ObjectOpenHashMap<LongArrayList> exiledFrontierChunkHash = new Long2ObjectOpenHashMap<>();
 
@@ -705,7 +719,7 @@ public class MCRiderMinimap implements ClientModInitializer {
      * 프론티어 셀을 분류한다. 색이나 플레이어와의 거리와는 무관하게, 오직 실제 환경적
      * 제약(탐색 범위 안인가)만으로 판단한다. exile은 어디까지나 "지금 당장은 범위 밖"인
      * 셀을 위한 것이고, 매 틱 도는 exile 복귀 루프가 범위 안으로 들어오면 자동으로
-     * frontierQueue로 되돌린다.
+     * 활성 프론티어(frontierByChunk)로 되돌린다.
      *
      * (이전에는 색이 활성 색과 다르면 플레이어와 아무리 가까워도 사실상 영원히 exile에
      * 갇히는 버그가 있었다 — 좁은 외길에서는 경로가 죄다 같은 색이라 안 드러났지만,
@@ -713,9 +727,22 @@ public class MCRiderMinimap implements ClientModInitializer {
      * 체스판처럼 듬성듬성 비어버렸다. 색은 순전히 "어느 구간이 연결돼 있는지"를 나타내는
      * 라벨일 뿐, 탐색을 진행할지 말지를 결정하는 조건이 되면 안 된다.)
      */
+    /** 셀을 활성 프론티어의 청크 버킷에 추가한다. 그 청크가 처음 생기는 것이면
+     *  frontierChunkKeys에도 등록해 다음 정렬 스냅샷에 포함되게 한다. */
+    static void frontierPush(long cell, int cx, int cz) {
+        long chunkKey = ChunkPos.toLong(cx >> 4, cz >> 4);
+        LongArrayList bucket = frontierByChunk.get(chunkKey);
+        if (bucket == null) {
+            bucket = new LongArrayList(8);
+            frontierByChunk.put(chunkKey, bucket);
+            frontierChunkKeys.add(chunkKey);
+        }
+        bucket.add(cell);
+    }
+
     static void enqueueFrontier(long cell, int cx, int cz, int sx, int sz, int maxRange) {
         if (taxiDistance2D(cx, cz, sx, sz) <= maxRange) {
-            frontierQueue.enqueue(cell);
+            frontierPush(cell, cx, cz);
         } else {
             parkInExiledFrontier(cell, cx >> 4, cz >> 4);
         }
@@ -749,7 +776,7 @@ public class MCRiderMinimap implements ClientModInitializer {
         if (cellColor.get(startCell) == NO_ID && isStandable(sx, sy, sz, false)) {
             long c = newColor(NO_ID);
             paintCell(sx, sy, sz, c);
-            frontierQueue.enqueue(startCell);
+            frontierPush(startCell, sx, sz);
         }
 
         // [개선] 오픈 필드 블리딩 억제.
@@ -807,90 +834,146 @@ public class MCRiderMinimap implements ClientModInitializer {
 
         final long deadline = System.nanoTime() + STAGING_TIME_BUDGET_NANOS;
 
-        while (!frontierQueue.isEmpty()) {
-            if (System.nanoTime() >= deadline) {
-                isRequireKeepSearching = true;
-                break;
+        // [개선] 프론티어를 청크 단위로 묶어 처리하되, 매 "라운드"마다 현재 대기 중인
+        // 청크들을 플레이어와의 거리순으로 정렬해 가까운 청크부터 완전히 비운다.
+        // 라운드를 반복하는 이유: 한 라운드를 도는 도중 발견된 새 청크(이웃 셀 탐색이
+        // 경계를 넘어가며 생김)는 이번 라운드의 정렬 스냅샷에는 없었으므로, 다음 라운드
+        // 시작 시 frontierChunkKeys를 다시 스냅샷 뜰 때 자연스럽게 포함된다. 즉 시간/예산이
+        // 허용하는 한 새로 생긴 청크도 같은 틱 안에서 계속 이어서 처리되고, 유실되는
+        // 셀은 없다(budget/deadline이 다 되면 그 시점 그대로 다음 틱에 이어서 처리됨 —
+        // 이전과 동일한 안전성).
+        boolean stop = false;
+        while (!stop && !frontierChunkKeys.isEmpty()) {
+            // 현재 대기 중인 청크 키들을 배열로 스냅샷 뜬 뒤, 거리 기준으로 직접 삽입정렬한다.
+            // (LongArrayList.sort(람다)는 java.util.List의 Comparator<Long> 오버로드와
+            // fastutil의 LongComparator 오버로드가 동시에 맞아떨어져 컴파일이 모호해질 수
+            // 있어, 그런 위험이 전혀 없는 순수 배열 삽입정렬을 쓴다. 청크 개수는 보통
+            // 수십~수백 개 수준이라 O(n²)이어도 충분히 저렴하다.)
+            int n = frontierChunkKeys.size();
+            long[] keys = new long[n];
+            int[] dist = new int[n];
+            int idx = 0;
+            LongIterator keyIt = frontierChunkKeys.iterator();
+            while (keyIt.hasNext()) {
+                long k = keyIt.nextLong();
+                keys[idx] = k;
+                dist[idx] = taxiDistanceFromChunkToPos(ChunkPos.getPackedX(k), ChunkPos.getPackedZ(k), sx, sz);
+                idx++;
+            }
+            for (int i = 1; i < n; i++) {
+                long k = keys[i];
+                int dk = dist[i];
+                int j = i - 1;
+                while (j >= 0 && dist[j] > dk) {
+                    keys[j + 1] = keys[j];
+                    dist[j + 1] = dist[j];
+                    j--;
+                }
+                keys[j + 1] = k;
+                dist[j + 1] = dk;
             }
 
-            long curPacked = frontierQueue.dequeueLong();
-            int cx = BlockPos.unpackLongX(curPacked);
-            int cy = BlockPos.unpackLongY(curPacked);
-            int cz = BlockPos.unpackLongZ(curPacked);
+            for (int ci = 0; ci < n; ci++) {
+                long chunkKey = keys[ci];
+                LongArrayList bucket = frontierByChunk.get(chunkKey);
+                if (bucket == null) continue; // 이미 다른 경로로 비워졌을 수 있음(방어적)
 
-            if (maxRange < taxiDistance2D(cx, cz, sx, sz)) {
-                parkInExiledFrontier(curPacked, cx >> 4, cz >> 4);
-                continue;
-            }
-            if (!isChunkLoadedAt(cx, cz)) {
-                parkInExiledFrontier(curPacked, cx >> 4, cz >> 4);
-                continue;
-            }
+                while (!bucket.isEmpty()) {
+                    if (System.nanoTime() >= deadline) {
+                        isRequireKeepSearching = true;
+                        stop = true;
+                        break;
+                    }
 
-            long curColor = cellColor.get(curPacked);
-            if (curColor == NO_ID) continue;
+                    // 청크 버킷은 스택처럼 뒤에서 꺼낸다(배열 기반이라 앞에서 꺼내면 매번
+                    // 전체가 한 칸씩 밀려 O(n)이 된다 — 순서 자체는 정확성에 영향 없음).
+                    long curPacked = bucket.removeLong(bucket.size() - 1);
+                    int cx = BlockPos.unpackLongX(curPacked);
+                    int cy = BlockPos.unpackLongY(curPacked);
+                    int cz = BlockPos.unpackLongZ(curPacked);
 
-            // [수정] 플레이어가 지금 있는 영역(+자손)이 아니면 확장하지 않는다.
-            // 예전에는 dormant 집합에 넣고 "활성색이 바뀔 때만" 깨웠는데, 정지 상태에서는
-            // 활성색이 안 바뀌어 영영 안 깨어나 탐색이 끊긴 채 유지되는 문제가 있었다.
-            // 이제는 exile(보류)로 되돌린다. exile은 매 틱 복귀 루프가 자동으로 재평가하므로,
-            // 그 영역이 다시 활성이 되거나 병합으로 활성 트리에 편입되는 순간 자연히 확장이
-            // 재개된다(정지 상태에서도, 이동 없이). 비활성인 동안에는 dequeue→검사→재park만
-            // 반복하고 실제 확장(블록 조회·페인트)은 하지 않으므로 CPU도 아낀다.
-            // debug 모드에서도 "탐색은 활성 영역+자손만" 제한한다(표시는 모드별로 다름).
-            if (containToActive && !activeSet.contains(resolve(curColor))) {
-                parkInExiledFrontier(curPacked, cx >> 4, cz >> 4);
-                continue;
-            }
+                    if (maxRange < taxiDistance2D(cx, cz, sx, sz)) {
+                        parkInExiledFrontier(curPacked, cx >> 4, cz >> 4);
+                        continue;
+                    }
+                    if (!isChunkLoadedAt(cx, cz)) {
+                        parkInExiledFrontier(curPacked, cx >> 4, cz >> 4);
+                        continue;
+                    }
 
-            boolean hasBlockAt2Meter = !isAirAt(cx, cy + 2, cz);
+                    long curColor = cellColor.get(curPacked);
+                    if (curColor == NO_ID) continue;
 
-            for (int[] d : dirs) {
-                int nx = cx + d[0];
-                int nz = cz + d[1];
+                    // [수정] 플레이어가 지금 있는 영역(+자손)이 아니면 확장하지 않는다.
+                    // 예전에는 dormant 집합에 넣고 "활성색이 바뀔 때만" 깨웠는데, 정지 상태에서는
+                    // 활성색이 안 바뀌어 영영 안 깨어나 탐색이 끊긴 채 유지되는 문제가 있었다.
+                    // 이제는 exile(보류)로 되돌린다. exile은 매 틱 복귀 루프가 자동으로 재평가하므로,
+                    // 그 영역이 다시 활성이 되거나 병합으로 활성 트리에 편입되는 순간 자연히 확장이
+                    // 재개된다(정지 상태에서도, 이동 없이). 비활성인 동안에는 dequeue→검사→재park만
+                    // 반복하고 실제 확장(블록 조회·페인트)은 하지 않으므로 CPU도 아낀다.
+                    // debug 모드에서도 "탐색은 활성 영역+자손만" 제한한다(표시는 모드별로 다름).
+                    if (containToActive && !activeSet.contains(resolve(curColor))) {
+                        parkInExiledFrontier(curPacked, cx >> 4, cz >> 4);
+                        continue;
+                    }
 
-                if (!isChunkLoadedAt(nx, nz)) {
-                    // 미로딩 이웃 좌표(nx,nz)가 아니라, 이미 색이 확정된 부모 셀(curPacked)을
-                    // 그 부모가 속한 청크(cx,cz)에 park해야 한다. nx,nz는 아직 cellColor에
-                    // 등록되지 않은 미확정 좌표라, 나중에 이 값이 그대로 exile 복귀 → frontierQueue로
-                    // 들어가도 메인 루프의 `if (curColor == NO_ID) continue;`에서 즉시 버려져
-                    // 이 방향의 확장이 영구히 유실된다(플레이어가 직접 그 칸을 밟아 규칙1로
-                    // 새로 시드하기 전까지 재시도되지 않음 — 보고된 "막다른 길처럼 보이는" 버그의 원인).
-                    // curPacked를 park하면, 청크가 로딩되는 즉시 curPacked가 프론티어로 복귀해
-                    // 4방향을 처음부터 다시 검사하므로 실패했던 방향도 재시도된다.
-                    parkInExiledFrontier(curPacked, cx >> 4, cz >> 4);
-                    continue;
+                    boolean hasBlockAt2Meter = !isAirAt(cx, cy + 2, cz);
+
+                    for (int[] d : dirs) {
+                        int nx = cx + d[0];
+                        int nz = cz + d[1];
+
+                        if (!isChunkLoadedAt(nx, nz)) {
+                            // 미로딩 이웃 좌표(nx,nz)가 아니라, 이미 색이 확정된 부모 셀(curPacked)을
+                            // 그 부모가 속한 청크(cx,cz)에 park해야 한다. nx,nz는 아직 cellColor에
+                            // 등록되지 않은 미확정 좌표라, 나중에 이 값이 그대로 exile 복귀 → 프론티어로
+                            // 들어가도 메인 루프의 `if (curColor == NO_ID) continue;`에서 즉시 버려져
+                            // 이 방향의 확장이 영구히 유실된다(플레이어가 직접 그 칸을 밟아 규칙1로
+                            // 새로 시드하기 전까지 재시도되지 않음 — 보고된 "막다른 길처럼 보이는" 버그의 원인).
+                            // curPacked를 park하면, 청크가 로딩되는 즉시 curPacked가 프론티어로 복귀해
+                            // 4방향을 처음부터 다시 검사하므로 실패했던 방향도 재시도된다.
+                            parkInExiledFrontier(curPacked, cx >> 4, cz >> 4);
+                            continue;
+                        }
+
+                        if (!isAirAt(nx, cy, nz) && isWallAt(nx, cy, nz)) {
+                            // [버그 수정] 이전 코드는 목적지가 공기인지 먼저 보지 않고 isWallAt만으로
+                            // 곧장 continue 했다. 그 결과 "벽 위에 서 있다가(고아 시드) 서킷 쪽으로
+                            // 내려가는" 이동까지 이 시점에서 걸러져 resolveTargetY까지 가보지도 못하고
+                            // 막혀버렸다(사실상 벽 위가 항상 막다른 길처럼 보이는 원인).
+                            // resolveTargetY도 "같은 높이에 벽이 있으면 그 위로 못 올라선다"는 조건을
+                            // 이미 정확히 처리하므로(!isAirAt(nx,cy,nz) 분기 안에서 isWallAt 검사),
+                            // 여기서는 그 조건과 완전히 동일하게 "목적지가 공기가 아니고, 그 몸체가
+                            // 벽일 때"만 차단한다. 목적지가 공기라면(벽 위에서 아래 서킷으로 내려가는
+                            // 낙하/평지 이동 포함) 이 검사에 걸리지 않고 resolveTargetY로 넘어가
+                            // 정상적으로 낙하/평지 이동이 계산된다 — 즉 "올라서는 것"만 막고
+                            // "내려가는 것"은 더 이상 여기서 막히지 않는다.
+                            continue;
+                        }
+
+                        int ty = resolveTargetY(nx, cy, nz, hasBlockAt2Meter, world.getBottomY());
+                        if (ty == Integer.MIN_VALUE) continue;
+
+                        boolean twoWay = canMoveBetween(nx, ty, nz, cx, cy, cz, world.getBottomY());
+                        handleReach(cx, cy, cz, curColor, nx, ty, nz, twoWay, sx, sz, maxRange);
+                    }
+
+                    // 실제 확장 작업(4방향 검사)을 마친 셀에 대해서만 예산을 소모한다. 범위 밖·미로딩·
+                    // 비활성으로 재park되어 continue된 값싼 셀은 예산을 먹지 않으므로, 비활성 영역의
+                    // 재분류 churn이 활성 트랙의 탐색 예산을 굶기지 않는다(시간 상한 deadline은 위에서
+                    // 매 iteration 확인하므로 전체 소요 시간은 여전히 0.5ms로 제한된다).
+                    if (--updatePixel <= 0) {
+                        isRequireKeepSearching = true;
+                        stop = true;
+                        break;
+                    }
                 }
 
-                if (!isAirAt(nx, cy, nz) && isWallAt(nx, cy, nz)) {
-                    // [버그 수정] 이전 코드는 목적지가 공기인지 먼저 보지 않고 isWallAt만으로
-                    // 곧장 continue 했다. 그 결과 "벽 위에 서 있다가(고아 시드) 서킷 쪽으로
-                    // 내려가는" 이동까지 이 시점에서 걸러져 resolveTargetY까지 가보지도 못하고
-                    // 막혀버렸다(사실상 벽 위가 항상 막다른 길처럼 보이는 원인).
-                    // resolveTargetY도 "같은 높이에 벽이 있으면 그 위로 못 올라선다"는 조건을
-                    // 이미 정확히 처리하므로(!isAirAt(nx,cy,nz) 분기 안에서 isWallAt 검사),
-                    // 여기서는 그 조건과 완전히 동일하게 "목적지가 공기가 아니고, 그 몸체가
-                    // 벽일 때"만 차단한다. 목적지가 공기라면(벽 위에서 아래 서킷으로 내려가는
-                    // 낙하/평지 이동 포함) 이 검사에 걸리지 않고 resolveTargetY로 넘어가
-                    // 정상적으로 낙하/평지 이동이 계산된다 — 즉 "올라서는 것"만 막고
-                    // "내려가는 것"은 더 이상 여기서 막히지 않는다.
-                    continue;
+                if (bucket.isEmpty()) {
+                    frontierByChunk.remove(chunkKey);
+                    frontierChunkKeys.remove(chunkKey);
                 }
-
-                int ty = resolveTargetY(nx, cy, nz, hasBlockAt2Meter, world.getBottomY());
-                if (ty == Integer.MIN_VALUE) continue;
-
-                boolean twoWay = canMoveBetween(nx, ty, nz, cx, cy, cz, world.getBottomY());
-                handleReach(cx, cy, cz, curColor, nx, ty, nz, twoWay, sx, sz, maxRange);
-            }
-
-            // 실제 확장 작업(4방향 검사)을 마친 셀에 대해서만 예산을 소모한다. 범위 밖·미로딩·
-            // 비활성으로 재park되어 continue된 값싼 셀은 예산을 먹지 않으므로, 비활성 영역의
-            // 재분류 churn이 활성 트랙의 탐색 예산을 굶기지 않는다(시간 상한 deadline은 위에서
-            // 매 iteration 확인하므로 전체 소요 시간은 여전히 0.5ms로 제한된다).
-            if (--updatePixel <= 0) {
-                isRequireKeepSearching = true;
-                break;
+                if (stop) break;
             }
         }
 
@@ -1042,7 +1125,8 @@ public class MCRiderMinimap implements ClientModInitializer {
         visitedColumns.clear();
         dirtyColumns.clear();
         columnsByRoot.clear();
-        frontierQueue.clear();
+        frontierByChunk.clear();
+        frontierChunkKeys.clear();
         exiledFrontierChunkHash.clear();
         colorParentPtr.clear();
         childToParents.clear();
