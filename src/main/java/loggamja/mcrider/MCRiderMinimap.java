@@ -165,15 +165,33 @@ public class MCRiderMinimap implements ClientModInitializer {
 
     // ── 예산 ─────────────────────────────────────────────────────────────
     static final int STAGING_BUDGET_PER_TICK = 512;
-    /** dirtyColumns 재도색(plotColumn)에 매기는 틱당 예산. activeColor 전환 등으로 dirtyColumns가
-     *  한꺼번에 커져도 프레임 스파이크 없이 여러 틱에 나눠 처리되도록 한다(남은 항목은 Set에
-     *  그대로 남아 다음 틱에 이어짐). */
-    static final int REPAINT_BUDGET_PER_TICK = 4000;
+    /** dirtyColumns 재도색(plotColumn) 시간 예산. 컬럼 하나 그리는 비용은 아주 저렴하므로
+     *  "개수"가 아니라 "이번 틱에 실제로 쓴 시간"으로 제한한다. 그릴 게 적으면(평소 착지)
+     *  이 시간 안에 다 끝나 사실상 즉시 반영되고("먼지처럼 서서히" 보이는 연출이 사라짐),
+     *  대용량 트랙이 activeColor 전환 등으로 한꺼번에 dirty해지는 극단적인 경우에만 시간이
+     *  다 차서 여러 틱에 나눠 그려진다(프레임 스파이크 방지는 그대로 유지). */
+    static final long REPAINT_TIME_BUDGET_NANOS = 2_000_000L; // 2ms (50ms 틱 예산의 4%)
+    /** 시간 예산과 별개로 두는 개수 상한(안전장치). 만약 컬럼 하나당 비용이 예상보다 훨씬
+     *  커지는 이상 상황(예: GC 일시정지 직후)이 있어도, 단일 틱이 이 개수를 넘겨 무한정
+     *  오래 걸리는 최악의 경우를 막는다. 평소엔 시간 예산이 먼저 걸리므로 거의 도달하지 않는다. */
+    static final int REPAINT_HARD_CAP_PER_TICK = 200_000;
     /** activeColor 전환 히스테리시스: 같은 후보 색이 이 값만큼 연속으로 나와야 실제 전환한다.
      *  벽 경계처럼 anchor 판정이 매 틱 미세하게 흔들리는 위치에서 activeColor(및 그에 따른
      *  rebuildActiveSet의 대규모 diff)가 잡음성으로 반복 전환되는 것을 막는다. */
     static final int ACTIVE_COLOR_SWITCH_STREAK = 3;
     static final long STAGING_TIME_BUDGET_NANOS = 500_000L; // 0.5ms
+    /** 착지/텔레포트 직후처럼 "화면에 보이는 범위" 안에 아직 못 훑은 프론티어가 남아있을 때만
+     *  일시적으로 쓰는 확장 예산. 뷰 반경(REANCHOR_MARGIN과 동일 범위) 안이 다 채워지는 순간
+     *  다음 틱부터 바로 STAGING_* (보수적 기본값)으로 되돌아간다. "항상 크게"가 아니라
+     *  "필요한 순간에만 크게"이므로, 평소 주행 중 새 트랙 탐색으로 인한 스터터는 그대로
+     *  방지되면서 착지 직후 화면이 비어 보이는 시간만 줄어든다.
+     *  (REPAINT 쪽 프레임드랍은 이미 그려진 셀을 다시 칠하는 문제였고, 이건 아직 탐색조차
+     *  안 된 새 땅을 찾는 별개의 예산이라 서로 간섭하지 않는다.) */
+    static final int URGENT_SEARCH_RANGE = REANCHOR_MARGIN;
+    static final int URGENT_SEARCH_BUDGET_PER_TICK = 6000;
+    static final long URGENT_SEARCH_TIME_BUDGET_NANOS = 3_000_000L; // 3ms (그래도 50ms 틱 예산의 6%)
+    /** 진단 로그용: 이번 틱 탐색이 urgent 모드였는지 기록(onTickStart 로그가 참조). */
+    static boolean lastSearchWasUrgent = false;
     /** 플레이어 앵커 위치를 찾기 위해 아래로 뚫고 내려갈 수 있는 최대 칸 수.
      *  트랙 표면이 ignoreblock 태그로 "공기"처럼 보일 때 그 아래로 무한정 뚫고
      *  내려가 전혀 다른 영역에 도달하지 않도록 막는 안전장치. */
@@ -221,6 +239,17 @@ public class MCRiderMinimap implements ClientModInitializer {
         markPixelDirty(tx, tz);
     }
 
+    /** (worldX,worldZ)가 지금 화면에 실제로 보이는 원형 시야 범위 안인지 판정한다.
+     *  미니맵은 플레이어를 중심으로 회전하므로 방향 무관하게 반경만 본다.
+     *  이 범위는 maxDist로 물리적 크기가 고정돼 있어(회전 대각선 포함 여유 SQRT2배),
+     *  아무리 dirtyColumns가 커져도 이 범위 안 컬럼 수는 스파이크를 낼 만큼 커지지 않는다. */
+    private static boolean isInCurrentView(int worldX, int worldZ, int px, int pz) {
+        double dx = worldX - px;
+        double dz = worldZ - pz;
+        double r = maxDist * SQRT2 + 8;
+        return dx * dx + dz * dz <= r * r;
+    }
+
     /** "활성 색 + 그 자손"의 resolve된 집합(비디버그 모드용). 틱당 1회 계산해 캐시. */
     private static final LongOpenHashSet activeSet = new LongOpenHashSet();
 
@@ -244,6 +273,42 @@ public class MCRiderMinimap implements ClientModInitializer {
 
     /** rebuildActiveSet 재계산 시 "직전 activeSet"을 담아두는 diff용 버퍼. */
     private static final LongOpenHashSet prevActiveSetForDiff = new LongOpenHashSet();
+
+    /** "탐색 허용 범위" 전용 activeSet — 표시용 activeSet(히스테리시스가 걸린 activeColor 기반)과
+     *  분리한다. 표시는 깜빡임 방지를 위해 같은 후보가 3틱 연속 나와야 activeColor를 전환하지만,
+     *  탐색의 containToActive 필터까지 그 표시용 activeColor를 기준으로 쓰면 교착 상태가 생긴다:
+     *  빠르게 이동하며 새 트랙에 올라탈 때, 매 틱 다른 위치라 새 색이 계속 시드되는데 그 새 색이
+     *  아직 옛 activeColor의 activeSet에 없어 즉시 exile되고 → 프론티어가 안 이어지니 같은 후보가
+     *  두 틱 연속 나오지 않고 → 히스테리시스가 영원히 안 채워져 activeColor도 안 바뀌는 순환.
+     *  그래서 탐색 쪽은 "지금 이 틱에 실제로 서 있는 셀의 색"을 히스테리시스 없이 즉시 기준으로 삼는
+     *  별도 집합을 쓴다. 표시(activeSet/activeColor)는 기존처럼 히스테리시스를 유지해 깜빡이지 않는다. */
+    private static final LongOpenHashSet searchActiveSet = new LongOpenHashSet();
+    private static long searchActiveSetSnapshotRoot = NO_ID;
+    private static long searchActiveSetVersion = -1;
+
+    private static void rebuildSearchActiveSet(long liveRoot) {
+        if (searchActiveSetSnapshotRoot == liveRoot && searchActiveSetVersion == colorGraphVersion) {
+            return;
+        }
+        searchActiveSet.clear();
+        if (liveRoot != NO_ID) {
+            LongArrayFIFOQueue q = new LongArrayFIFOQueue();
+            searchActiveSet.add(liveRoot);
+            q.enqueue(liveRoot);
+            while (!q.isEmpty()) {
+                long cur = q.dequeueLong();
+                LongOpenHashSet kids = parentToChildren.get(cur);
+                if (kids == null) continue;
+                LongIterator it = kids.iterator();
+                while (it.hasNext()) {
+                    long kid = resolve(it.nextLong());
+                    if (searchActiveSet.add(kid)) q.enqueue(kid);
+                }
+            }
+        }
+        searchActiveSetSnapshotRoot = liveRoot;
+        searchActiveSetVersion = colorGraphVersion;
+    }
 
     private static void rebuildActiveSet() {
         if (activeSetSnapshotColor == activeColor && activeSetVersion == colorGraphVersion) {
@@ -782,15 +847,53 @@ public class MCRiderMinimap implements ClientModInitializer {
 
         // "전체 다시 그리기" 없이, mergeColors/rescanCycles/handleReach/rebuildActiveSet이
         // 각자 넣어둔 dirtyColumns만 다시 그린다. 비용은 실제 변경분에만 비례한다.
-        // 예산 상한(REPAINT_BUDGET_PER_TICK)으로 한 틱 처리량을 제한하며, 못 처리한 항목은
-        // Set에 그대로 남아 다음 틱에 이어서 처리된다(유실 없음).
+        // 시간 예산(REPAINT_TIME_BUDGET_NANOS)으로 한 틱 처리 시간을 제한하며, 못 처리한
+        // 항목은 Set에 그대로 남아 다음 틱에 이어서 처리된다(유실 없음).
+        //
+        // 주의: "화면에 보이는 범위는 무조건 다 그린다"처럼 예산 자체를 없애면 안 된다.
+        // 바닥이 전부 탐색된 곳에서 높은 곳으로 올라가 activeColor가 전환되는 경우,
+        // isInCurrentView는 Y(높이)를 보지 않고 X/Z 거리만 보므로 뷰 안에 들어오는
+        // dirty 컬럼이 수만 개에 달할 수 있다 — 이 경우 예산을 없애면 예산 도입 이전과
+        // 똑같은 프레임드랍이 재발한다(실제로 재발했던 문제).
+        // 따라서 시간 예산은 그대로 유지하되, 그 예산을 "뷰 안" 컬럼에 먼저 쓰고 남으면
+        // "뷰 밖"에 쓰는 순서만 바꾼다. 뷰 안 dirty가 시간 안에 다 그려질 정도로 적을
+        // 때만(=평소 착지 시나리오) 즉시 다 그려지고, 뷰 안 dirty 자체가 시간을 넘어설
+        // 만큼 큰 경우(=프레임드랍 재발 시나리오)는 예전처럼 여러 틱에 걸쳐 나눠 그려진다.
+        // 컬럼 하나 그리는 비용은 원래 저렴하므로, 대부분의 경우 시간 예산 안에서
+        // 훨씬 더 많은 개수가 처리돼 "먼지처럼 서서히" 보이는 연출 없이 사실상 즉시
+        // 다 그려진다(개수 상한은 극단적 이상 상황을 막는 안전장치일 뿐).
         if (!dirtyColumns.isEmpty() && originSet) {
-            int budget = REPAINT_BUDGET_PER_TICK;
+            int px = start.getX(), pz = start.getZ();
+            final long repaintDeadline = System.nanoTime() + REPAINT_TIME_BUDGET_NANOS;
+            int hardCap = REPAINT_HARD_CAP_PER_TICK;
+            int sinceTimeCheck = 0;
+
             LongIterator dirtyIt = dirtyColumns.iterator();
-            while (dirtyIt.hasNext() && budget-- > 0) {
+            boolean timedOut = false;
+            while (dirtyIt.hasNext() && hardCap > 0 && !timedOut) {
                 long key = dirtyIt.nextLong();
-                plotColumn(unpackColumnX(key), unpackColumnZ(key));
-                dirtyIt.remove();
+                int wx = unpackColumnX(key), wz = unpackColumnZ(key);
+                if (isInCurrentView(wx, wz, px, pz)) {
+                    plotColumn(wx, wz);
+                    dirtyIt.remove();
+                    hardCap--;
+                }
+                // nanoTime() 자체도 공짜가 아니므로, 대용량 백로그를 스캔만 할 때(뷰 밖 항목이
+                // 대부분일 때) 매번 부르면 그 호출 비용만으로 예산을 넘길 수 있다. 256개마다만 확인.
+                if ((++sinceTimeCheck & 0xFF) == 0 && System.nanoTime() >= repaintDeadline) {
+                    timedOut = true;
+                }
+            }
+
+            if (!timedOut) {
+                dirtyIt = dirtyColumns.iterator();
+                while (dirtyIt.hasNext() && hardCap > 0) {
+                    long key = dirtyIt.nextLong();
+                    plotColumn(unpackColumnX(key), unpackColumnZ(key));
+                    dirtyIt.remove();
+                    hardCap--;
+                    if ((++sinceTimeCheck & 0xFF) == 0 && System.nanoTime() >= repaintDeadline) break;
+                }
             }
         }
     }
@@ -875,6 +978,27 @@ public class MCRiderMinimap implements ClientModInitializer {
         }
     }
 
+    /** 뷰 반경(range) 안에 아직 처리 못 한 프론티어 청크가 남아있는지 청크 단위로 싸게 확인한다.
+     *  셀 개수가 아니라 "대기 중인 청크 개수"만 훑으므로(보통 수십~수백 개) 매 틱 호출해도
+     *  가볍다. true면 이번 틱은 URGENT_SEARCH_* 예산을 쓴다. */
+    private static boolean hasPendingFrontierWithin(int range, int sx, int sz) {
+        LongIterator it = frontierChunkKeys.iterator();
+        while (it.hasNext()) {
+            long k = it.nextLong();
+            if (taxiDistanceFromChunkToPos(ChunkPos.getPackedX(k), ChunkPos.getPackedZ(k), sx, sz) <= range) {
+                return true;
+            }
+        }
+        ObjectIterator<Long2ObjectMap.Entry<LongArrayList>> eIt = exiledFrontierChunkHash.long2ObjectEntrySet().iterator();
+        while (eIt.hasNext()) {
+            long k = eIt.next().getLongKey();
+            if (taxiDistanceFromChunkToPos(ChunkPos.getPackedX(k), ChunkPos.getPackedZ(k), sx, sz) <= range) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     static boolean floodFillWithVertical(BlockPos start, int maxRange, int updatePixel) {
         needsMoreSearching = false;
         var world = client.world;
@@ -909,12 +1033,22 @@ public class MCRiderMinimap implements ClientModInitializer {
         // 확장한다. resolvePlayerCell은 여기서 한 번만 호출해 재사용한다(updateActiveColor와
         // 결과가 같으므로 하강 스캔 중복을 피함).
         long playerCell = resolvePlayerCell(start);
-        updateActiveColorFromCell(playerCell);
-        rebuildActiveSet();
+        updateActiveColorFromCell(playerCell); // 표시용(히스테리시스 유지) — activeColor 갱신
+        rebuildActiveSet();                     // 표시용 activeSet
+
+        // 탐색용: 히스테리시스 없이 "지금 이 틱에 실제로 서 있는 셀의 색"을 즉시 기준으로 삼는다.
+        long liveRoot = (playerCell != NO_ID) ? resolve(cellColor.get(playerCell)) : NO_ID;
+        rebuildSearchActiveSet(liveRoot);
         final boolean containToActive = playerCell != NO_ID;
 
-        // deadline은 exile 부활 단계와 메인 탐색 루프가 같은 0.5ms 예산을 공유하도록 앞에서 선언한다.
-        final long deadline = System.nanoTime() + STAGING_TIME_BUDGET_NANOS;
+        // deadline은 exile 부활 단계와 메인 탐색 루프가 같은 예산을 공유하도록 앞에서 선언한다.
+        // 뷰 반경 안에 아직 처리 못 한 프론티어가 남아있으면(=착지 직후) 이번 틱만 예산을 키운다.
+        boolean urgent = hasPendingFrontierWithin(URGENT_SEARCH_RANGE, sx, sz);
+        lastSearchWasUrgent = urgent;
+        final long deadline = System.nanoTime() + (urgent ? URGENT_SEARCH_TIME_BUDGET_NANOS : STAGING_TIME_BUDGET_NANOS);
+        if (urgent && updatePixel < URGENT_SEARCH_BUDGET_PER_TICK) {
+            updatePixel = URGENT_SEARCH_BUDGET_PER_TICK;
+        }
 
         // 보류 프론티어 복귀(청크당 목록 전체).
         // exiledFrontierChunkHash를 순회하며 그 맵에 직접 쓰면(enqueueFrontier→parkInExiledFrontier)
@@ -961,7 +1095,7 @@ public class MCRiderMinimap implements ClientModInitializer {
             // 등록→dequeue→재park의 왕복 없이 곧장 exile로 되돌린다.
             long curColor = cellColor.get(cell);
             if (curColor == NO_ID) continue;
-            if (containToActive && !activeSet.contains(resolve(curColor))) {
+            if (containToActive && !searchActiveSet.contains(resolve(curColor))) {
                 parkInExiledFrontier(cell, cellX >> 4, cellZ >> 4);
                 continue;
             }
@@ -1027,7 +1161,7 @@ public class MCRiderMinimap implements ClientModInitializer {
                     // 루프가 자동 재평가하므로, 다시 활성이 되거나 병합되는 순간 확장이
                     // 재개된다. 비활성인 동안은 실제 확장(블록 조회·페인트) 없이 dequeue→
                     // 검사→재park만 반복해 CPU를 아낀다. debug 모드에서도 탐색 필터는 동일.
-                    if (containToActive && !activeSet.contains(resolve(curColor))) {
+                    if (containToActive && !searchActiveSet.contains(resolve(curColor))) {
                         parkInExiledFrontier(curPacked, cx >> 4, cz >> 4);
                         continue;
                     }
@@ -1235,6 +1369,9 @@ public class MCRiderMinimap implements ClientModInitializer {
         colorGraphVersion = 0;
         activeSetVersion = -1;
         activeSetSnapshotColor = NO_ID;
+        searchActiveSet.clear();
+        searchActiveSetVersion = -1;
+        searchActiveSetSnapshotRoot = NO_ID;
         pendingActiveColorCandidate = NO_ID;
         pendingActiveColorStreak = 0;
         invalidateChunkCache();
