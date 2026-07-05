@@ -10,6 +10,7 @@ import it.unimi.dsi.fastutil.longs.LongArrayList;
 import it.unimi.dsi.fastutil.longs.LongIterator;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectIterator;
+import com.mojang.blaze3d.systems.RenderSystem;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
@@ -129,6 +130,49 @@ public class MCRiderMinimap implements ClientModInitializer {
     private static int originX, originZ;
     private static boolean originSet = false;
 
+    // [개선] 텍스처 부분 업로드용 dirty 바운딩 박스(텍스처 로컬 좌표, 0..TEX_SIZE-1).
+    // 예전엔 textureDirty가 서면 texture.upload()로 512×512 전체(1MB)를 매번 GPU에 올렸다.
+    // 이제 실제로 바뀐 픽셀들을 감싸는 최소 사각형만 writeToTexture로 올린다. 픽셀 값 자체는
+    // plotColumn이 이전과 완전히 동일하게 image에 써두므로, 최종적으로 GPU에 반영되는 결과는
+    // 전체 업로드와 동일하다 — 바뀌지 않은 영역은 직전 업로드 값이 그대로 유효하기 때문이다.
+    // (전체 클리어가 일어나는 rebuildTexture/clearAllMap에서는 markAllDirty로 전체를 올린다.)
+    private static int dirtyMinX = Integer.MAX_VALUE, dirtyMinY = Integer.MAX_VALUE;
+    private static int dirtyMaxX = -1, dirtyMaxY = -1;
+
+    private static void markPixelDirty(int tx, int tz) {
+        if (tx < dirtyMinX) dirtyMinX = tx;
+        if (tz < dirtyMinY) dirtyMinY = tz;
+        if (tx > dirtyMaxX) dirtyMaxX = tx;
+        if (tz > dirtyMaxY) dirtyMaxY = tz;
+        textureDirty = true;
+    }
+
+    private static void markAllDirty() {
+        dirtyMinX = 0; dirtyMinY = 0; dirtyMaxX = TEX_SIZE - 1; dirtyMaxY = TEX_SIZE - 1;
+        textureDirty = true;
+    }
+
+    private static void resetDirtyRect() {
+        dirtyMinX = Integer.MAX_VALUE; dirtyMinY = Integer.MAX_VALUE;
+        dirtyMaxX = -1; dirtyMaxY = -1;
+    }
+
+    /** dirty 바운딩 박스 영역만 NativeImage → GPU 텍스처로 복사(1.21.5 blaze3d GPU 경로).
+     *  com.mojang.blaze3d 클래스들은 난독화되지 않은 실명이라 아래 호출 체인이 그대로 유효하다. */
+    private static void uploadDirtyRegion() {
+        if (image == null || texture == null) return;
+        int minX = Math.max(0, dirtyMinX);
+        int minY = Math.max(0, dirtyMinY);
+        int maxX = Math.min(TEX_SIZE - 1, dirtyMaxX);
+        int maxY = Math.min(TEX_SIZE - 1, dirtyMaxY);
+        if (minX > maxX || minY > maxY) { resetDirtyRect(); return; }
+        int w = maxX - minX + 1;
+        int h = maxY - minY + 1;
+        RenderSystem.getDevice().createCommandEncoder()
+                .writeToTexture(texture.getGlTexture(), image, 0, minX, minY, w, h, minX, minY);
+        resetDirtyRect();
+    }
+
     // ── 예산 ─────────────────────────────────────────────────────────────
     static final int STAGING_BUDGET_PER_TICK = 512;
     static final long STAGING_TIME_BUDGET_NANOS = 500_000L; // 0.5ms
@@ -167,7 +211,7 @@ public class MCRiderMinimap implements ClientModInitializer {
             long key = it.nextLong();
             plotColumn(unpackColumnX(key), unpackColumnZ(key));
         }
-        textureDirty = true;
+        markAllDirty(); // fillRect로 전체를 0으로 지웠으므로 이번엔 전체를 올려야 한다.
         dirtyColumns.clear();
     }
 
@@ -177,7 +221,7 @@ public class MCRiderMinimap implements ClientModInitializer {
         int tz = worldZ - originZ;
         if (tx < 0 || tx >= TEX_SIZE || tz < 0 || tz >= TEX_SIZE) return;
         image.setColorArgb(tx, tz, computeColumnColor(worldX, worldZ));
-        textureDirty = true;
+        markPixelDirty(tx, tz);
     }
 
     /** 비디버그 모드에서 "활성 색 + 그 자손"의 resolve된 집합. 재도색 시작 시 1회 계산해 캐시.
@@ -325,7 +369,7 @@ public class MCRiderMinimap implements ClientModInitializer {
 
         ensureTexture();
         if (textureDirty) {
-            texture.upload();
+            uploadDirtyRegion();
             textureDirty = false;
         }
 
@@ -540,38 +584,32 @@ public class MCRiderMinimap implements ClientModInitializer {
         }
     }
 
-    static void collectDescendants(long start, LongOpenHashSet out) {
+    /** start에서 adj(부모→자식 또는 자식→부모) 방향으로 도달 가능한 (resolve된) 노드를 out에
+     *  모은다. start 자신은 out에 넣지 않는다(방문 표시에만 사용). collectDescendants/
+     *  collectAncestors가 인접 맵만 달리해 공유하던 동일 로직을 하나로 합친 것이다. */
+    static void collectReachable(long start, Long2ObjectOpenHashMap<LongOpenHashSet> adj, LongOpenHashSet out) {
         start = resolve(start);
         LongArrayFIFOQueue q = new LongArrayFIFOQueue();
         LongOpenHashSet seen = new LongOpenHashSet();
         q.enqueue(start); seen.add(start);
         while (!q.isEmpty()) {
             long cur = q.dequeueLong();
-            LongOpenHashSet kids = parentToChildren.get(cur);
-            if (kids == null) continue;
-            LongIterator it = kids.iterator();
+            LongOpenHashSet nbrs = adj.get(cur);
+            if (nbrs == null) continue;
+            LongIterator it = nbrs.iterator();
             while (it.hasNext()) {
-                long kid = resolve(it.nextLong());
-                if (seen.add(kid)) { out.add(kid); q.enqueue(kid); }
+                long nb = resolve(it.nextLong());
+                if (seen.add(nb)) { out.add(nb); q.enqueue(nb); }
             }
         }
     }
 
+    static void collectDescendants(long start, LongOpenHashSet out) {
+        collectReachable(start, parentToChildren, out);
+    }
+
     static void collectAncestors(long start, LongOpenHashSet out) {
-        start = resolve(start);
-        LongArrayFIFOQueue q = new LongArrayFIFOQueue();
-        LongOpenHashSet seen = new LongOpenHashSet();
-        q.enqueue(start); seen.add(start);
-        while (!q.isEmpty()) {
-            long cur = q.dequeueLong();
-            LongOpenHashSet pars = childToParents.get(cur);
-            if (pars == null) continue;
-            LongIterator it = pars.iterator();
-            while (it.hasNext()) {
-                long par = resolve(it.nextLong());
-                if (seen.add(par)) { out.add(par); q.enqueue(par); }
-            }
-        }
+        collectReachable(start, childToParents, out);
     }
 
     // ═════════════════════════════ 탐색 ═════════════════════════════
@@ -581,11 +619,26 @@ public class MCRiderMinimap implements ClientModInitializer {
     static final TagKey<Block> KART_AIR = TagKey.of(RegistryKeys.BLOCK, Identifier.of("kartmobil", "ignoreblock"));
     static final Predicate<BlockState> isAir = state -> state.isIn(KART_AIR);
 
+    /** 4방향 이웃 오프셋. 내용이 불변이므로 매 틱 재할당하지 않고 상수로 공유한다. */
+    private static final int[][] DIRS = { {1, 0}, {-1, 0}, {0, 1}, {0, -1} };
+
     private static final int CHUNK_CACHE_SLOTS = 4;
     private static final long[] cacheKeys = new long[CHUNK_CACHE_SLOTS];
     private static final Chunk[] cacheChunks = new Chunk[CHUNK_CACHE_SLOTS];
     private static int cacheNextSlot = 0;
     private static final BlockPos.Mutable MUTABLE = new BlockPos.Mutable();
+
+    // [개선] 프론티어 청크를 거리순 정렬할 때 쓰는 재사용 스크래치. 예전엔 매 라운드
+    // long[]/int[]를 새로 할당하고 O(n²) 삽입정렬을 돌렸다. 이제 배열을 재사용하고,
+    // (거리<<32 | 인덱스)로 패킹해 Arrays.sort로 O(n log n) 정렬한다. 인덱스를 하위 비트에
+    // 실어 total order를 만들었으므로, 거리가 같은 청크들의 상대 순서는 "스냅샷을 채운 순서"
+    // (= frontierChunkKeys 반복자 순서)로 유일하게 결정된다. 이는 기존 삽입정렬(strict >, 즉
+    // 동일 거리는 서로 앞지르지 않는 stable 정렬)이 만들어내던 순서와 정확히 일치하므로,
+    // 처리 순서가 바뀌지 않는다(따라서 예산 하의 틱별 동작도 동일).
+    private static long[] frontierSortSnap = new long[0];
+    private static long[] frontierSortPacked = new long[0];
+    /** exile 부활 셀을 임시로 모으는 재사용 리스트(매 틱 new 방지). floodFill은 재진입하지 않는다. */
+    private static final LongArrayList revivedScratch = new LongArrayList();
 
     private static void invalidateChunkCache() {
         java.util.Arrays.fill(cacheKeys, Long.MIN_VALUE);
@@ -720,12 +773,16 @@ public class MCRiderMinimap implements ClientModInitializer {
     }
 
     static void updateActiveColor(BlockPos start) {
-        long cell = resolvePlayerCell(start);
+        updateActiveColorFromCell(resolvePlayerCell(start));
+    }
+
+    /** 이미 구해둔 플레이어 앵커 셀로 activeColor를 갱신한다(resolvePlayerCell 중복 호출 회피용).
+     *  로직은 기존 updateActiveColor와 완전히 동일하다. */
+    static void updateActiveColorFromCell(long cell) {
         if (cell == NO_ID) return;
         long id = cellColor.get(cell);
         if (id == NO_ID) return;
-        long root = resolve(id);
-        activeColor = root;
+        activeColor = resolve(id);
     }
 
     static long resolvePlayerCell(BlockPos start) {
@@ -741,17 +798,6 @@ public class MCRiderMinimap implements ClientModInitializer {
         if (anchor == NO_ID) return NO_ID;
         if (cellColor.get(anchor) == NO_ID) return NO_ID; // 아직 매핑 안 된 곳
         return anchor;
-    }
-
-    static void repaintAll() {
-        if (image == null || !originSet) return;
-        image.fillRect(0, 0, TEX_SIZE, TEX_SIZE, 0);
-        LongIterator it = visitedColumns.keySet().longIterator();
-        while (it.hasNext()) {
-            long key = it.nextLong();
-            plotColumn(unpackColumnX(key), unpackColumnZ(key));
-        }
-        textureDirty = true;
     }
 
     /**
@@ -832,14 +878,17 @@ public class MCRiderMinimap implements ClientModInitializer {
         //  있는데 탐색이 끊기는" 상황을 새로 만들지 않는다(안전 우선).
         // [수정] activeSet은 이제 표시(비디버그)뿐 아니라 "탐색을 활성 영역+자손으로
         // 제한하는 필터"의 기준이기도 하므로, debug 모드에서도 항상 계산한다.
-        updateActiveColor(start);
+        // [개선] resolvePlayerCell(내부에서 findAnchorCell로 아래 방향 스캔)을 이 시점에 한 번만
+        // 호출한다. 예전엔 updateActiveColor(start) 안에서 한 번, 바로 아래 containToActive용으로
+        // 또 한 번 호출했는데, 이 두 호출 사이에 cellColor가 바뀌지 않아 결과가 항상 동일하다.
+        // 따라서 한 번 구해 재사용해도 동작은 완전히 같고, 틱당 하강 스캔 1회를 아낀다.
+        long playerCell = resolvePlayerCell(start);
+        updateActiveColorFromCell(playerCell);
         rebuildActiveSet();
         // [수정] 필터를 debug 모드에서도 적용한다(공중으로 날아간 영역 등 비활성 영역이
         // 계속 탐색되던 문제 차단). 활성 영역을 확실히 특정하지 못한 틱에만 필터를 꺼서
         // "서킷 위에 있는데 탐색이 끊기는" 상황을 새로 만들지 않는다(안전 우선).
-        final boolean containToActive = resolvePlayerCell(start) != NO_ID;
-
-        final int[][] dirs = { {1,0}, {-1,0}, {0,1}, {0,-1} };
+        final boolean containToActive = playerCell != NO_ID;
 
         // 보류 프론티어 복귀(청크당 목록 전체).
         // [버그 수정] 예전에는 이 순회 도중 enqueueFrontier → (범위 밖이면) parkInExiledFrontier를
@@ -849,7 +898,8 @@ public class MCRiderMinimap implements ClientModInitializer {
         // 다시는 검사되지 않고 영구히 갇힌다("청크 로드 경계에서 exile된 셀이 재활성화 안 됨"의
         // 실제 원인). 그래서 순회 중에는 조건에 맞는 청크의 셀들을 임시 리스트에 모아 맵에서만
         // 제거하고, 맵 순회가 완전히 끝난 뒤에 그 셀들을 안전하게 재분류(enqueueFrontier)한다.
-        LongArrayList revivedCells = new LongArrayList();
+        LongArrayList revivedCells = revivedScratch;
+        revivedCells.clear();
         ObjectIterator<Long2ObjectMap.Entry<LongArrayList>> exiledIt = exiledFrontierChunkHash.long2ObjectEntrySet().iterator();
         while (exiledIt.hasNext()) {
             Long2ObjectMap.Entry<LongArrayList> e = exiledIt.next();
@@ -882,37 +932,31 @@ public class MCRiderMinimap implements ClientModInitializer {
         // 이전과 동일한 안전성).
         boolean stop = false;
         while (!stop && !frontierChunkKeys.isEmpty()) {
-            // 현재 대기 중인 청크 키들을 배열로 스냅샷 뜬 뒤, 거리 기준으로 직접 삽입정렬한다.
-            // (LongArrayList.sort(람다)는 java.util.List의 Comparator<Long> 오버로드와
-            // fastutil의 LongComparator 오버로드가 동시에 맞아떨어져 컴파일이 모호해질 수
-            // 있어, 그런 위험이 전혀 없는 순수 배열 삽입정렬을 쓴다. 청크 개수는 보통
-            // 수십~수백 개 수준이라 O(n²)이어도 충분히 저렴하다.)
+            // 현재 대기 중인 청크 키들을 재사용 스크래치에 스냅샷 뜬 뒤 거리순으로 정렬한다.
+            // 각 청크를 (거리<<32 | 인덱스)로 패킹해 Arrays.sort로 O(n log n)에 정렬하며,
+            // 인덱스를 하위 비트에 실어 total order를 만들었으므로 동일 거리 청크의 상대 순서는
+            // 스냅샷을 채운 순서(= frontierChunkKeys 반복자 순서)로 유일하게 결정된다. 이는
+            // 기존 삽입정렬(strict >, stable)이 만들던 순서와 정확히 같아 처리 순서 불변이다.
             int n = frontierChunkKeys.size();
-            long[] keys = new long[n];
-            int[] dist = new int[n];
+            if (frontierSortSnap.length < n) {
+                frontierSortSnap = new long[n];
+                frontierSortPacked = new long[n];
+            }
+            long[] snap = frontierSortSnap;
+            long[] packed = frontierSortPacked;
             int idx = 0;
             LongIterator keyIt = frontierChunkKeys.iterator();
             while (keyIt.hasNext()) {
                 long k = keyIt.nextLong();
-                keys[idx] = k;
-                dist[idx] = taxiDistanceFromChunkToPos(ChunkPos.getPackedX(k), ChunkPos.getPackedZ(k), sx, sz);
+                snap[idx] = k;
+                int d = taxiDistanceFromChunkToPos(ChunkPos.getPackedX(k), ChunkPos.getPackedZ(k), sx, sz);
+                packed[idx] = ((long) d << 32) | (idx & 0xFFFFFFFFL);
                 idx++;
             }
-            for (int i = 1; i < n; i++) {
-                long k = keys[i];
-                int dk = dist[i];
-                int j = i - 1;
-                while (j >= 0 && dist[j] > dk) {
-                    keys[j + 1] = keys[j];
-                    dist[j + 1] = dist[j];
-                    j--;
-                }
-                keys[j + 1] = k;
-                dist[j + 1] = dk;
-            }
+            java.util.Arrays.sort(packed, 0, n);
 
             for (int ci = 0; ci < n; ci++) {
-                long chunkKey = keys[ci];
+                long chunkKey = snap[(int) (packed[ci] & 0xFFFFFFFFL)];
                 LongArrayList bucket = frontierByChunk.get(chunkKey);
                 if (bucket == null) continue; // 이미 다른 경로로 비워졌을 수 있음(방어적)
 
@@ -957,7 +1001,7 @@ public class MCRiderMinimap implements ClientModInitializer {
 
                     boolean hasBlockAt2Meter = !isAirAt(cx, cy + 2, cz);
 
-                    for (int[] d : dirs) {
+                    for (int[] d : DIRS) {
                         int nx = cx + d[0];
                         int nz = cz + d[1];
 
@@ -1180,7 +1224,7 @@ public class MCRiderMinimap implements ClientModInitializer {
         invalidateChunkCache();
         if (image != null) {
             image.fillRect(0, 0, TEX_SIZE, TEX_SIZE, 0);
-            textureDirty = true;
+            markAllDirty();
         }
         originSet = false;
     }
