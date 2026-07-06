@@ -17,11 +17,11 @@
 	"entrypoints": {
 		"client": [
           "loggamja.mcrider.MCRiderMain",
+          "loggamja.mcrider.minimap.MCRiderMinimap",
           "loggamja.mcrider.MCRiderRadar",
           "loggamja.mcrider.MCRiderDraft",
           "loggamja.mcrider.MCRiderCamera",
-          "loggamja.mcrider.MCRiderSuspension",
-          "loggamja.mcrider.minimap.MCRiderMinimap"
+          "loggamja.mcrider.MCRiderSuspension"
 		]
 	},
 	"mixins": [

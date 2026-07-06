@@ -126,6 +126,43 @@ final class BlockSearch {
         }
     }
 
+    /** 폭 판정 전용 "옆으로 비켜설 수 있는 칸"인지 확인. 머리 공간/발판 유무 같은 "여기 서
+     *  있을 수 있는가"는 resolveTargetY·isStandable이 이미 별도로 검증하므로, 여긴 그것과
+     *  독립적인 질문("옆이 벽으로 막혀 있는가")만 본다. 여기에 머리 공간 체크까지 넣으면
+     *  옆 칸이 벽은 아니지만 낮은 턱이라 못 서는 경우까지 "막힘"으로 오판해 실제로는 폭이
+     *  있는 통로를 narrow로 잘못 판정하게 된다. */
+    private static boolean isLaterallyOpen(int x, int y, int z) {
+        if (!isChunkLoadedAt(x, z)) return false;
+        return isAirAt(x, y, z);
+    }
+
+    /** (nx,ny,nz) 한 층에서, 이동 방향(dx,dz)에 수직인 두 이웃 칸을 확인해 그 층이 폭 1칸인지
+     *  판정한다. 양쪽 다 막혀 있으면 옆으로 비켜설 공간이 전혀 없다는 뜻이므로 narrow(true).
+     *  dx!=0이면 이동축이 x라 z축 이웃이 "옆", 반대면 x축 이웃이 "옆". */
+    static boolean isNarrowPassage(int nx, int ny, int nz, int dx, int dz) {
+        if (dx != 0) {
+            return !isLaterallyOpen(nx, ny, nz - 1) && !isLaterallyOpen(nx, ny, nz + 1);
+        } else {
+            return !isLaterallyOpen(nx - 1, ny, nz) && !isLaterallyOpen(nx + 1, ny, nz);
+        }
+    }
+
+    /** cy에서 ty로 이동하는 동안 실제로 몸이 지나가는 모든 높이를 훑어 폭 1칸 구간이 하나라도
+     *  있으면 narrow로 본다. ty>=cy(같은 층/계단 오르기)면 실제로 몸이 위치하는 높이는 ty
+     *  하나뿐이라 그 한 층만 본다. ty<cy(낙하)면 몸이 cy부터 ty까지 순차로 통과하므로 그
+     *  구간 전체를 스캔한다 — 위쪽은 넓다가 착지 지점만 좁아지는 굴, 반대로 입구만 좁고
+     *  아래는 넓어지는 굴 양쪽 다 놓치지 않기 위함이다. */
+    static boolean isNarrowPassageInRange(int nx, int cy, int ty, int nz, int dx, int dz) {
+        if (ty >= cy) {
+            return isNarrowPassage(nx, ty, nz, dx, dz);
+        }
+        for (int y = cy; y >= ty; y--) {
+            // 낙하 중엔 이동 방향이 수직이라 두 수평축 모두를 봐야 함
+            if (isNarrowPassage(nx, y, nz, 1, 0) || isNarrowPassage(nx, y, nz, 0, 1)) return true;
+        }
+        return false;
+    }
+
     /** 목적지에서 출발지로 되돌아가는 이동이 규칙상 성립하면 양방향. */
     static boolean canMoveBetween(int tx, int ty, int tz, int fx, int fy, int fz, int bottomY) {
         boolean baseIsWall = isWallAt(fx, ty, fz); // 되돌아갈 칸 기저가 벽이면 역방향 불가

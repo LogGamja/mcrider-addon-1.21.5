@@ -56,6 +56,13 @@ public class DisplayEntityRendererMixin {
         Matrix4f m = new Matrix4f(affine.getMatrix());
         Matrix4f roll = new Matrix4f().rotateZ((float) Math.toRadians(rollDeg));
 
+        // 주의: 아래 두 m.invert() 호출은 "같은 걸 두 번 곱하는 실수"가 아니다.
+        // JOML의 Matrix4f.invert()는 자기 자신을 제자리(in-place)에서 뒤집고 반환하므로,
+        // 첫 번째 호출 시점엔 m == M(원본) → 뒤집혀서 M⁻¹이 적용되고,
+        // 두 번째 호출 시점엔 m == M⁻¹(직전 결과) → 다시 뒤집혀서 M(원본)이 적용된다.
+        // 즉 실제로 곱해지는 순서는 M⁻¹ · Roll · M (변환 공간을 원점 기준으로 되돌려서
+        // roll을 적용한 뒤 다시 원래 변환으로 되돌리는 conjugation) 이다.
+        // 둘 중 하나를 "중복"이라 착각해 지우면 조용히 깨지니 절대 지우지 말 것.
         matrices.multiplyPositionMatrix(m.invert());
         matrices.translate(0.0f, (float) -pivotY, 0.0f);
         matrices.multiplyPositionMatrix(roll);

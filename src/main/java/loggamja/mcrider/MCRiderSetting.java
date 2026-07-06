@@ -24,7 +24,7 @@ public class MCRiderSetting extends Screen {
 
             { "Suspension Effect: OFF", "Suspension Effect: Kart", "Suspension Effect: Kart and Camera" },
             { "Bike Suspension: Default", "Bike Suspension: 4-Wheel", "Bike Suspension: Realistic", "Bike Suspension: Extreme!" },
-            { "Track Minimap (WIP): OFF", "Track Minimap (WIP): ON" }
+            { "Track Minimap (WIP): OFF", "Track Minimap (WIP): ON", "Track Minimap (WIP): DEBUG" }
     };
     static String[] tooltips = {
             "Optimize the rotation of karts when riding a kart.",
@@ -37,7 +37,7 @@ public class MCRiderSetting extends Screen {
 
             "Change suspension effect when riding a kart.",
             "Change bike suspension effect when enable suspension effect.",
-            "(Work in progress) Show a flood-fill track minimap."
+            "(Work in progress) Show a flood-fill track minimap. Debug mode shows each track segment in a different color."
     };
 
     // 슬라이더 정의: {라벨, 최소값, 최대값, 기본값, 툴팁}
@@ -68,7 +68,7 @@ public class MCRiderSetting extends Screen {
 
                     { "서스펜션 효과: 꺼짐", "서스펜션 효과: 카트바디", "서스펜션 효과: 카트와 카메라" },
                     { "바이크 서스펜션: 기본", "바이크 서스펜션: 4륜 카트", "바이크 서스펜션: 현실적", "바이크 서스펜션: 익스트림" },
-                    { "트랙 미니맵 (개발중): 꺼짐", "트랙 미니맵 (개발중): 켜짐" }
+                    { "트랙 미니맵 (개발중): 꺼짐", "트랙 미니맵 (개발중): 켜짐", "트랙 미니맵 (개발중): 디버그" }
             };
             tooltips = new String[] {
                     "카트 탑승 시 조작감을 최적화합니다.",
@@ -81,7 +81,7 @@ public class MCRiderSetting extends Screen {
 
                     "카트 탑승 시 드리프트 서스펜션 효과를 선택합니다.",
                     "서스펜션 효과 활성화 시 바이크의 서스펜션 연출을 변경합니다.",
-                    "(개발 중인 기능) 플러드필 방식의 트랙 미니맵을 표시합니다."
+                    "(개발 중인 기능) 플러드필 방식의 트랙 미니맵을 표시합니다. 디버그는 트랙 조각마다 다른 색으로 표시합니다."
             };
             SLIDER_OPTIONS = new Object[][] {
                     { "주행 시야 범위", 30.0, 110.0, "카메라 모드 '기본' 상태에서만 적용됩니다." },
@@ -113,7 +113,7 @@ public class MCRiderSetting extends Screen {
         toggleIndices[6] = cfg.cameraMode;
         toggleIndices[7] = cfg.suspensionEffect;
         toggleIndices[8] = cfg.bikeSuspension;
-        toggleIndices[9] = cfg.useMinimap ? 1 : 0;
+        toggleIndices[9] = cfg.useMinimap;
 
         // slider load
         sliderValues[0] = cfg.MCRiderFOV;
@@ -208,7 +208,7 @@ public class MCRiderSetting extends Screen {
         else if (button == 6) cfg.cameraMode = index;
         else if (button == 7) cfg.suspensionEffect = index;
         else if (button == 8) cfg.bikeSuspension = index;
-        else if (button == 9) cfg.useMinimap = (index != 0);
+        else if (button == 9) cfg.useMinimap = index;
     }
 
     void onSliderChange(int slider, float value) {

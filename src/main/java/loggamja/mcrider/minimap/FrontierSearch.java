@@ -112,16 +112,16 @@ final class FrontierSearch {
             return; // 캐시 유효: activeColor도 그래프도 안 바뀜.
         }
         // 재계산 전 이전 activeSet을 보존해 새 집합과 diff, 실제 변경된 루트의 컬럼만 dirty
-        // 표시한다(전체 재도색 방지). DEBUG_COLORS는 activeSet과 무관하므로 diff 불필요.
+        // 표시한다(전체 재도색 방지). 디버그 모드는 activeSet과 무관하므로 diff 불필요.
         prevActiveSetForDiff.clear();
-        if (!MCRiderMinimap.DEBUG_COLORS) prevActiveSetForDiff.addAll(activeSet);
+        if (!MCRiderMinimap.isDebugColors()) prevActiveSetForDiff.addAll(activeSet);
 
         activeSet.clear();
         collectColorSubtree(activeColor, activeSet);
         activeSetSnapshotColor = activeColor;
         activeSetVersion = ColorGraph.colorGraphVersion;
 
-        if (!MCRiderMinimap.DEBUG_COLORS) {
+        if (!MCRiderMinimap.isDebugColors()) {
             // 활성에서 이탈/진입한 루트의 컬럼만 dirty로 표시한다.
             LongIterator it = prevActiveSetForDiff.iterator();
             while (it.hasNext()) {
@@ -261,11 +261,14 @@ final class FrontierSearch {
         // 규칙1: 발밑 셀이 미방문이면 새 루트 색 시드.
         long startCell = BlockPos.asLong(sx, sy, sz);
         if (cellColor.get(startCell) == NO_ID && BlockSearch.isStandable(sx, sy, sz, false)) {
-            long c = ColorGraph.newColor(NO_ID);
-            paintCell(sx, sy, sz, c);
-            FrontierQueue.push(startCell, sx, sz);
+            boolean seedIsNarrow = MCRiderMinimap.EXCLUDE_NARROW_PATHS
+                    && (BlockSearch.isNarrowPassage(sx, sy, sz, 1, 0) || BlockSearch.isNarrowPassage(sx, sy, sz, 0, 1));
+            if (!seedIsNarrow) {
+                long c = ColorGraph.newColor(NO_ID);
+                paintCell(sx, sy, sz, c);
+                FrontierQueue.push(startCell, sx, sz);
+            }
         }
-
         // 오픈 필드 블리딩 억제: 프론티어 확장을 "플레이어가 서 있는 영역 + 자손"으로 제한한다.
         // 서킷 사이 공터는 밟지 않으면 탐색되지 않고, 잠깐 밟아 시드돼도 플레이어가 넘어가면
         // 비활성이 되어 확장이 멈춘다(무한 블리딩 차단). debug 모드도 탐색 필터는 동일.
@@ -375,6 +378,16 @@ final class FrontierSearch {
                         int ty = BlockSearch.resolveTargetY(nx, cy, nz, baseIsAir, baseIsWall, hasBlockAt2Meter, world.getBottomY());
                         if (ty == Integer.MIN_VALUE) continue;
 
+                        // 폭 1칸 통로(1칸 너비 수직굴 포함) 차단: 몸이 실제로 지나가는 높이
+                        // 구간(cy~ty, 낙하면 그 사이 전부 / 계단이면 ty 한 층)을 스캔해 옆으로
+                        // 비켜설 공간이 전혀 없는 지점이 하나라도 있으면 아예 확장하지 않는다
+                        // ("탐색 후 숨김"이 아니라 "탐색 안 함" — cellColor·FrontierQueue 어디에도
+                        // 등록되지 않는다).
+                        if (MCRiderMinimap.EXCLUDE_NARROW_PATHS
+                                && BlockSearch.isNarrowPassageInRange(nx, cy, ty, nz, d[0], d[1])) {
+                            continue;
+                        }
+
                         boolean twoWay = BlockSearch.canMoveBetween(nx, ty, nz, cx, cy, cz, world.getBottomY());
                         handleReach(cx, cy, cz, curColor, nx, ty, nz, twoWay, sx, sz, maxRange);
                     }
@@ -476,7 +489,7 @@ final class FrontierSearch {
         // 이 컬럼을 방금 칠한 색의 루트 아래 역인덱스에도 등록한다(나중에 병합되면 함께 이전됨).
         long root = ColorGraph.resolve(color);
         columnsByRoot.computeIfAbsent(root, k -> new LongOpenHashSet()).add(colKey);
-        if (MCRiderMinimap.DEBUG_COLORS) {
+        if (MCRiderMinimap.isDebugColors()) {
             MinimapRenderer.plotColumn(x, z); // 즉시 그 컬럼만 도색(디버그 전용 역방향 참조)
         } else {
             dirtyColumns.add(colKey); // 새로 칠해진 컬럼만 추가(기존 컬럼 재도색은 markColumnsDirtyForRoot가 담당)

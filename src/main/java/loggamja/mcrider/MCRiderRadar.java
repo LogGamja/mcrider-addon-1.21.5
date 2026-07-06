@@ -1,5 +1,6 @@
 package loggamja.mcrider;
 
+import loggamja.mcrider.minimap.MCRiderMinimap;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
@@ -97,10 +98,14 @@ public class MCRiderRadar implements ClientModInitializer {
         final int centerX = (int) Math.round(scaledPadding + scaledRadius);
         final int centerY = (int) Math.round(screenHeight - scaledPadding - scaledRadius);
 
-        // 반투명 검은색 배경
-        context.fill((int) Math.round(centerX - scaledRadius), (int) Math.round(centerY - scaledRadius),
-                (int) Math.round(centerX + scaledRadius), (int) Math.round(centerY + scaledRadius),
-                0x88000000);
+        // 미니맵과 정확히 같은 화면 사각형(패딩/반지름 계산식이 동일)을 차지하므로, 미니맵이
+        // 켜져 있으면 배경은 미니맵 쪽에서 이미 그린다. 여기서 또 그리면 반투명이 두 번 겹쳐
+        // 훨씬 어둡게 보이는 중복 문제가 있었다.
+        if (MCRiderConfig.INSTANCE.useMinimap == 0) {
+            context.fill((int) Math.round(centerX - scaledRadius), (int) Math.round(centerY - scaledRadius),
+                    (int) Math.round(centerX + scaledRadius), (int) Math.round(centerY + scaledRadius),
+                    0x88000000);
+        }
 
         // 플레이어 yaw 기반 방향 벡터
         //final float yawDeg = client.gameRenderer.getCamera().getYaw();
@@ -114,9 +119,26 @@ public class MCRiderRadar implements ClientModInitializer {
 
         final Vec3d p = MCRiderMain.getRidingPlayer().getCameraPosVec(tickDelta);
 
-        final double scale = scaledRadius / maxDist;
-        final float kartW = (float) Math.max(2, KART_WIDTH  * scale * KART_ICON_DISPLAY_SCALE);
-        final float kartH = (float) Math.max(2, KART_HEIGHT * scale * KART_ICON_DISPLAY_SCALE);
+        // 미니맵과 같은 원을 공유할 때는 미니맵의 표시 반경(월드 거리)에 맞춰 축척을 통일한다.
+        // 그러지 않으면 같은 화면 반지름이 서로 다른 실제 거리를 의미하게 돼(레이더 18.75블록
+        // vs 미니맵 75블록), 카트 아이콘 위치와 트랙 그림이 어긋나 보인다.
+        final double effectiveMaxDist = (MCRiderConfig.INSTANCE.useMinimap != 0) ? MCRiderMinimap.getViewDistance() : maxDist;
+
+        final double scale = scaledRadius / effectiveMaxDist;
+
+        // 아이콘은 "지도처럼 정확한 축척"이 아니라 방향을 읽어야 하는 요소다. 미니맵과
+        // 축척을 맞추면서(75블록 반경) 실제 크기 그대로 축소하면 몇 픽셀짜리 사각형이 돼서,
+        // 회전한 텍스처를 그 해상도로 래스터화할 때 각도 차이가 제대로 안 살고 "늘 한쪽으로
+        // 찌그러진 것처럼" 보이는 앨리어싱이 생긴다. 종횡비는 유지한 채 최소 높이만 강제해서
+        // 회전이 실제로 보일 만큼의 픽셀 수를 확보한다.
+        float kartW = (float) (KART_WIDTH  * scale * KART_ICON_DISPLAY_SCALE);
+        float kartH = (float) (KART_HEIGHT * scale * KART_ICON_DISPLAY_SCALE);
+        final float MIN_ICON_HEIGHT = 14f;
+        if (kartH < MIN_ICON_HEIGHT) {
+            final float upscale = MIN_ICON_HEIGHT / kartH;
+            kartW *= upscale;
+            kartH = MIN_ICON_HEIGHT;
+        }
 
         // 내 카트 (중앙)
         final float myKartYaw = getKartBodyYaw(MCRiderMain.getRidingPlayer());
@@ -132,7 +154,7 @@ public class MCRiderRadar implements ClientModInitializer {
             final double dz = q.z - p.z;
 
             final double dist = Math.sqrt(dx * dx + dz * dz);
-            if (dist > maxDist) continue;
+            if (dist > effectiveMaxDist) continue;
 
             final double localForward = dx * fx + dz * fz;
             final double localRight   = dx * rx + dz * rz;

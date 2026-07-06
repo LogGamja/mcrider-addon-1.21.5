@@ -135,19 +135,17 @@ final class ColorGraph {
 
     /**
      * from이 to의 조상이면 그 경로 위 모든 색을 out에 추가한다.
-     * birth(자식이 부모보다 항상 늦게 태어남)로 두 번 가지치기: (1) birth(from)>=birth(to)면
-     * 즉시 반환, (2) 정방향 탐색 중 to보다 늦게 태어난 가지는 잘라낸다. 큐 기반이라 스택 오버플로 없음.
+     * (예전에는 colorBirth로 두 지점을 가지치기했으나, absorbInto가 survivor를 최소 birth로
+     * 골라 간선을 재배선하면서 "자식은 항상 부모보다 늦게 태어난다"는 불변식이 깨질 수 있어
+     * 실제 조상 관계를 놓치는 문제가 있었다. 그래서 birth 힌트 없이 완전 BFS로 판정한다.
+     * 큐 기반이라 스택 오버플로는 없다.)
      */
     static void collectChainIfAncestor(long from, long to, LongOpenHashSet out) {
         from = resolve(from);
         to = resolve(to);
         if (from == to) return;
 
-        int fromBirth = colorBirth.get(from);
-        int toBirth = colorBirth.get(to);
-        if (fromBirth >= toBirth) return; // from이 to보다 늦게(또는 같이) 태어남 → 조상 불가
-
-        // from에서 자식 방향 도달 가능 노드(to보다 늦게 태어난 가지는 가지치기)
+        // from에서 자식 방향으로 도달 가능한 모든 노드(가지치기 없음)
         LongOpenHashSet reachable = scratchReachable;
         reachable.clear();
         LongArrayFIFOQueue q = scratchReachQueue;
@@ -162,7 +160,6 @@ final class ColorGraph {
             while (kit.hasNext()) {
                 long kid = resolve(kit.nextLong());
                 if (kid == cur) continue;
-                if (colorBirth.get(kid) > toBirth) continue;
                 if (reachable.add(kid)) q.enqueue(kid);
             }
         }

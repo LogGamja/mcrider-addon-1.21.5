@@ -8,8 +8,6 @@ import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.entity.effect.StatusEffects;
 
-import java.util.Objects;
-
 public class MCRiderDraft implements ClientModInitializer {
     static MinecraftClient client = MinecraftClient.getInstance();
 
@@ -31,8 +29,12 @@ public class MCRiderDraft implements ClientModInitializer {
     public static void draftGauge() {
         if (!MCRiderMain.isRidingKart || !MCRiderMain.isPlayingInGame() || !MCRiderConfig.INSTANCE.useDraftGauge) return;
 
-        var effect = Objects.requireNonNull(client.player).getStatusEffect(StatusEffects.WIND_CHARGED);
-        var draftState = MCRiderMain.getS2CValue(MCRiderMain.getRidingPlayer(), "state-draft");
+        // client.player(항상 나 자신)가 아니라 getRidingPlayer()를 써야 한다 — 죽어서 다른
+        // 레이서를 관전 중일 때는 client.player엔 이 이펙트가 있을 리 없어서 이 분기가
+        // 항상 실패하고, 아래 draftState 폴백 분기로만 동작하는 불일치가 있었다.
+        var ridingPlayer = MCRiderMain.getRidingPlayer();
+        var effect = ridingPlayer.getStatusEffect(StatusEffects.WIND_CHARGED);
+        var draftState = MCRiderMain.getS2CValue(ridingPlayer, "state-draft");
 
         if (effect != null && effect.getAmplifier() == 169) {
             draftChargeTick = effect.getDuration() - 10;

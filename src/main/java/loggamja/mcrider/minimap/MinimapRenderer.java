@@ -24,7 +24,7 @@ import static loggamja.mcrider.minimap.ColorGraph.NO_ID;
  *
  * {@link FrontierSearch}가 채운 visitedColumns/cellColor/activeColor/activeSet을 읽어서
  * 텍스처에 칠하고 화면에 그리는 역할만 한다. 탐색/색 그래프에는 관여하지 않는다.
- * (paintCell의 DEBUG_COLORS 즉시-도색 경로에서만 FrontierSearch → 이 클래스 역방향 호출이 있고,
+ * (paintCell의 디버그 모드(isDebugColors()) 즉시-도색 경로에서만 FrontierSearch → 이 클래스 역방향 호출이 있고,
  * 그 외엔 전부 이 클래스가 FrontierSearch를 읽기만 한다.)
  */
 final class MinimapRenderer {
@@ -223,7 +223,7 @@ final class MinimapRenderer {
         if (ys == null || ys.isEmpty()) return 0;
 
         it.unimi.dsi.fastutil.ints.IntIterator yi = ys.iterator();
-        if (MCRiderMinimap.DEBUG_COLORS) {
+        if (MCRiderMinimap.isDebugColors()) {
             int repY = Integer.MIN_VALUE;
             long repRoot = NO_ID;
             while (yi.hasNext()) {
@@ -235,12 +235,19 @@ final class MinimapRenderer {
             return colorForRoot(repRoot);
         } else {
             if (FrontierSearch.activeColor == NO_ID) return 0;
+            // DEBUG 분기와 동일하게 "가장 높은 y"(=위에서 내려다볼 때 실제로 보이는 표면)만
+            // 대표로 삼는다. 아무 y나 activeSet에 걸리면 칠하던 예전 방식은, 다리가 활성
+            // 터널 위를 지나가는 경우처럼 물리적으로 안 이어진(그래프상 무관한) 위쪽 트랙까지
+            // "활성"으로 잘못 표시하는 문제가 있었다.
+            int repY = Integer.MIN_VALUE;
+            long repRoot = NO_ID;
             while (yi.hasNext()) {
                 int y = yi.nextInt();
                 long root = FrontierSearch.resolvedRootAt(x, y, z);
-                if (root != NO_ID && FrontierSearch.activeSet.contains(root)) return VISITED_COLOR;
+                if (root == NO_ID) continue;
+                if (y >= repY) { repY = y; repRoot = root; }
             }
-            return 0;
+            return (repRoot != NO_ID && FrontierSearch.activeSet.contains(repRoot)) ? VISITED_COLOR : 0;
         }
     }
 
@@ -278,7 +285,8 @@ final class MinimapRenderer {
     }
 
     static void renderMinimap(DrawContext context, float tickDelta) {
-        if (!MCRiderConfig.INSTANCE.useMinimap) return;
+        if (MCRiderConfig.INSTANCE.useMinimap == 0) return;
+        if (!MCRiderMain.isRidingKart) return;
         if (FrontierSearch.visitedColumns.isEmpty() || !originSet) return;
         if (!MCRiderMain.isPlayingInGame()) return;
 

@@ -102,9 +102,18 @@ public abstract class GameRendererMixin {
 
         MCRiderMain.onFrameRender();
     }
+    @Unique private long mcrider$lastPacketSendNanos = 0L;
+    // 300프레임/초를 넘는 속도로는 추가 전송하지 않는다(고주사율 모니터에서 패킷이
+    // 프레임레이트에 비례해 무제한으로 늘어나 서버 패킷 플러드 방지에 걸리는 것을 방지).
+    @Unique private static final long mcrider$MIN_PACKET_INTERVAL_NANOS = 1_000_000_000L / 300;
+
     @Inject(method = "render", at = @At(value = "TAIL"))
     private void mcrider$renderTail(RenderTickCounter tickCounter, boolean tick, CallbackInfo ci) {
         if (!MCRiderMain.isRidingKart || !MCRiderMain.isPlayingInGame() || !MCRiderConfig.INSTANCE.MCRiderPacketAcceleration) return;
+
+        long now = System.nanoTime();
+        if (now - mcrider$lastPacketSendNanos < mcrider$MIN_PACKET_INTERVAL_NANOS) return;
+        mcrider$lastPacketSendNanos = now;
 
         ClientPlayerEntity player = Objects.requireNonNull(getClient().player);
 

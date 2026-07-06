@@ -19,7 +19,7 @@ public class MCRiderConfig {
     public int MCRiderRotationOption = 2;
     public boolean MCRiderPacketAcceleration = true;
     public int MCRiderRadarOption = 1;
-    public boolean useMinimap = false;
+    public int useMinimap = 0; // 0=꺼짐, 1=켜짐, 2=디버그(색깔별 표시)
     public boolean useNoclipCamera = true;
     public boolean useDraftGauge = true;
     public boolean useAutoThirdPerson = true;
@@ -41,6 +41,11 @@ public class MCRiderConfig {
             if (loaded != null) copyFrom(loaded);
         } catch (IOException e) {
             LOGGER.error("[MCRider] 설정 파일을 불러오는 데 실패했습니다.", e);
+        } catch (com.google.gson.JsonParseException e) {
+            // 예: useMinimap이 boolean → int로 바뀌기 전 저장된 옛 설정 파일처럼, 필드 타입이
+            // 안 맞는 경우 Gson이 JsonSyntaxException(RuntimeException 계열)을 던진다.
+            // 잡지 않으면 모드 초기화 자체가 죽으므로, 로그만 남기고 기본값으로 계속 진행한다.
+            LOGGER.error("[MCRider] 설정 파일 형식이 올바르지 않아 기본값으로 대체합니다.", e);
         }
     }
 

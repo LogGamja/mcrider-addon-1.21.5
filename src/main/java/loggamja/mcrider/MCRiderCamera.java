@@ -120,7 +120,13 @@ public class MCRiderCamera implements ClientModInitializer {
             float dz = (float) (cur.z - lastPos.z);
             float distPerTick = (float) Math.sqrt(dx*dx + dy*dy + dz*dz);
 
-            realSpeed = distPerTick * 20f * 3.6f;
+            // 예전엔 20TPS를 하드코딩(*20f)했으나, 서버 틱레이트가 /tick rate 등으로
+            // 20이 아니게 바뀌면 실제 이동거리와 무관하게 속도가 틀어졌다.
+            // "한 틱 동안 이동한 거리 / 그 틱이 실제로 걸린 시간"으로 계산해 틱레이트에 무관하게 만든다.
+            float tickInterval = getTickRate();
+            if (tickInterval > 0f) {
+                realSpeed = (distPerTick / tickInterval) * 3.6f;
+            }
         }
         lastPos = cur;
     }
