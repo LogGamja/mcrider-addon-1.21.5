@@ -21,6 +21,8 @@ import net.minecraft.util.math.Vec3d;
 import loggamja.mcrider.MCRiderConfig;
 import loggamja.mcrider.MCRiderMain;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 import static loggamja.mcrider.minimap.ColorGraph.NO_ID;
@@ -52,15 +54,14 @@ final class MinimapRenderer {
     private static final int VISITED_COLOR = 0xBBCCCCCC;
 
     private static final float IMAGE_CORRECTION_TRICK = 0.001f;
-    private static final double RIDER_ICON_SIZE = 8 * LEGACY_GUI_SCALE_BASIS;
+    private static final double RIDER_ICON_SIZE = 6 * LEGACY_GUI_SCALE_BASIS;
     private static final Identifier SELF_ARROW_ICON = Identifier.of("mcrider-official", "textures/hud/arrow_icon.png");
     private static final int SELF_ARROW_TEX_SIZE = 16;
     private static final float ENEMY_ICON_SCALE = 0.5f;
-    /** context.fill은 정수 좌표만 받아 1픽셀 미만 두께를 직접 표현할 수 없다. drawEnemyHead가
-     *  테두리 사각형만 얼굴 중심 기준으로 스케일링해서 이 값(1보다 작아도 됨)만큼의 두께를
-     *  화면에 낸다. */
+
     private static final float ENEMY_HEAD_OUTLINE_THICKNESS = 0.4f;
     private static final int ENEMY_HEAD_OUTLINE_COLOR = 0xFF000000;
+    private static final int SELF_OVERLAP_ALPHA = 0x80;
 
     private static NativeImage image;
     private static NativeImageBackedTexture texture;
@@ -74,9 +75,7 @@ final class MinimapRenderer {
     private static final int TILE_SIZE = 32;
     private static final int TILES_PER_ROW = TEX_SIZE / TILE_SIZE;
     private static final IntOpenHashSet dirtyTiles = new IntOpenHashSet();
-    /** 전체 텍스처를 통째로 올려야 하는 상황(재앵커/reset)이면 true. 타일 집합을 무시하고
-     *  한 번의 writeToTexture로 올려, 256개 타일을 개별 업로드하며 생기던 GPU 호출 스파이크를
-     *  없앤다. */
+
     private static boolean uploadWholeTexture = false;
 
     private static int tileKey(int tileX, int tileZ) {
@@ -313,21 +312,29 @@ final class MinimapRenderer {
         final float u0 = (float) (p.x - originX - texRegion / 2.0);
         final float v0 = (float) (p.z - originZ - texRegion / 2.0);
 
+        // enableScissor/disableScissor는 DrawContext 내부의 진짜 push/pop 스택이라, 그 사이에서
+        // 어떤 예외가 나든 disableScissor가 실행되도록 try/finally로 짝을 보장한다. 한 번이라도
+        // pop이 누락되면 GL scissor가 좁은 사각형에 낀 채 다음 프레임까지 새어나가 화면 전체가
+        // (엔티티 포함) 클리핑되는 사고로 이어진다(실제로 한 번 겪었음).
         context.enableScissor(viewX1, viewY1, viewX2, viewY2);
+        try {
+            MatrixStack matrices = context.getMatrices();
+            matrices.push();
+            try {
+                matrices.translate(centerX, centerY, 0);
+                matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(180f - yawDeg));
+                matrices.translate(-drawSize / 2f, -drawSize / 2f, 0);
+                context.drawTexture(
+                        RenderLayer::getGuiTextured, MINIMAP_ID,
+                        0, 0, u0, v0, drawSize, drawSize, texRegion, texRegion, TEX_SIZE, TEX_SIZE);
+            } finally {
+                matrices.pop();
+            }
 
-        MatrixStack matrices = context.getMatrices();
-        matrices.push();
-        matrices.translate(centerX, centerY, 0);
-        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(180f - yawDeg));
-        matrices.translate(-drawSize / 2f, -drawSize / 2f, 0);
-        context.drawTexture(
-                RenderLayer::getGuiTextured, MINIMAP_ID,
-                0, 0, u0, v0, drawSize, drawSize, texRegion, texRegion, TEX_SIZE, TEX_SIZE);
-        matrices.pop();
-
-        drawRiderIcons(context, tickDelta, centerX, centerY, yawDeg, p, blockToScreen, sizeFactor);
-
-        context.disableScissor();
+            drawRiderIcons(context, tickDelta, centerX, centerY, yawDeg, p, blockToScreen, sizeFactor);
+        } finally {
+            context.disableScissor();
+        }
     }
     private static void drawRiderIcons(DrawContext context, float tickDelta, int centerX, int centerY,
                                         float yawDeg, Vec3d p, double scale, double sizeFactor) {
@@ -335,12 +342,23 @@ final class MinimapRenderer {
 
         final float iconSize = (float) (RIDER_ICON_SIZE * sizeFactor);
         final float enemyIconSize = iconSize * ENEMY_ICON_SCALE;
+        final float selfIconSize = iconSize;
+        // 자기/상대 아이콘 둘 다 카트 헤딩에 따라 회전해서 그려지므로, 축 정렬 겹침 판정에는
+        // 회전 안 된 절반 크기가 아니라 45도 회전 시의 최악값(대각선 절반 = size/2 * √2)을 써야
+        // 한다. 그렇지 않으면 대각선 방향 헤딩에서 실제로는 겹치는데도 놓칠 수 있다.
+        final float enemyHalfExtent = (float) (enemyIconSize / 2f * SQRT2) + ENEMY_HEAD_OUTLINE_THICKNESS;
+        final float selfHalfExtent = (float) (selfIconSize / 2f * SQRT2);
 
         final double yawRad = Math.toRadians(yawDeg);
         final double fx = -Math.sin(yawRad);
         final double fz = Math.cos(yawRad);
         final double rx = Math.cos(yawRad);
         final double rz = Math.sin(yawRad);
+
+        // 자기 마커에 가려질 상대(자기 마커 영역과 겹치는 상대)는 나중에 반투명 재도색이
+        // 필요하므로 따로 모아둔다. 상대방끼리 겹치는 건 신경 쓰지 않는다.
+        final List<AbstractClientPlayerEntity> overlappingPlayers = new ArrayList<>();
+        final List<float[]> overlappingIcons = new ArrayList<>(); // {dotX, dotY, relativeYaw}
 
         for (AbstractClientPlayerEntity other : Objects.requireNonNull(client.world).getPlayers()) {
             if (other == MCRiderMain.getRidingPlayer()) continue;
@@ -352,7 +370,7 @@ final class MinimapRenderer {
 
             final double localForward = dx * fx + dz * fz;
             final double localRight = dx * rx + dz * rz;
-            
+
             if (Math.abs(localForward) > maxDist || Math.abs(localRight) > maxDist) continue;
 
             final float dotX = (float) (centerX - localRight * scale);
@@ -361,12 +379,41 @@ final class MinimapRenderer {
             final float enemyKartYaw = getKartBodyYaw(other);
             final float relativeYaw = (enemyKartYaw - yawDeg) + IMAGE_CORRECTION_TRICK;
             drawEnemyHead(context, other, dotX, dotY, enemyIconSize, relativeYaw);
+
+            if (Math.abs(dotX - centerX) < selfHalfExtent + enemyHalfExtent
+                    && Math.abs(dotY - centerY) < selfHalfExtent + enemyHalfExtent) {
+                overlappingPlayers.add(other);
+                overlappingIcons.add(new float[]{dotX, dotY, relativeYaw});
+            }
         }
 
         // 자기 마커는 맨 마지막에 그려서, 겹치는 적 마커에 가려지지 않고 항상 위에 보이게 한다.
         final float myKartYaw = getKartBodyYaw(MCRiderMain.getRidingPlayer());
         final float delta = (myKartYaw - yawDeg) + IMAGE_CORRECTION_TRICK;
-        drawSelfMarker(context, centerX, centerY, iconSize, delta);
+        drawSelfMarker(context, centerX, centerY, selfIconSize, delta, 0xFF);
+
+        // 자기 마커가 가린 상대만, 겹친 영역에 한해 상대를 다시 그리고 그 위에 반투명한
+        // 자기 마커를 덧그려 둘 다 보이게 한다.
+        for (int i = 0; i < overlappingPlayers.size(); i++) {
+            final float[] icon = overlappingIcons.get(i);
+            final float dotX = icon[0], dotY = icon[1], relativeYaw = icon[2];
+
+            final int left = (int) Math.floor(Math.max(centerX - selfHalfExtent, dotX - enemyHalfExtent));
+            final int top = (int) Math.floor(Math.max(centerY - selfHalfExtent, dotY - enemyHalfExtent));
+            final int right = (int) Math.ceil(Math.min(centerX + selfHalfExtent, dotX + enemyHalfExtent));
+            final int bottom = (int) Math.ceil(Math.min(centerY + selfHalfExtent, dotY + enemyHalfExtent));
+            if (right <= left || bottom <= top) continue;
+
+            // scissor는 push/pop 스택이라(위 renderMinimap 주석 참고) 반드시 disableScissor로
+            // 짝을 맞춰야 하며, try/finally로 감싸 중간에 예외가 나도 pop이 보장되게 한다.
+            context.enableScissor(left, top, right, bottom);
+            try {
+                drawEnemyHead(context, overlappingPlayers.get(i), dotX, dotY, enemyIconSize, relativeYaw);
+                drawSelfMarker(context, centerX, centerY, selfIconSize, delta, SELF_OVERLAP_ALPHA);
+            } finally {
+                context.disableScissor();
+            }
+        }
     }
 
     private static float getKartBodyYaw(PlayerEntity player) {
@@ -380,24 +427,32 @@ final class MinimapRenderer {
         }
         return player.getYaw();
     }
-    private static void drawSelfMarker(DrawContext context, float cx, float cy, float size, float rotationDeg) {
+    private static void drawSelfMarker(DrawContext context, float cx, float cy, float size, float rotationDeg, int alpha) {
+        // MatrixStack도 scissor와 마찬가지로 push/pop 스택이라, 그 사이에서 예외가 나면 pop이
+        // 스킵되어 이번 프레임에 이후 그려지는 다른 HUD 요소들이 어긋난 위치/회전으로 밀려
+        // 그려질 수 있다. try/finally로 pop을 보장한다.
         MatrixStack matrices = context.getMatrices();
         matrices.push();
-        matrices.translate(cx, cy, 0);
-        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(rotationDeg));
-        matrices.translate(-size / 2f, -size / 2f, 0);
+        try {
+            matrices.translate(cx, cy, 0);
+            matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(rotationDeg));
+            matrices.translate(-size / 2f, -size / 2f, 0);
 
-        context.drawTexture(
-                RenderLayer::getGuiTextured,
-                SELF_ARROW_ICON,
-                0, 0,
-                0f, 0f,
-                Math.round(size), Math.round(size),
-                SELF_ARROW_TEX_SIZE, SELF_ARROW_TEX_SIZE,
-                SELF_ARROW_TEX_SIZE, SELF_ARROW_TEX_SIZE
-        );
+            final int color = (alpha << 24) | 0xFFFFFF;
 
-        matrices.pop();
+            context.drawTexture(
+                    RenderLayer::getGuiTextured,
+                    SELF_ARROW_ICON,
+                    0, 0,
+                    0f, 0f,
+                    Math.round(size), Math.round(size),
+                    SELF_ARROW_TEX_SIZE, SELF_ARROW_TEX_SIZE,
+                    SELF_ARROW_TEX_SIZE, SELF_ARROW_TEX_SIZE,
+                    color
+            );
+        } finally {
+            matrices.pop();
+        }
     }
     private static void drawEnemyHead(DrawContext context, AbstractClientPlayerEntity player,
                                        float cx, float cy, float size, float rotationDeg) {
@@ -405,23 +460,28 @@ final class MinimapRenderer {
 
         MatrixStack matrices = context.getMatrices();
         matrices.push();
-        matrices.translate(cx, cy, 0);
-        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(rotationDeg));
-        matrices.translate(-size / 2f, -size / 2f, 0);
+        try {
+            matrices.translate(cx, cy, 0);
+            matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(rotationDeg));
+            matrices.translate(-size / 2f, -size / 2f, 0);
 
-        // 테두리 사각형을 (isize+2) 정수 크기로 그리되, 얼굴 중심을 기준으로 살짝만 확대해
-        // 실제로 삐져나오는 폭이 정수 1이 아니라 ENEMY_HEAD_OUTLINE_THICKNESS만큼만 되게 한다.
-        matrices.push();
-        float outlineScale = (isize + 2f * ENEMY_HEAD_OUTLINE_THICKNESS) / (isize + 2f);
-        matrices.translate(isize / 2f, isize / 2f, 0);
-        matrices.scale(outlineScale, outlineScale, 1f);
-        matrices.translate(-(isize + 2f) / 2f, -(isize + 2f) / 2f, 0);
-        context.fill(0, 0, isize + 2, isize + 2, ENEMY_HEAD_OUTLINE_COLOR);
-        matrices.pop();
+            // 테두리 사각형을 (isize+2) 정수 크기로 그리되, 얼굴 중심을 기준으로 살짝만 확대해
+            // 실제로 삐져나오는 폭이 정수 1이 아니라 ENEMY_HEAD_OUTLINE_THICKNESS만큼만 되게 한다.
+            matrices.push();
+            try {
+                float outlineScale = (isize + 2f * ENEMY_HEAD_OUTLINE_THICKNESS) / (isize + 2f);
+                matrices.translate(isize / 2f, isize / 2f, 0);
+                matrices.scale(outlineScale, outlineScale, 1f);
+                matrices.translate(-(isize + 2f) / 2f, -(isize + 2f) / 2f, 0);
+                context.fill(0, 0, isize + 2, isize + 2, ENEMY_HEAD_OUTLINE_COLOR);
+            } finally {
+                matrices.pop();
+            }
 
-        PlayerSkinDrawer.draw(context, player.getSkinTextures(), 0, 0, isize);
-
-        matrices.pop();
+            PlayerSkinDrawer.draw(context, player.getSkinTextures(), 0, 0, isize);
+        } finally {
+            matrices.pop();
+        }
     }
 
     private static double getSizeFactor(MinecraftClient client) {

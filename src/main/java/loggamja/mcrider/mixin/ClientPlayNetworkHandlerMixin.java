@@ -28,7 +28,7 @@ public class ClientPlayNetworkHandlerMixin {
 
         Text message = packet.text();
         var speed = mcrider$extractSpeed(message.getString());
-        boolean matched = speed != -169f;
+        boolean matched = !Float.isNaN(speed);
 
         if (matched && MCRiderMain.kartEngine == 7) {
             speed *= 2.59065f;
@@ -42,7 +42,6 @@ public class ClientPlayNetworkHandlerMixin {
             MCRiderCamera.timeAfterLastActionbar = 0;
             mcrider$lastSpeedSuccessTime = worldTime;
         } else if (worldTime != mcrider$lastSpeedSuccessTime) {
-            MCRiderCamera.actionbarSpeed = speed;
             MCRiderCamera.timeAfterLastActionbar = 20;
         }
     }
@@ -55,6 +54,6 @@ public class ClientPlayNetworkHandlerMixin {
         if (m.find()) {
             return Math.max(Float.parseFloat(m.group(1)), 0);
         }
-        return -169f; // 매칭 실패 시 -169 반환
+        return Float.NaN;
     }
 }

@@ -1,7 +1,8 @@
 package loggamja.mcrider;
 
 import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+import net.fabricmc.fabric.api.client.rendering.v1.HudLayerRegistrationCallback;
+import net.fabricmc.fabric.api.client.rendering.v1.IdentifiedLayer;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.RenderLayer;
@@ -31,7 +32,12 @@ public class MCRiderRadar implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        HudRenderCallback.EVENT.register((context, context2) -> renderRadar(context, context2.getTickProgress(false)));
+        // EXPERIENCE_LEVEL 뒤(핫바 등 주요 HUD와 같은 자리)에 붙여서, hudHidden(F1) 조건을
+        // 그대로 물려받아 F1로 자동으로 함께 감춰지게 한다.
+        HudLayerRegistrationCallback.EVENT.register(layeredDrawer ->
+                layeredDrawer.attachLayerAfter(IdentifiedLayer.EXPERIENCE_LEVEL,
+                        Identifier.of("mcrider-official", "radar_hud"),
+                        (context, tickCounter) -> renderRadar(context, tickCounter.getTickProgress(false))));
     }
     private void renderRadar(DrawContext context, float tickDelta) {
         if (!MCRiderMain.isRidingKart) return;

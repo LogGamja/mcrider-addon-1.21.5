@@ -3,9 +3,13 @@ package loggamja.mcrider.minimap;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+import net.fabricmc.fabric.api.client.rendering.v1.HudLayerRegistrationCallback;
+import net.fabricmc.fabric.api.client.rendering.v1.IdentifiedLayer;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import loggamja.mcrider.MCRiderConfig;
 import loggamja.mcrider.MCRiderMain;
@@ -15,10 +19,11 @@ import net.minecraft.world.World;
  * 플로드필 기반 트랙 미니맵("색깔 관계 그래프" 방식)의 진입점.
  * 규칙0: 양방향 이동은 색 유지. 규칙1: 고아 진입(TP/리스폰 포함)은 새 루트 색.
  * 규칙2: 단방향 이동은 새 색(직전 색의 자식).
- * 규칙3: 양방향 인접 시, 혹은 자식이 조상에게 단방향 인점 시 병합.
+ * 규칙3: 양방향 인접 시, 혹은 자식이 조상에게 단방향 인접 시 병합.
  * 규칙4: 플레이어 위치 색(resolve) + 그 자손만 표시. 디버그 설정이면 색상별 구분 표시.
  */
 public class MCRiderMinimap implements ClientModInitializer {
+    private static final Logger LOGGER = LoggerFactory.getLogger("mcrider");
 
     public static boolean isDebugColors() {
         return MCRiderConfig.INSTANCE.useMinimap == 2;
@@ -30,8 +35,13 @@ public class MCRiderMinimap implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         ClientTickEvents.START_CLIENT_TICK.register(client -> onTickStart());
-        HudRenderCallback.EVENT.register((context, context2) ->
-                MinimapRenderer.renderMinimap(context, context2.getTickProgress(false)));
+
+        // 채팅과 겹칠 때 항상 미니맵이 위에 보이도록 CHAT 레이어 뒤에 붙이고, hudHidden(F1)도
+        // CHAT 레이어의 렌더 조건을 그대로 물려받아 자동으로 함께 감춰지게 한다.
+        HudLayerRegistrationCallback.EVENT.register(layeredDrawer ->
+                layeredDrawer.attachLayerAfter(IdentifiedLayer.CHAT,
+                        Identifier.of("mcrider-official", "minimap_hud"),
+                        (context, tickCounter) -> MinimapRenderer.renderMinimap(context, tickCounter.getTickProgress(false))));
 
         ClientPlayConnectionEvents.DISCONNECT.register((client, handler) -> {
             clearAllMap();
@@ -51,7 +61,7 @@ public class MCRiderMinimap implements ClientModInitializer {
         lastWorld = client.world;
 
         if (ColorGraph.actualColorCount >= 5000) {
-            System.out.println("[MCRider] Minimap color limit exceeded (" + ColorGraph.actualColorCount + "), resetting map.");
+            LOGGER.warn("[MCRider] Minimap color limit exceeded ({}), resetting map.", ColorGraph.actualColorCount);
             clearAllMap();
             return;
         }

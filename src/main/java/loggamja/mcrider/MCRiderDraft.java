@@ -2,11 +2,13 @@ package loggamja.mcrider;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+import net.fabricmc.fabric.api.client.rendering.v1.HudLayerRegistrationCallback;
+import net.fabricmc.fabric.api.client.rendering.v1.IdentifiedLayer;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.entity.effect.StatusEffects;
+import net.minecraft.util.Identifier;
 
 public class MCRiderDraft implements ClientModInitializer {
     static MinecraftClient client = MinecraftClient.getInstance();
@@ -22,9 +24,12 @@ public class MCRiderDraft implements ClientModInitializer {
             draftGauge();
         });
 
-        //HudRenderCallback.EVENT.register((context, context2) -> render(context, context2.getTickDelta(false)));
-        //HudRenderCallback.EVENT.register((context, context2) -> render(context, context2.getDynamicDeltaTicks()));
-        HudRenderCallback.EVENT.register((context, context2) -> render(context, 0)); //일단은 틱 델타를 쓰는 곳이 없음. 상수 고정
+        // EXPERIENCE_LEVEL 뒤(핫바 등 주요 HUD와 같은 자리)에 붙여서, hudHidden(F1) 조건을
+        // 그대로 물려받아 F1로 자동으로 함께 감춰지게 한다. 틱 델타를 쓰는 곳이 없어 0 고정.
+        HudLayerRegistrationCallback.EVENT.register(layeredDrawer ->
+                layeredDrawer.attachLayerAfter(IdentifiedLayer.EXPERIENCE_LEVEL,
+                        Identifier.of("mcrider-official", "draft_gauge_hud"),
+                        (context, tickCounter) -> render(context, 0)));
     }
     public static void draftGauge() {
         if (!MCRiderMain.isRidingKart || !MCRiderMain.isPlayingInGame() || !MCRiderConfig.INSTANCE.useDraftGauge) return;

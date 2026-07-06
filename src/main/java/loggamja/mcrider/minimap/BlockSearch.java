@@ -86,10 +86,6 @@ final class BlockSearch {
         if (MCRiderMinimap.client.world == null) return false;
         return MCRiderMinimap.client.world.getChunkManager().isChunkLoaded(x >> 4, z >> 4);
     }
-
-    /** 서 있을 수 있는 칸: 머리(y+1) 공간 + void 바닥 아님 + 발밑 지지(y,y-1 둘 다 공기 아님).
-     *  headAlreadyChecked=true면 머리 공간 검사를 건너뛴다(평지/계단은 resolveTargetY가 이미
-     *  확인했음; 낙하는 착지 높이를 아직 안 봤으므로 반드시 false로 호출). */
     static boolean isStandable(int x, int y, int z, boolean headAlreadyChecked) {
         if (!headAlreadyChecked && !isAirAt(x, y + 1, z)) return false;
         if (isVoidFloorUnder(x, y, z)) return false;

@@ -1,0 +1,57 @@
+{
+  "mcrider.setting.title": "설정",
+  "mcrider.setting.menu_button": "마크라이더 설정",
+  "mcrider.setting.ok": "확인",
+
+  "mcrider.option.steer_boost.off": "조작 가속: 꺼짐",
+  "mcrider.option.steer_boost.normal": "조작 가속: 보통",
+  "mcrider.option.steer_boost.extreme": "조작 가속: 극한",
+  "mcrider.tooltip.steer_boost": "카트 탑승 시 조작감을 최적화합니다.",
+
+  "mcrider.option.packet_boost.off": "패킷 가속: 꺼짐",
+  "mcrider.option.packet_boost.on": "패킷 가속: 켜짐",
+  "mcrider.tooltip.packet_boost": "카트 탑승 시 조작 데이터 송신을 가속합니다.",
+
+  "mcrider.option.enemy_radar.off": "카트 레이더: 꺼짐",
+  "mcrider.option.enemy_radar.on": "카트 레이더: 켜짐",
+  "mcrider.tooltip.enemy_radar": "카트 탑승 시 주변 라이더의 방향을 화살표로 표시합니다.",
+
+  "mcrider.option.draft_gauge.off": "드래프트 게이지: 꺼짐",
+  "mcrider.option.draft_gauge.on": "드래프트 게이지: 켜짐",
+  "mcrider.tooltip.draft_gauge": "카트 탑승 시 드래프트 게이지를 표시합니다.",
+
+  "mcrider.option.auto_third_person.off": "자동 3인칭: 꺼짐",
+  "mcrider.option.auto_third_person.on": "자동 3인칭: 켜짐",
+  "mcrider.tooltip.auto_third_person": "카트 탑승 시 자동으로 카메라 시점을 전환합니다.",
+
+  "mcrider.option.noclip_camera.off": "카메라 통과: 꺼짐",
+  "mcrider.option.noclip_camera.on": "카메라 통과: 켜짐",
+  "mcrider.tooltip.noclip_camera": "카트 탑승 시 3인칭 카메라가 블록에 걸리지 않게 합니다.",
+
+  "mcrider.option.camera_mode.default": "카메라 모드: 기본[1]",
+  "mcrider.option.camera_mode.balance": "카메라 모드: 균형[2]",
+  "mcrider.option.camera_mode.normal": "카메라 모드: 보통[3]",
+  "mcrider.option.camera_mode.kartrider": "카메라 모드: 원작[4]",
+  "mcrider.tooltip.camera_mode": "카트 탑승 시 카메라 연출 방식을 선택할 수 있습니다.",
+
+  "mcrider.option.suspension_effect.off": "서스펜션 효과: 꺼짐",
+  "mcrider.option.suspension_effect.kart": "서스펜션 효과: 카트바디",
+  "mcrider.option.suspension_effect.kart_and_camera": "서스펜션 효과: 카트와 카메라",
+  "mcrider.tooltip.suspension_effect": "카트 탑승 시 드리프트 서스펜션 효과를 선택합니다.",
+
+  "mcrider.option.bike_suspension.default": "바이크 서스펜션: 기본",
+  "mcrider.option.bike_suspension.four_wheel": "바이크 서스펜션: 4륜 카트",
+  "mcrider.option.bike_suspension.realistic": "바이크 서스펜션: 현실적",
+  "mcrider.option.bike_suspension.extreme": "바이크 서스펜션: 익스트림",
+  "mcrider.tooltip.bike_suspension": "서스펜션 효과 활성화 시 바이크의 서스펜션 연출을 변경합니다.",
+
+  "mcrider.option.track_minimap.off": "트랙 미니맵: 꺼짐",
+  "mcrider.option.track_minimap.on": "트랙 미니맵: 켜짐",
+  "mcrider.option.track_minimap.debug": "트랙 미니맵: 디버그",
+  "mcrider.tooltip.track_minimap": "카트 탑승 시 주변 환경을 자동으로 탐색해 미니맵과 라이더 위치를 보여줍니다.",
+
+  "mcrider.slider.riding_fov": "주행 시야 범위",
+  "mcrider.slider.riding_fov.tooltip": "카메라 모드 '기본' 상태에서만 적용됩니다.",
+  "mcrider.slider.riding_fov_effects": "주행 시야 효과",
+  "mcrider.slider.riding_fov_effects.tooltip": "카메라 모드 '기본' 상태에서만 적용됩니다."
+}

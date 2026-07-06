@@ -1,93 +1,17 @@
 package loggamja.mcrider;
 
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.GameMenuScreen;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.tooltip.Tooltip;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.SliderWidget;
-import net.minecraft.client.resource.language.LanguageManager;
 import net.minecraft.text.Text;
 
-import java.util.Objects;
 public class MCRiderSetting extends Screen {
 
-    static String[][] TOGGLE_OPTIONS = {
-            { "Steer Boost: OFF", "Steer Boost: Normal", "Steer Boost: Extreme!" },
-            { "Packet Boost: OFF", "Packet Boost: ON" },
-            { "Enemy Radar: OFF", "Enemy Radar: ON" },
-            { "Draft gauge: OFF", "Draft gauge: ON" },
-            { "Auto third person: OFF", "Auto third person: ON" },
-            { "Noclip camera: OFF", "Noclip camera: ON" },
-            { "Camera mode: Default[1]", "Camera mode: Balance[2]", "Camera mode: Normal[3]", "Camera mode: Kartrider[4]" },
-
-            { "Suspension Effect: OFF", "Suspension Effect: Kart", "Suspension Effect: Kart and Camera" },
-            { "Bike Suspension: Default", "Bike Suspension: 4-Wheel", "Bike Suspension: Realistic", "Bike Suspension: Extreme!" },
-            { "Track Minimap: OFF", "Track Minimap: ON", "Track Minimap: DEBUG" }
-    };
-    static String[] tooltips = {
-            "Optimize the rotation of karts when riding a kart.",
-            "Accelerate packets when riding a kart.",
-            "Show enemy direction arrows when riding a kart.",
-            "Show a draft gauge when riding a kart.",
-            "Automatically change to 3rd person view when riding a kart.",
-            "Third person camera goes through blocks when riding a kart.",
-            "Change camera mode when riding a kart.",
-
-            "Change suspension effect when riding a kart.",
-            "Change bike suspension effect when enable suspension effect.",
-            "Automatically search the track and display a minimap with rider positions when riding a kart."
-    };
-
-    // 슬라이더 정의: {라벨, 최소값, 최대값, 기본값, 툴팁}
-    static Object[][] SLIDER_OPTIONS = {
-            { "Riding FOV", 30.0, 110.0, "This option only works in camera mode 'default'." },
-            { "Riding FOV Effects", 0.0, 100.0, "This option only works in camera mode 'default'." }
-    };
-
-    private final int[] toggleIndices = new int[TOGGLE_OPTIONS.length];
-    private final double[] sliderValues = new double[SLIDER_OPTIONS.length];
-
     public MCRiderSetting() {
-        super(Text.literal("Setting"));
-    }
-    void setTextLang() {
-        MinecraftClient client = MinecraftClient.getInstance();
-        LanguageManager lm = client.getLanguageManager();
-
-        if (Objects.equals(lm.getLanguage(), "ko_kr")) {
-            TOGGLE_OPTIONS = new String[][] {
-                    { "조작 가속: 꺼짐", "조작 가속: 보통", "조작 가속: 극한" },
-                    { "패킷 가속: 꺼짐", "패킷 가속: 켜짐" },
-                    { "카트 레이더: 꺼짐", "카트 레이더: 켜짐" },
-                    { "드래프트 게이지: 꺼짐", "드래프트 게이지: 켜짐" },
-                    { "자동 3인칭: 꺼짐", "자동 3인칭: 켜짐" },
-                    { "카메라 통과: 꺼짐", "카메라 통과: 켜짐" },
-                    { "카메라 모드: 기본[1]", "카메라 모드: 균형[2]", "카메라 모드: 보통[3]", "카메라 모드: 원작[4]" },
-
-                    { "서스펜션 효과: 꺼짐", "서스펜션 효과: 카트바디", "서스펜션 효과: 카트와 카메라" },
-                    { "바이크 서스펜션: 기본", "바이크 서스펜션: 4륜 카트", "바이크 서스펜션: 현실적", "바이크 서스펜션: 익스트림" },
-                    { "트랙 미니맵: 꺼짐", "트랙 미니맵: 켜짐", "트랙 미니맵: 디버그" }
-            };
-            tooltips = new String[] {
-                    "카트 탑승 시 조작감을 최적화합니다.",
-                    "카트 탑승 시 조작 데이터 송신을 가속합니다.",
-                    "카트 탑승 시 주변 라이더의 방향을 화살표로 표시합니다.",
-                    "카트 탑승 시 드래프트 게이지를 표시합니다.",
-                    "카트 탑승 시 자동으로 카메라 시점을 전환합니다.",
-                    "카트 탑승 시 3인칭 카메라가 블록에 걸리지 않게 합니다.",
-                    "카트 탑승 시 카메라 연출 방식을 선택할 수 있습니다.",
-
-                    "카트 탑승 시 드리프트 서스펜션 효과를 선택합니다.",
-                    "서스펜션 효과 활성화 시 바이크의 서스펜션 연출을 변경합니다.",
-                    "카트 탑승 시 주변 환경을 자동으로 탐색해 미니맵과 라이더 위치를 보여줍니다."
-            };
-            SLIDER_OPTIONS = new Object[][] {
-                    { "주행 시야 범위", 30.0, 110.0, "카메라 모드 '기본' 상태에서만 적용됩니다." },
-                    { "주행 시야 효과", 0.0, 100.0, "카메라 모드 '기본' 상태에서만 적용됩니다." }
-            };
-        }
+        super(Text.translatable("mcrider.setting.title"));
     }
 
     @Override
@@ -100,37 +24,16 @@ public class MCRiderSetting extends Screen {
         int startX = this.width / 2 - buttonWidth / 2;
         int startY = this.height / 5;
 
-        setTextLang();
+        // 옛 config에 남아있을 수 있는 범위 밖 값 보정(예: 삭제된 옵션 상태).
+        MCRiderOptionDefs.clampAllToggles();
 
-        // Config load
-        MCRiderConfig cfg = MCRiderConfig.INSTANCE;
-        toggleIndices[0] = cfg.MCRiderRotationOption;
-        toggleIndices[1] = cfg.MCRiderPacketAcceleration ? 1 : 0;
-        toggleIndices[2] = cfg.MCRiderRadarOption;
-        toggleIndices[3] = cfg.useDraftGauge ? 1 : 0;
-        toggleIndices[4] = cfg.useAutoThirdPerson ? 1 : 0;
-        toggleIndices[5] = cfg.useNoclipCamera ? 1 : 0;
-        toggleIndices[6] = cfg.cameraMode;
-        toggleIndices[7] = cfg.suspensionEffect;
-        toggleIndices[8] = cfg.bikeSuspension;
-        toggleIndices[9] = cfg.useMinimap;
-        
-        // 배열 밖 옵션 안전장치
-        for (int i = 0; i < toggleIndices.length; i++) {
-            toggleIndices[i] = Math.max(0, Math.min(toggleIndices[i], TOGGLE_OPTIONS[i].length - 1));
-        }
-
-        // slider load
-        sliderValues[0] = cfg.MCRiderFOV;
-        sliderValues[1] = cfg.MCRiderFOVEffects;
-
-        // toggle button
+        var toggles = MCRiderOptionDefs.TOGGLES;
         int buttonsPerRow = 2;
         int gap = 12;
         int centerX = this.width / 2;
 
-        for (int i = 0; i < TOGGLE_OPTIONS.length; i++) {
-            final int index = i;
+        for (int i = 0; i < toggles.length; i++) {
+            var def = toggles[i];
 
             int row = i / buttonsPerRow;
             int col = i % buttonsPerRow;
@@ -141,89 +44,70 @@ public class MCRiderSetting extends Screen {
 
             int buttonX = (col == 0) ? leftX : rightX;
 
+            int current = def.getter().getAsInt();
+
             ButtonWidget toggleButton = ButtonWidget.builder(
-                            Text.literal(TOGGLE_OPTIONS[index][toggleIndices[index]]),
+                            Text.translatable(def.labelKeys()[current]),
                             button -> {
-                                toggleIndices[index] = (toggleIndices[index] + 1) % TOGGLE_OPTIONS[index].length;
-                                button.setMessage(Text.literal(TOGGLE_OPTIONS[index][toggleIndices[index]]));
-                                onButtonClick(index, toggleIndices[index]);
+                                int next = (def.getter().getAsInt() + 1) % def.stateCount();
+                                def.setter().accept(next);
+                                button.setMessage(Text.translatable(def.labelKeys()[next]));
                                 MCRiderConfig.INSTANCE.save();
                             })
                     .position(buttonX, buttonY)
                     .size(buttonWidth, buttonHeight)
-                    .tooltip(Tooltip.of(Text.literal(tooltips[index])))
+                    .tooltip(Tooltip.of(Text.translatable(def.tooltipKey())))
                     .build();
 
             this.addDrawableChild(toggleButton);
         }
 
         // Sliders
-        for (int i = 0; i < SLIDER_OPTIONS.length; i++) {
-            final int index = i;
-            String label = (String) SLIDER_OPTIONS[i][0];
-            double min = (double) SLIDER_OPTIONS[i][1];
-            double max = (double) SLIDER_OPTIONS[i][2];
-            double value = sliderValues[i];
+        var sliders = MCRiderOptionDefs.SLIDERS;
+        for (int i = 0; i < sliders.length; i++) {
+            var def = sliders[i];
+            double min = def.min();
+            double max = def.max();
+            double value = def.getter().getAsDouble();
 
             double normalized = (value - min) / (max - min);
+            String labelText = Text.translatable(def.labelKey()).getString();
 
-            String tip = (String) SLIDER_OPTIONS[i][3];
-
-            SliderWidget slider = new SliderWidget(startX, startY + (TOGGLE_OPTIONS.length / 2 + i + 1) * spacing,
-                    buttonWidth, buttonHeight, Text.literal(label + ": " + (int)value), normalized) {
+            SliderWidget slider = new SliderWidget(startX, startY + (toggles.length / 2 + i + 1) * spacing,
+                    buttonWidth, buttonHeight, Text.literal(labelText + ": " + (int) value), normalized) {
                 @Override
                 protected void updateMessage() {
                     double actual = min + this.value * (max - min);
-                    this.setMessage(Text.literal(label + ": " + (int)actual));
+                    this.setMessage(Text.literal(labelText + ": " + (int) actual));
                 }
 
                 @Override
                 protected void applyValue() {
                     double actual = min + this.value * (max - min);
-                    sliderValues[index] = actual;
-                    onSliderChange(index, (float)actual);
+                    def.setter().accept((float) actual);
                     MCRiderConfig.INSTANCE.save();
                 }
             };
-            slider.setTooltip(Tooltip.of(Text.literal(tip)));
+            slider.setTooltip(Tooltip.of(Text.translatable(def.tooltipKey())));
             this.addDrawableChild(slider);
         }
 
         // Exit button
         this.addDrawableChild(
-            ButtonWidget.builder(Text.literal("OK"), button -> {
+            ButtonWidget.builder(Text.translatable("mcrider.setting.ok"), button -> {
                     assert this.client != null;
                     this.client.setScreen(new GameMenuScreen(true));
                     MCRiderConfig.INSTANCE.save();
                 })
-                .position(startX, startY + (TOGGLE_OPTIONS.length + SLIDER_OPTIONS.length) * spacing ) //+40
+                .position(startX, startY + (toggles.length + sliders.length) * spacing)
                 .size(buttonWidth, buttonHeight)
                 .build()
         );
     }
 
-    void onButtonClick(int button, int index) {
-        MCRiderConfig cfg = MCRiderConfig.INSTANCE;
-        if (button == 0) cfg.MCRiderRotationOption = index;
-        else if (button == 1) cfg.MCRiderPacketAcceleration = (index != 0);
-        else if (button == 2) cfg.MCRiderRadarOption = index;
-        else if (button == 3) cfg.useDraftGauge  = (index != 0);
-        else if (button == 4) cfg.useAutoThirdPerson = (index != 0);
-        else if (button == 5) cfg.useNoclipCamera = (index != 0);
-        else if (button == 6) cfg.cameraMode = index;
-        else if (button == 7) cfg.suspensionEffect = index;
-        else if (button == 8) cfg.bikeSuspension = index;
-        else if (button == 9) cfg.useMinimap = index;
-    }
-
-    void onSliderChange(int slider, float value) {
-        MCRiderConfig cfg = MCRiderConfig.INSTANCE;
-        if (slider == 0) cfg.MCRiderFOV = (int)value;
-        else if (slider == 1) cfg.MCRiderFOVEffects = (int)value;
-    }
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        context.drawCenteredTextWithShadow(this.textRenderer, "Setting", this.width / 2, 20, 0xFFFFFF);
+        context.drawCenteredTextWithShadow(this.textRenderer, Text.translatable("mcrider.setting.title"), this.width / 2, 20, 0xFFFFFF);
         super.render(context, mouseX, mouseY, delta);
     }
 }

@@ -38,7 +38,10 @@ public class MCRiderConfig {
         if (!CONFIG_FILE.exists()) return;
         try (FileReader reader = new FileReader(CONFIG_FILE)) {
             MCRiderConfig loaded = GSON.fromJson(reader, MCRiderConfig.class);
-            if (loaded != null) copyFrom(loaded);
+            if (loaded != null) {
+                copyFrom(loaded);
+                MCRiderOptionDefs.clampAllToggles();
+            }
         } catch (IOException e) {
             LOGGER.error("[MCRider] 설정 파일을 불러오는 데 실패했습니다.", e);
         } catch (com.google.gson.JsonParseException e) {

@@ -48,9 +48,6 @@ final class FrontierQueue {
         return Math.abs(ax - bx) + Math.abs(az - bz);
     }
 
-    /** 청크가 차지하는 16x16 영역 중 플레이어에 가장 가까운 점까지의 택시 거리. 코너
-     *  좌표만으로 재면 특정 방향에서 거리가 과대평가돼 exile 복귀가 지연되므로, 가까운
-     *  변까지의 거리를 계산한다. */
     static int taxiDistanceFromChunkToPos(int chunkX, int chunkZ, int bx, int bz) {
         int minX = chunkX << 4, maxX = minX + 15;
         int minZ = chunkZ << 4, maxZ = minZ + 15;

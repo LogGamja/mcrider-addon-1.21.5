@@ -1,0 +1,57 @@
+{
+  "mcrider.setting.title": "Setting",
+  "mcrider.setting.menu_button": "MCRider Setting",
+  "mcrider.setting.ok": "OK",
+
+  "mcrider.option.steer_boost.off": "Steer Boost: OFF",
+  "mcrider.option.steer_boost.normal": "Steer Boost: Normal",
+  "mcrider.option.steer_boost.extreme": "Steer Boost: Extreme!",
+  "mcrider.tooltip.steer_boost": "Optimize the rotation of karts when riding a kart.",
+
+  "mcrider.option.packet_boost.off": "Packet Boost: OFF",
+  "mcrider.option.packet_boost.on": "Packet Boost: ON",
+  "mcrider.tooltip.packet_boost": "Accelerate packets when riding a kart.",
+
+  "mcrider.option.enemy_radar.off": "Enemy Radar: OFF",
+  "mcrider.option.enemy_radar.on": "Enemy Radar: ON",
+  "mcrider.tooltip.enemy_radar": "Show enemy direction arrows when riding a kart.",
+
+  "mcrider.option.draft_gauge.off": "Draft gauge: OFF",
+  "mcrider.option.draft_gauge.on": "Draft gauge: ON",
+  "mcrider.tooltip.draft_gauge": "Show a draft gauge when riding a kart.",
+
+  "mcrider.option.auto_third_person.off": "Auto third person: OFF",
+  "mcrider.option.auto_third_person.on": "Auto third person: ON",
+  "mcrider.tooltip.auto_third_person": "Automatically change to 3rd person view when riding a kart.",
+
+  "mcrider.option.noclip_camera.off": "Noclip camera: OFF",
+  "mcrider.option.noclip_camera.on": "Noclip camera: ON",
+  "mcrider.tooltip.noclip_camera": "Third person camera goes through blocks when riding a kart.",
+
+  "mcrider.option.camera_mode.default": "Camera mode: Default[1]",
+  "mcrider.option.camera_mode.balance": "Camera mode: Balance[2]",
+  "mcrider.option.camera_mode.normal": "Camera mode: Normal[3]",
+  "mcrider.option.camera_mode.kartrider": "Camera mode: Kartrider[4]",
+  "mcrider.tooltip.camera_mode": "Change camera mode when riding a kart.",
+
+  "mcrider.option.suspension_effect.off": "Suspension Effect: OFF",
+  "mcrider.option.suspension_effect.kart": "Suspension Effect: Kart",
+  "mcrider.option.suspension_effect.kart_and_camera": "Suspension Effect: Kart and Camera",
+  "mcrider.tooltip.suspension_effect": "Change suspension effect when riding a kart.",
+
+  "mcrider.option.bike_suspension.default": "Bike Suspension: Default",
+  "mcrider.option.bike_suspension.four_wheel": "Bike Suspension: 4-Wheel",
+  "mcrider.option.bike_suspension.realistic": "Bike Suspension: Realistic",
+  "mcrider.option.bike_suspension.extreme": "Bike Suspension: Extreme!",
+  "mcrider.tooltip.bike_suspension": "Change bike suspension effect when enable suspension effect.",
+
+  "mcrider.option.track_minimap.off": "Track Minimap: OFF",
+  "mcrider.option.track_minimap.on": "Track Minimap: ON",
+  "mcrider.option.track_minimap.debug": "Track Minimap: DEBUG",
+  "mcrider.tooltip.track_minimap": "Automatically search the track and display a minimap with rider positions when riding a kart.",
+
+  "mcrider.slider.riding_fov": "Riding FOV",
+  "mcrider.slider.riding_fov.tooltip": "This option only works in camera mode 'default'.",
+  "mcrider.slider.riding_fov_effects": "Riding FOV Effects",
+  "mcrider.slider.riding_fov_effects.tooltip": "This option only works in camera mode 'default'."
+}
