@@ -16,7 +16,7 @@ public class MCRiderSetting extends Screen {
     static String[][] TOGGLE_OPTIONS = {
             { "Steer Boost: OFF", "Steer Boost: Normal", "Steer Boost: Extreme!" },
             { "Packet Boost: OFF", "Packet Boost: ON" },
-            { "Enemy Radar: OFF", "Enemy Radar: Center", "Enemy Radar: Side", "Enemy Radar: Both" },
+            { "Enemy Radar: OFF", "Enemy Radar: ON" },
             { "Draft gauge: OFF", "Draft gauge: ON" },
             { "Auto third person: OFF", "Auto third person: ON" },
             { "Noclip camera: OFF", "Noclip camera: ON" },
@@ -29,7 +29,7 @@ public class MCRiderSetting extends Screen {
     static String[] tooltips = {
             "Optimize the rotation of karts when riding a kart.",
             "Accelerate packets when riding a kart.",
-            "Show enemy radar when riding a kart.",
+            "Show enemy direction arrows when riding a kart.",
             "Show a draft gauge when riding a kart.",
             "Automatically change to 3rd person view when riding a kart.",
             "Third person camera goes through blocks when riding a kart.",
@@ -37,7 +37,7 @@ public class MCRiderSetting extends Screen {
 
             "Change suspension effect when riding a kart.",
             "Change bike suspension effect when enable suspension effect.",
-            "(Work in progress) Show a flood-fill track minimap. Debug mode shows each track segment in a different color."
+            "Automatically search the track and display a minimap with rider positions when riding a kart."
     };
 
     // 슬라이더 정의: {라벨, 최소값, 최대값, 기본값, 툴팁}
@@ -60,7 +60,7 @@ public class MCRiderSetting extends Screen {
             TOGGLE_OPTIONS = new String[][] {
                     { "조작 가속: 꺼짐", "조작 가속: 보통", "조작 가속: 극한" },
                     { "패킷 가속: 꺼짐", "패킷 가속: 켜짐" },
-                    { "카트 레이더: 꺼짐", "카트 레이더: 중앙", "카트 레이더: 하단", "카트 레이더: 모두" },
+                    { "카트 레이더: 꺼짐", "카트 레이더: 켜짐" },
                     { "드래프트 게이지: 꺼짐", "드래프트 게이지: 켜짐" },
                     { "자동 3인칭: 꺼짐", "자동 3인칭: 켜짐" },
                     { "카메라 통과: 꺼짐", "카메라 통과: 켜짐" },
@@ -72,16 +72,16 @@ public class MCRiderSetting extends Screen {
             };
             tooltips = new String[] {
                     "카트 탑승 시 조작감을 최적화합니다.",
-                    "카트 탑승 시 통신 과정을 가속합니다.",
-                    "카트 탑승 시 주변에 있는 다른 라이더의 위치를 표시합니다.",
+                    "카트 탑승 시 조작 데이터 송신을 가속합니다.",
+                    "카트 탑승 시 주변 라이더의 방향을 화살표로 표시합니다.",
                     "카트 탑승 시 드래프트 게이지를 표시합니다.",
-                    "카트 탑승 시 자동으로 3인칭으로 전환합니다.",
+                    "카트 탑승 시 자동으로 카메라 시점을 전환합니다.",
                     "카트 탑승 시 3인칭 카메라가 블록에 걸리지 않게 합니다.",
                     "카트 탑승 시 카메라 연출 방식을 선택할 수 있습니다.",
 
                     "카트 탑승 시 드리프트 서스펜션 효과를 선택합니다.",
                     "서스펜션 효과 활성화 시 바이크의 서스펜션 연출을 변경합니다.",
-                    "(개발 중인 기능) 플러드필 방식의 트랙 미니맵을 표시합니다. 디버그는 트랙 조각마다 다른 색으로 표시합니다."
+                    "카트 탑승 시 주변 환경을 자동으로 탐색해 미니맵과 라이더 위치를 보여줍니다."
             };
             SLIDER_OPTIONS = new Object[][] {
                     { "주행 시야 범위", 30.0, 110.0, "카메라 모드 '기본' 상태에서만 적용됩니다." },
@@ -114,6 +114,11 @@ public class MCRiderSetting extends Screen {
         toggleIndices[7] = cfg.suspensionEffect;
         toggleIndices[8] = cfg.bikeSuspension;
         toggleIndices[9] = cfg.useMinimap;
+        
+        // 배열 밖 옵션 안전장치
+        for (int i = 0; i < toggleIndices.length; i++) {
+            toggleIndices[i] = Math.max(0, Math.min(toggleIndices[i], TOGGLE_OPTIONS[i].length - 1));
+        }
 
         // slider load
         sliderValues[0] = cfg.MCRiderFOV;

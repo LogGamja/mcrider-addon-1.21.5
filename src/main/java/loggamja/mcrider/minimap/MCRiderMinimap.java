@@ -1,19 +1,15 @@
 package loggamja.mcrider.minimap;
 
-import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
-import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.math.BlockPos;
 
 import loggamja.mcrider.MCRiderConfig;
 import loggamja.mcrider.MCRiderMain;
 import net.minecraft.world.World;
-
-import java.util.Objects;
 
 /**
  * 플로드필 기반 트랙 미니맵("색깔 관계 그래프" 방식)의 진입점.
@@ -53,18 +49,11 @@ public class MCRiderMinimap implements ClientModInitializer {
             clearAllMap();
         }
         lastWorld = client.world;
-        
-        // 색깔 리미트 시 자동 초기화
-        if (ColorGraph.colorParentPtr.size() >= 5000) {
-            int colorCount = 0;
-            for (Long2LongOpenHashMap.Entry e : ColorGraph.colorParentPtr.long2LongEntrySet()) {
-                if (e.getLongValue() == e.getLongKey()) colorCount++;
-            }
-            if (colorCount >= 5000) {
-                System.out.println("[MCRider] Minimap color limit exceeded (" + colorCount + "), resetting map.");
-                clearAllMap();
-                return;
-            }
+
+        if (ColorGraph.actualColorCount >= 5000) {
+            System.out.println("[MCRider] Minimap color limit exceeded (" + ColorGraph.actualColorCount + "), resetting map.");
+            clearAllMap();
+            return;
         }
 
         final int playerMargin = 5;
@@ -89,10 +78,5 @@ public class MCRiderMinimap implements ClientModInitializer {
         FrontierSearch.reset();
         ColorGraph.reset();
         MinimapRenderer.reset();
-    }
-
-    // 레이더쪽에 데이터 전달을 위해 사용
-    public static double getViewDistance() {
-        return MinimapRenderer.maxDist;
     }
 }

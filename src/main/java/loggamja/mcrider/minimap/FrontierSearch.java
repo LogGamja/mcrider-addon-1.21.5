@@ -117,7 +117,6 @@ final class FrontierSearch {
         activeSetVersion = ColorGraph.colorGraphVersion;
 
         if (!MCRiderMinimap.isDebugColors()) {
-            // 활성에서 이탈/진입한 루트의 컬럼만 dirty로 표시한다.
             LongIterator it = prevActiveSetForDiff.iterator();
             while (it.hasNext()) {
                 long r = it.nextLong();
@@ -139,14 +138,11 @@ final class FrontierSearch {
         if (cols != null) dirtyColumns.addAll(cols);
     }
 
-    /** (x,y,z)의 cellColor를 조회해 resolve까지 마친 root를 반환한다. 매핑 없으면 NO_ID.
-     *  MinimapRenderer.computeColumnColor가 참조한다. */
     static long resolvedRootAt(int x, int y, int z) {
         long id = cellColor.get(BlockPos.asLong(x, y, z));
         return id == NO_ID ? NO_ID : ColorGraph.resolve(id);
     }
 
-    // activeColor 전환 히스테리시스 상태(ACTIVE_COLOR_SWITCH_STREAK 참고).
     private static long pendingActiveColorCandidate = NO_ID;
     private static int pendingActiveColorStreak = 0;
 
@@ -195,7 +191,7 @@ final class FrontierSearch {
         if (!BlockSearch.isChunkLoadedAt(start.getX(), start.getZ())) return NO_ID;
         long anchor = findAnchorCell(start.getX(), start.getY(), start.getZ(), world.getBottomY());
         if (anchor == NO_ID) return NO_ID;
-        if (cellColor.get(anchor) == NO_ID) return NO_ID; // 아직 매핑 안 된 곳
+        if (cellColor.get(anchor) == NO_ID) return NO_ID;
         return anchor;
     }
 
@@ -236,7 +232,7 @@ final class FrontierSearch {
 
         int sx = start.getX(), sz = start.getZ();
         long anchorCell = findAnchorCell(sx, start.getY(), sz, world.getBottomY());
-        if (anchorCell == NO_ID) return; // 바닥까지 다 공기 등이면 이번 틱은 스킵
+        if (anchorCell == NO_ID) return;
         int sy = BlockPos.unpackLongY(anchorCell);
 
         // 규칙1: 발밑 셀이 미방문이면 새 루트 색 시드.
@@ -255,8 +251,8 @@ final class FrontierSearch {
         // 확장한다. resolvePlayerCell은 여기서 한 번만 호출해 재사용한다.
         long playerCell = resolvePlayerCell(start);
         updateActiveColorFromCell(playerCell); // 표시용(히스테리시스 유지) activeColor 갱신
-        activeColorUpdatedThisTick = true;      // onTickStart의 중복 갱신을 막는 신호
-        rebuildActiveSet();                     // 표시용 activeSet
+        activeColorUpdatedThisTick = true;
+        rebuildActiveSet();
 
         // 탐색용: 히스테리시스 없이 "지금 이 틱에 서 있는 셀의 색"을 즉시 기준으로 삼는다.
         long liveRoot = (playerCell != NO_ID) ? ColorGraph.resolve(cellColor.get(playerCell)) : NO_ID;

@@ -30,9 +30,6 @@ public class ClientPlayNetworkHandlerMixin {
         var speed = mcrider$extractSpeed(message.getString());
         boolean matched = speed != -169f;
 
-        // 배율은 반드시 "파싱 성공"으로 확인된 값에만 적용한다. 실패 sentinel(-169)에도
-        // 곱해버리면 값이 바뀌어(-169가 아니게 돼) 아래 매칭 판정을 영원히 통과 못 하는
-        // 문제가 있었다.
         if (matched && MCRiderMain.kartEngine == 7) {
             speed *= 2.59065f;
         }

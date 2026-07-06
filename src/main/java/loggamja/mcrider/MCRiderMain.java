@@ -114,7 +114,7 @@ public class MCRiderMain implements ClientModInitializer {
             return "none";
         }
     }
-    static boolean hasCertainName(Entity entity, String saddleName) {
+    public static boolean hasCertainName(Entity entity, String saddleName) {
         if (entity != null && entity.getCustomName() != null) {
             return entity.getCustomName().getString().equals(saddleName);
         }

@@ -50,6 +50,7 @@ public class MCRiderConfig {
         this.MCRiderRotationOption     = other.MCRiderRotationOption;
         this.MCRiderPacketAcceleration = other.MCRiderPacketAcceleration;
         this.MCRiderRadarOption        = other.MCRiderRadarOption;
+
         this.useMinimap                = other.useMinimap;
         this.useNoclipCamera           = other.useNoclipCamera;
         this.useDraftGauge             = other.useDraftGauge;

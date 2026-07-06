@@ -5,10 +5,14 @@ import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongIterator;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.PlayerSkinDrawer;
+import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.RotationAxis;
@@ -16,6 +20,8 @@ import net.minecraft.util.math.Vec3d;
 
 import loggamja.mcrider.MCRiderConfig;
 import loggamja.mcrider.MCRiderMain;
+
+import java.util.Objects;
 
 import static loggamja.mcrider.minimap.ColorGraph.NO_ID;
 
@@ -31,7 +37,8 @@ final class MinimapRenderer {
     private static final double LEGACY_GUI_SCALE_BASIS = 4.0;
     private static final int padding = (int) Math.round(10 * LEGACY_GUI_SCALE_BASIS);
     private static final int baseRadius = (int) Math.round(50 * LEGACY_GUI_SCALE_BASIS);
-    static final double baseDist = 75;
+
+    static final double baseDist = 60;
     private static final double uiScale = 0.75;
     static final double distScale = 1;
     private static final int radius = (int) Math.round(baseRadius * uiScale);
@@ -44,6 +51,17 @@ final class MinimapRenderer {
     private static final Identifier MINIMAP_ID = Identifier.of("mcrider-official", "minimap");
     private static final int VISITED_COLOR = 0xBBCCCCCC;
 
+    private static final float IMAGE_CORRECTION_TRICK = 0.001f;
+    private static final double RIDER_ICON_SIZE = 8 * LEGACY_GUI_SCALE_BASIS;
+    private static final Identifier SELF_ARROW_ICON = Identifier.of("mcrider-official", "textures/hud/arrow_icon.png");
+    private static final int SELF_ARROW_TEX_SIZE = 16;
+    private static final float ENEMY_ICON_SCALE = 0.5f;
+    /** context.fill은 정수 좌표만 받아 1픽셀 미만 두께를 직접 표현할 수 없다. drawEnemyHead가
+     *  테두리 사각형만 얼굴 중심 기준으로 스케일링해서 이 값(1보다 작아도 됨)만큼의 두께를
+     *  화면에 낸다. */
+    private static final float ENEMY_HEAD_OUTLINE_THICKNESS = 0.4f;
+    private static final int ENEMY_HEAD_OUTLINE_COLOR = 0xFF000000;
+
     private static NativeImage image;
     private static NativeImageBackedTexture texture;
     private static boolean textureDirty = false;
@@ -53,7 +71,7 @@ final class MinimapRenderer {
     // 텍스처 부분 업로드는 "단일 바운딩 박스"가 아니라 "타일 단위 dirty 집합"으로 관리한다.
     // 멀리 떨어진 두 dirty 덩어리를 하나의 사각형으로 감싸면 사실상 풀업로드가 되므로,
     // TILE_SIZE 단위로 쪼개 실제로 바뀐 타일만 올린다.
-    private static final int TILE_SIZE = 32; // 512 / 32 = 16x16 = 256개 타일
+    private static final int TILE_SIZE = 32;
     private static final int TILES_PER_ROW = TEX_SIZE / TILE_SIZE;
     private static final IntOpenHashSet dirtyTiles = new IntOpenHashSet();
     /** 전체 텍스처를 통째로 올려야 하는 상황(재앵커/reset)이면 true. 타일 집합을 무시하고
@@ -162,23 +180,12 @@ final class MinimapRenderer {
         image.setColorArgb(tx, tz, computeColumnColor(worldX, worldZ));
         markPixelDirty(tx, tz);
     }
-
-    /** (worldX,worldZ)가 지금 화면에 보이는 원형 시야 범위 안인지 판정한다. 미니맵이 플레이어
-     *  중심으로 회전하므로 방향 무관 반경만 본다. maxDist로 크기가 고정돼(회전 대각선 여유
-     *  SQRT2배 포함) dirtyColumns가 커져도 이 범위 안 컬럼 수는 스파이크를 내지 않는다. */
     private static boolean isInCurrentView(int worldX, int worldZ, int px, int pz) {
         double dx = worldX - px;
         double dz = worldZ - pz;
         double r = maxDist * SQRT2 + 8;
         return dx * dx + dz * dz <= r * r;
     }
-
-    /** 전체 재도색 없이 dirtyColumns만 다시 그린다. 비용은 실제 변경분에 비례하며, 시간
-     *  예산으로 한 틱을 제한하고 못 그린 항목은 다음 틱으로 넘어간다(유실 없음).
-     *
-     *  주의: 예산 자체를 없애면 안 된다. activeColor 전환 시 isInCurrentView가 Y는 안 보고
-     *  X/Z만 보므로 뷰 안 dirty 컬럼이 수만 개일 수 있어, 예산 없이는 프레임드랍이 재발한다
-     *  (실제로 재발했던 문제). 대신 예산을 "뷰 안" 컬럼에 먼저 쓰고 남으면 "뷰 밖"에 쓴다. */
     static void repaintDirtyColumns(BlockPos start) {
         if (FrontierSearch.dirtyColumns.isEmpty() || !originSet) return;
 
@@ -229,10 +236,12 @@ final class MinimapRenderer {
             int y = yi.nextInt();
             long root = FrontierSearch.resolvedRootAt(x, y, z);
             if (root == NO_ID) continue;
+            if (!debug && !FrontierSearch.activeSet.contains(root)) continue;
+
             if (y >= repY) { repY = y; repRoot = root; }
         }
         if (debug) return colorForRoot(repRoot);
-        return (repRoot != NO_ID && FrontierSearch.activeSet.contains(repRoot)) ? VISITED_COLOR : 0;
+        return (repRoot != NO_ID) ? VISITED_COLOR : 0;
     }
 
     private static int colorForRoot(long root) {
@@ -315,7 +324,104 @@ final class MinimapRenderer {
                 RenderLayer::getGuiTextured, MINIMAP_ID,
                 0, 0, u0, v0, drawSize, drawSize, texRegion, texRegion, TEX_SIZE, TEX_SIZE);
         matrices.pop();
+
+        drawRiderIcons(context, tickDelta, centerX, centerY, yawDeg, p, blockToScreen, sizeFactor);
+
         context.disableScissor();
+    }
+    private static void drawRiderIcons(DrawContext context, float tickDelta, int centerX, int centerY,
+                                        float yawDeg, Vec3d p, double scale, double sizeFactor) {
+        MinecraftClient client = MCRiderMinimap.client;
+
+        final float iconSize = (float) (RIDER_ICON_SIZE * sizeFactor);
+        final float enemyIconSize = iconSize * ENEMY_ICON_SCALE;
+
+        final double yawRad = Math.toRadians(yawDeg);
+        final double fx = -Math.sin(yawRad);
+        final double fz = Math.cos(yawRad);
+        final double rx = Math.cos(yawRad);
+        final double rz = Math.sin(yawRad);
+
+        for (AbstractClientPlayerEntity other : Objects.requireNonNull(client.world).getPlayers()) {
+            if (other == MCRiderMain.getRidingPlayer()) continue;
+            if (other == other.getRootVehicle()) continue;
+
+            final Vec3d q = other.getCameraPosVec(tickDelta);
+            final double dx = q.x - p.x;
+            final double dz = q.z - p.z;
+
+            final double localForward = dx * fx + dz * fz;
+            final double localRight = dx * rx + dz * rz;
+            
+            if (Math.abs(localForward) > maxDist || Math.abs(localRight) > maxDist) continue;
+
+            final float dotX = (float) (centerX - localRight * scale);
+            final float dotY = (float) (centerY - localForward * scale);
+
+            final float enemyKartYaw = getKartBodyYaw(other);
+            final float relativeYaw = (enemyKartYaw - yawDeg) + IMAGE_CORRECTION_TRICK;
+            drawEnemyHead(context, other, dotX, dotY, enemyIconSize, relativeYaw);
+        }
+
+        // 자기 마커는 맨 마지막에 그려서, 겹치는 적 마커에 가려지지 않고 항상 위에 보이게 한다.
+        final float myKartYaw = getKartBodyYaw(MCRiderMain.getRidingPlayer());
+        final float delta = (myKartYaw - yawDeg) + IMAGE_CORRECTION_TRICK;
+        drawSelfMarker(context, centerX, centerY, iconSize, delta);
+    }
+
+    private static float getKartBodyYaw(PlayerEntity player) {
+        Entity kart = player.getRootVehicle();
+        if (kart != null && kart != player) {
+            for (Entity passenger : kart.getPassengerList()) {
+                if (MCRiderMain.hasCertainName(passenger, "mcrider-modelsaddle")) {
+                    return passenger.getYaw();
+                }
+            }
+        }
+        return player.getYaw();
+    }
+    private static void drawSelfMarker(DrawContext context, float cx, float cy, float size, float rotationDeg) {
+        MatrixStack matrices = context.getMatrices();
+        matrices.push();
+        matrices.translate(cx, cy, 0);
+        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(rotationDeg));
+        matrices.translate(-size / 2f, -size / 2f, 0);
+
+        context.drawTexture(
+                RenderLayer::getGuiTextured,
+                SELF_ARROW_ICON,
+                0, 0,
+                0f, 0f,
+                Math.round(size), Math.round(size),
+                SELF_ARROW_TEX_SIZE, SELF_ARROW_TEX_SIZE,
+                SELF_ARROW_TEX_SIZE, SELF_ARROW_TEX_SIZE
+        );
+
+        matrices.pop();
+    }
+    private static void drawEnemyHead(DrawContext context, AbstractClientPlayerEntity player,
+                                       float cx, float cy, float size, float rotationDeg) {
+        int isize = Math.round(size);
+
+        MatrixStack matrices = context.getMatrices();
+        matrices.push();
+        matrices.translate(cx, cy, 0);
+        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(rotationDeg));
+        matrices.translate(-size / 2f, -size / 2f, 0);
+
+        // 테두리 사각형을 (isize+2) 정수 크기로 그리되, 얼굴 중심을 기준으로 살짝만 확대해
+        // 실제로 삐져나오는 폭이 정수 1이 아니라 ENEMY_HEAD_OUTLINE_THICKNESS만큼만 되게 한다.
+        matrices.push();
+        float outlineScale = (isize + 2f * ENEMY_HEAD_OUTLINE_THICKNESS) / (isize + 2f);
+        matrices.translate(isize / 2f, isize / 2f, 0);
+        matrices.scale(outlineScale, outlineScale, 1f);
+        matrices.translate(-(isize + 2f) / 2f, -(isize + 2f) / 2f, 0);
+        context.fill(0, 0, isize + 2, isize + 2, ENEMY_HEAD_OUTLINE_COLOR);
+        matrices.pop();
+
+        PlayerSkinDrawer.draw(context, player.getSkinTextures(), 0, 0, isize);
+
+        matrices.pop();
     }
 
     private static double getSizeFactor(MinecraftClient client) {

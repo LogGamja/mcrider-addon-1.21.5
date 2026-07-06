@@ -27,8 +27,9 @@ final class ColorGraph {
     static long nextColorId = 0;
     static int birthCounter = 0;
 
-    /** 그래프 구조가 바뀔 때(엣지 추가/병합)만 증가. FrontierSearch의 activeSet 캐시 무효화 판단용. */
+    // 그래프 구조가 바뀔 때(엣지 추가 / 병합) 증가. FrontierSearch의 activeSet 캐시 무효화 판단용.
     static long colorGraphVersion = 0;
+    static int actualColorCount = 0;
 
     static {
         colorParentPtr.defaultReturnValue(NO_ID);
@@ -42,6 +43,7 @@ final class ColorGraph {
         if (!colorParentPtr.containsKey(id)) {
             colorParentPtr.put(id, id);
             colorBirth.put(id, birthCounter++);
+            actualColorCount++;
         }
     }
 
@@ -159,7 +161,7 @@ final class ColorGraph {
                 if (reachable.add(kid)) q.enqueue(kid);
             }
         }
-        if (!reachable.contains(to)) return; // to에 도달 불가하면 조상이 아님
+        if (!reachable.contains(to)) return;
 
         // to의 조상 집합과 교집합 = from에서 to로 가는 경로
         LongOpenHashSet ancestorsOfTo = scratchAncestorsOfTo;
@@ -178,6 +180,7 @@ final class ColorGraph {
      *  loser의 부모 포인터를 survivor로 재지정한다. activeColor 갱신은 호출부 몫.
      *  columnsByRoot는 FrontierSearch 소유라 여기서 직접 참조한다. */
     static void absorbInto(long loser, long survivor) {
+        actualColorCount--; // loser는 호출 시점에 항상 resolve된(자기 자신을 가리키던) 루트였다.
         FrontierSearch.markColumnsDirtyForRoot(loser);
         LongOpenHashSet cols = FrontierSearch.columnsByRoot.remove(loser);
         if (cols != null) {
@@ -190,7 +193,6 @@ final class ColorGraph {
         colorParentPtr.put(loser, survivor);
     }
 
-    /** adj[loser]의 이웃을 adj[survivor]로 합치고 loser 항목은 제거(self-loop 제외). */
     private static void migrateAdjacency(Long2ObjectOpenHashMap<LongOpenHashSet> adj, long loser, long survivor) {
         LongOpenHashSet moved = adj.remove(loser);
         if (moved == null || moved.isEmpty()) return;
@@ -266,5 +268,6 @@ final class ColorGraph {
         nextColorId = 0;
         birthCounter = 0;
         colorGraphVersion = 0;
+        actualColorCount = 0;
     }
 }

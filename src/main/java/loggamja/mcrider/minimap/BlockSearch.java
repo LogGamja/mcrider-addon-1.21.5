@@ -65,7 +65,6 @@ final class BlockSearch {
         return chunk.getBlockState(MUTABLE.set(x, y, z));
     }
 
-    /** world==null 가드 + 좌표의 BlockState에 predicate 적용을 묶은 헬퍼. */
     private static boolean testAt(Predicate<BlockState> predicate, int x, int y, int z) {
         if (MCRiderMinimap.client.world == null) return false;
         return predicate.test(stateAt(x, y, z));

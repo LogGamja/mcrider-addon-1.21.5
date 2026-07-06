@@ -59,7 +59,6 @@ final class FrontierQueue {
         return dx + dz;
     }
 
-    /** map[key]의 LongArrayList 버킷을 가져오거나 없으면 만들어 등록한 뒤 반환한다. */
     private static LongArrayList getOrCreateBucket(Long2ObjectOpenHashMap<LongArrayList> map, long key, int initialCapacity) {
         LongArrayList bucket = map.get(key);
         if (bucket == null) {
@@ -69,21 +68,17 @@ final class FrontierQueue {
         return bucket;
     }
 
-    /** 셀을 활성 프론티어의 청크 버킷에 추가한다. 청크가 처음 생기면 frontierChunkKeys에도
-     *  등록해 다음 정렬 스냅샷에 포함시킨다. */
     static void push(long cell, int cx, int cz) {
         long chunkKey = ChunkPos.toLong(cx >> 4, cz >> 4);
         getOrCreateBucket(frontierByChunk, chunkKey, 8).add(cell);
         if (frontierChunkKeys.add(chunkKey)) chunkKeysVersion++; // 실제로 새 청크가 들어왔을 때만
     }
 
-    /** 비워진 청크의 프론티어 버킷과 키를 함께 제거한다(메인 루프가 버킷을 다 소진했을 때 호출). */
     static void removeChunk(long chunkKey) {
         frontierByChunk.remove(chunkKey);
         if (frontierChunkKeys.remove(chunkKey)) chunkKeysVersion++;
     }
 
-    /** sx,sz 기준 maxRange 안이면 활성 프론티어로, 벗어나면 exile로 보낸다. */
     static void enqueue(long cell, int cx, int cz, int sx, int sz, int maxRange) {
         if (taxiDistance2D(cx, cz, sx, sz) <= maxRange) {
             push(cell, cx, cz);
@@ -92,7 +87,6 @@ final class FrontierQueue {
         }
     }
 
-    /** (worldX,worldZ)가 속한 청크의 exile 버킷에 셀을 보류한다. */
     static void park(long packedPos, int worldX, int worldZ) {
         long key = ChunkPos.toLong(worldX >> 4, worldZ >> 4);
         getOrCreateBucket(exiledByChunk, key, 4).add(packedPos);
