@@ -2,51 +2,28 @@ package loggamja.mcrider.minimap;
 
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
-import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
-import it.unimi.dsi.fastutil.longs.LongArrayList;
 import it.unimi.dsi.fastutil.longs.LongIterator;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
-import it.unimi.dsi.fastutil.objects.ObjectIterator;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.registry.tag.TagKey;
-import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.world.chunk.Chunk;
-
-import java.util.function.Predicate;
 
 import static loggamja.mcrider.minimap.ColorGraph.NO_ID;
 
 /**
- * 월드 블록 조회(트랙/벽 판정, 청크 캐시) + 플러드필 탐색 엔진 + 방문 셀/컬럼 저장소.
+ * 플러드필 탐색 엔진 + 방문 셀/컬럼 저장소.
  *
  * "지금까지 어디를 탐색했고 어떤 색인지"(cellColor/visitedColumns/columnsByRoot/dirtyColumns)와
  * "지금 뭘 화면에 보여줄지"(activeColor/activeSet/searchActiveSet)가 전부 여기 있다.
- * ColorGraph와 MinimapRenderer 양쪽이 참조하는 이 미니맵의 핵심 엔진이다.
+ * 월드 블록 판정은 {@link BlockSearch}에, 프론티어 청크 버킷/exile 관리는
+ * {@link FrontierQueue}에 위임하고, 이 클래스는 그 위에서 실제 플러드필 알고리즘과 색
+ * 배정(handleReach)만 담당한다. ColorGraph와 MinimapRenderer 양쪽이 참조하는 미니맵의
+ * 핵심 엔진이다.
  */
 final class FrontierSearch {
     private FrontierSearch() {}
 
     // ── 탐색 상태 ────────────────────────────────────────────────────────
-    static boolean needsMoreSearching = false;
-    static BlockPos lastPlayerPos;
-
-    /** 활성 프론티어를 청크 단위로 묶어 보관: chunkKey(ChunkPos.toLong) → 대기 셀 목록.
-     *  청크별로 몰아 처리하면 stateAt()의 청크 캐시(4슬롯) 히트율이 오른다. 처리 "순서"만
-     *  바꿀 뿐 정확성엔 영향 없음. 모든 셀은 frontierByChunk 또는 exiledFrontierChunkHash
-     *  둘 중 하나에만 존재한다. */
-    static Long2ObjectOpenHashMap<LongArrayList> frontierByChunk = new Long2ObjectOpenHashMap<>();
-    /** frontierByChunk에 대기 셀이 있는 청크 키 집합(거리순 정렬 스냅샷용). */
-    static LongOpenHashSet frontierChunkKeys = new LongOpenHashSet();
-    /** 미로딩/범위 밖 청크에 보류된 프론티어: ChunkPos.toLong → 셀 목록. */
-    static Long2ObjectOpenHashMap<LongArrayList> exiledFrontierChunkHash = new Long2ObjectOpenHashMap<>();
-
     /** 방문 셀 → 색 ID. 키 BlockPos.asLong, 값 색 ID(불변). */
     static Long2LongOpenHashMap cellColor = new Long2LongOpenHashMap();
     /** packColumn(x,z) → 방문 Y 집합(텍스처 도색 대상). */
@@ -76,9 +53,6 @@ final class FrontierSearch {
      *  벽 경계처럼 anchor 판정이 매 틱 흔들리는 위치에서 activeColor가 잡음성으로 반복
      *  전환되는 것을 막는다. */
     static final int ACTIVE_COLOR_SWITCH_STREAK = 3;
-    /** 플레이어 앵커를 찾기 위해 아래로 뚫고 내려갈 수 있는 최대 칸 수. 트랙 표면이
-     *  ignoreblock 태그로 "공기"처럼 보일 때 무한정 하강하지 않도록 막는 안전장치. */
-    static final int MAX_ANCHOR_DROP_SEARCH = 64;
 
     // ═══════════════════════════ 표시/탐색용 activeSet ═══════════════════════════
 
@@ -99,26 +73,36 @@ final class FrontierSearch {
     private static long searchActiveSetSnapshotRoot = NO_ID;
     private static long searchActiveSetVersion = -1;
 
+    /** rebuildActiveSet/rebuildSearchActiveSet이 공유하는 BFS 큐(매 틱 new 방지). 두 호출은
+     *  같은 틱에 순차 실행되고 재진입하지 않으므로 하나만 두고 재사용해도 안전하다. */
+    private static final LongArrayFIFOQueue subtreeQueue = new LongArrayFIFOQueue();
+
+    /** root와 그 자손(resolve됨)을 out에 채운다. out은 호출 전 비어 있어야 한다(각 호출부가
+     *  diff 등 자기 사정에 맞춰 clear 시점을 정하므로 여기선 clear하지 않음). */
+    private static void collectColorSubtree(long root, LongOpenHashSet out) {
+        if (root == NO_ID) return;
+        LongArrayFIFOQueue q = subtreeQueue;
+        q.clear();
+        out.add(root);
+        q.enqueue(root);
+        while (!q.isEmpty()) {
+            long cur = q.dequeueLong();
+            LongOpenHashSet kids = ColorGraph.parentToChildren.get(cur);
+            if (kids == null) continue;
+            LongIterator it = kids.iterator();
+            while (it.hasNext()) {
+                long kid = ColorGraph.resolve(it.nextLong());
+                if (out.add(kid)) q.enqueue(kid);
+            }
+        }
+    }
+
     private static void rebuildSearchActiveSet(long liveRoot) {
         if (searchActiveSetSnapshotRoot == liveRoot && searchActiveSetVersion == ColorGraph.colorGraphVersion) {
             return;
         }
         searchActiveSet.clear();
-        if (liveRoot != NO_ID) {
-            LongArrayFIFOQueue q = new LongArrayFIFOQueue();
-            searchActiveSet.add(liveRoot);
-            q.enqueue(liveRoot);
-            while (!q.isEmpty()) {
-                long cur = q.dequeueLong();
-                LongOpenHashSet kids = ColorGraph.parentToChildren.get(cur);
-                if (kids == null) continue;
-                LongIterator it = kids.iterator();
-                while (it.hasNext()) {
-                    long kid = ColorGraph.resolve(it.nextLong());
-                    if (searchActiveSet.add(kid)) q.enqueue(kid);
-                }
-            }
-        }
+        collectColorSubtree(liveRoot, searchActiveSet);
         searchActiveSetSnapshotRoot = liveRoot;
         searchActiveSetVersion = ColorGraph.colorGraphVersion;
     }
@@ -133,21 +117,7 @@ final class FrontierSearch {
         if (!MCRiderMinimap.DEBUG_COLORS) prevActiveSetForDiff.addAll(activeSet);
 
         activeSet.clear();
-        if (activeColor != NO_ID) {
-            LongArrayFIFOQueue q = new LongArrayFIFOQueue();
-            activeSet.add(activeColor);
-            q.enqueue(activeColor);
-            while (!q.isEmpty()) {
-                long cur = q.dequeueLong();
-                LongOpenHashSet kids = ColorGraph.parentToChildren.get(cur);
-                if (kids == null) continue;
-                LongIterator it = kids.iterator();
-                while (it.hasNext()) {
-                    long kid = ColorGraph.resolve(it.nextLong());
-                    if (activeSet.add(kid)) q.enqueue(kid);
-                }
-            }
-        }
+        collectColorSubtree(activeColor, activeSet);
         activeSetSnapshotColor = activeColor;
         activeSetVersion = ColorGraph.colorGraphVersion;
 
@@ -185,6 +155,12 @@ final class FrontierSearch {
     private static long pendingActiveColorCandidate = NO_ID;
     private static int pendingActiveColorStreak = 0;
 
+    /** 이번 floodFillWithVertical 호출이 activeColor 갱신(updateActiveColorFromCell)까지
+     *  도달했으면 true. floodFill이 초기 리턴(청크 미로딩 등)하면 false로 남아, onTickStart가
+     *  그때만 updateActiveColor로 보정한다. 정상 완주 시엔 중복 갱신(하향 스캔 반복 +
+     *  히스테리시스 streak 이중 증가)을 막는다. */
+    static boolean activeColorUpdatedThisTick = false;
+
     static void updateActiveColor(BlockPos start) {
         updateActiveColorFromCell(resolvePlayerCell(start));
     }
@@ -221,91 +197,11 @@ final class FrontierSearch {
         // 그 아래 트랙을 정확히 찾는다.
         var world = MCRiderMinimap.client.world;
         if (world == null) return NO_ID;
-        if (!isChunkLoadedAt(start.getX(), start.getZ())) return NO_ID;
+        if (!BlockSearch.isChunkLoadedAt(start.getX(), start.getZ())) return NO_ID;
         long anchor = findAnchorCell(start.getX(), start.getY(), start.getZ(), world.getBottomY());
         if (anchor == NO_ID) return NO_ID;
         if (cellColor.get(anchor) == NO_ID) return NO_ID; // 아직 매핑 안 된 곳
         return anchor;
-    }
-
-    // ═══════════════════════════ 월드 블록 조회 ═══════════════════════════
-
-    static final TagKey<Block> KART_WALL = TagKey.of(RegistryKeys.BLOCK, Identifier.of("kartmobil", "stones"));
-    static final Predicate<BlockState> isWall = state -> state.isIn(KART_WALL);
-    static final TagKey<Block> KART_AIR = TagKey.of(RegistryKeys.BLOCK, Identifier.of("kartmobil", "ignoreblock"));
-    static final Predicate<BlockState> isAir = state -> state.isIn(KART_AIR);
-    private static final Predicate<BlockState> isVoid = state -> state.isOf(Blocks.STRUCTURE_VOID);
-
-    /** 4방향 이웃 오프셋. 불변이므로 매 틱 재할당하지 않고 상수로 공유한다. */
-    private static final int[][] DIRS = { {1, 0}, {-1, 0}, {0, 1}, {0, -1} };
-
-    // 4슬롯을 "0번 = 최근 사용"으로 유지하는 move-to-front LRU 청크 캐시.
-    private static final int CHUNK_CACHE_SLOTS = 4;
-    private static final long[] cacheKeys = new long[CHUNK_CACHE_SLOTS];
-    private static final Chunk[] cacheChunks = new Chunk[CHUNK_CACHE_SLOTS];
-    private static final BlockPos.Mutable MUTABLE = new BlockPos.Mutable();
-
-    static void invalidateChunkCache() {
-        java.util.Arrays.fill(cacheKeys, Long.MIN_VALUE);
-        java.util.Arrays.fill(cacheChunks, null);
-    }
-
-    private static BlockState stateAt(int x, int y, int z) {
-        long key = ChunkPos.toLong(x >> 4, z >> 4);
-        for (int i = 0; i < CHUNK_CACHE_SLOTS; i++) {
-            if (cacheKeys[i] == key && cacheChunks[i] != null) {
-                if (i != 0) {
-                    // 히트한 슬롯을 맨 앞으로 옮긴다.
-                    long hitKey = cacheKeys[i];
-                    Chunk hitChunk = cacheChunks[i];
-                    System.arraycopy(cacheKeys, 0, cacheKeys, 1, i);
-                    System.arraycopy(cacheChunks, 0, cacheChunks, 1, i);
-                    cacheKeys[0] = hitKey;
-                    cacheChunks[0] = hitChunk;
-                }
-                return cacheChunks[0].getBlockState(MUTABLE.set(x, y, z));
-            }
-        }
-        Chunk chunk = MCRiderMinimap.client.world.getChunk(x >> 4, z >> 4);
-        // miss: 가장 오래된 슬롯을 밀어내고 새 청크를 맨 앞에 넣는다.
-        System.arraycopy(cacheKeys, 0, cacheKeys, 1, CHUNK_CACHE_SLOTS - 1);
-        System.arraycopy(cacheChunks, 0, cacheChunks, 1, CHUNK_CACHE_SLOTS - 1);
-        cacheKeys[0] = key;
-        cacheChunks[0] = chunk;
-        return chunk.getBlockState(MUTABLE.set(x, y, z));
-    }
-
-    /** world==null 가드 + 좌표의 BlockState에 predicate 적용을 묶은 헬퍼. */
-    private static boolean testAt(Predicate<BlockState> predicate, int x, int y, int z) {
-        if (MCRiderMinimap.client.world == null) return false;
-        return predicate.test(stateAt(x, y, z));
-    }
-
-    static boolean isAirAt(int x, int y, int z) {
-        return testAt(isAir, x, y, z);
-    }
-    static boolean isWallAt(int x, int y, int z) {
-        return testAt(isWall, x, y, z);
-    }
-    static boolean isVoidAt(int x, int y, int z) {
-        return testAt(isVoid, x, y, z);
-    }
-    static boolean isVoidFloorUnder(int x, int y, int z) {
-        return isVoidAt(x, y - 1, z);
-    }
-    static boolean isChunkLoadedAt(int x, int z) {
-        if (MCRiderMinimap.client.world == null) return false;
-        return MCRiderMinimap.client.world.getChunkManager().isChunkLoaded(x >> 4, z >> 4);
-    }
-
-    /** 서 있을 수 있는 칸: 머리(y+1) 공간 + void 바닥 아님 + 발밑 지지(y,y-1 둘 다 공기 아님).
-     *  headAlreadyChecked=true면 머리 공간 검사를 건너뛴다(평지/계단은 resolveTargetY가 이미
-     *  확인했음; 낙하는 착지 높이를 아직 안 봤으므로 반드시 false로 호출). */
-    static boolean isStandable(int x, int y, int z, boolean headAlreadyChecked) {
-        if (!headAlreadyChecked && !isAirAt(x, y + 1, z)) return false;
-        if (isVoidFloorUnder(x, y, z)) return false;
-        if (isAirAt(x, y, z) && isAirAt(x, y - 1, z)) return false;
-        return true;
     }
 
     /**
@@ -314,17 +210,17 @@ final class FrontierSearch {
      *
      * 내려가다 이미 매핑된 칸을 만나면 트랙 표면으로 보고 멈춘다(표면이 ignoreblock 태그라
      * 공기처럼 보이는 경우 대비). 없으면 단단한 블록을 만날 때까지 내려가되
-     * MAX_ANCHOR_DROP_SEARCH만큼만 허용한다(무한 하강 방지).
+     * BlockSearch.MAX_ANCHOR_DROP_SEARCH만큼만 허용한다(무한 하강 방지).
      *
      * 반환값: 기준 지점의 BlockPos.asLong. 바닥까지 공기뿐이면 NO_ID.
      */
     static long findAnchorCell(int x, int y, int z, int bottomY) {
-        if (isAirAt(x, y, z)) {
+        if (BlockSearch.isAirAt(x, y, z)) {
             int startY = y;
             while (y > bottomY) {
                 if (cellColor.get(BlockPos.asLong(x, y, z)) != NO_ID) break;
-                if (!isAirAt(x, y - 1, z)) break;
-                if (startY - y >= MAX_ANCHOR_DROP_SEARCH) break;
+                if (!BlockSearch.isAirAt(x, y - 1, z)) break;
+                if (startY - y >= BlockSearch.MAX_ANCHOR_DROP_SEARCH) break;
                 y--;
             }
         }
@@ -332,126 +228,42 @@ final class FrontierSearch {
         return BlockPos.asLong(x, y, z);
     }
 
-    /** (nx,cy,nz)의 air/wall 판정을 호출부에서 미리 구해 넘겨받아 중복 조회를 피한다. */
-    static int resolveTargetY(int nx, int cy, int nz, boolean baseIsAir, boolean baseIsWall,
-                              boolean fromHasBlockAt2Meter, int bottomY) {
-        if (!isAirAt(nx, cy + 1, nz)) return Integer.MIN_VALUE;
-        if (!baseIsAir) {
-            // 기저가 벽 태그면 절대 올라설 수 없다(단방향 예외 없음).
-            if (baseIsWall) return Integer.MIN_VALUE;
-            if (isAirAt(nx, cy + 2, nz) && !fromHasBlockAt2Meter) return cy + 1;
-            return Integer.MIN_VALUE;
-        } else if (isAirAt(nx, cy - 1, nz)) {
-            // findAnchorCell과 동일하게 MAX_ANCHOR_DROP_SEARCH로 낙하 깊이를 제한한다
-            // (없으면 void 위 공중 트랙에서 프론티어 셀 하나가 bottomY까지 훑어 예산이 급감).
-            int fy = cy;
-            int dropped = 0;
-            while (isAirAt(nx, fy - 1, nz) && fy > bottomY) {
-                fy--;
-                if (++dropped >= MAX_ANCHOR_DROP_SEARCH) return Integer.MIN_VALUE;
-            }
-            return fy;
-        } else {
-            return cy;
+    /** curColor를 조회해 반환하되, 활성 트리(searchActiveSet) 밖이면 exile로 park하고
+     *  NO_ID를 반환한다(부작용 있는 헬퍼). floodFillWithVertical의 exile 복귀 루프와 메인
+     *  라운드 루프가 동일한 "이 셀을 확장해도 되는가" 판정을 공유하려고 뽑아냈다. */
+    private static long activeColorOrPark(long cell, int cx, int cz, boolean containToActive) {
+        long curColor = cellColor.get(cell);
+        if (curColor == NO_ID) return NO_ID;
+        if (containToActive && !searchActiveSet.contains(ColorGraph.resolve(curColor))) {
+            FrontierQueue.park(cell, cx, cz);
+            return NO_ID;
         }
-    }
-
-    /** 목적지에서 출발지로 되돌아가는 이동이 규칙상 성립하면 양방향. */
-    static boolean canMoveBetween(int tx, int ty, int tz, int fx, int fy, int fz, int bottomY) {
-        boolean baseIsWall = isWallAt(fx, ty, fz); // 되돌아갈 칸 기저가 벽이면 역방향 불가
-        if (baseIsWall) return false;
-        boolean baseIsAir = isAirAt(fx, ty, fz);
-        boolean tHasBlockAt2 = !isAirAt(tx, ty + 2, tz);
-        int back = resolveTargetY(fx, ty, fz, baseIsAir, baseIsWall, tHasBlockAt2, bottomY);
-        return back == fy;
-    }
-
-    // ═══════════════════════════ 프론티어 큐 ═══════════════════════════
-
-    // 프론티어 청크 거리순 정렬용 재사용 스크래치. (거리<<32 | 인덱스)로 패킹해 Arrays.sort로
-    // O(n log n) 정렬하며, 동일 거리 청크는 스냅샷 순서(stable)를 유지한다.
-    private static long[] frontierSortSnap = new long[0];
-    private static long[] frontierSortPacked = new long[0];
-    /** exile 부활 셀을 임시로 모으는 재사용 리스트(매 틱 new 방지). floodFill은 재진입하지 않는다. */
-    private static final LongArrayList revivedScratch = new LongArrayList();
-
-    /** map[key]의 LongArrayList 버킷을 가져오거나 없으면 만들어 등록한 뒤 반환한다. */
-    private static LongArrayList getOrCreateBucket(Long2ObjectOpenHashMap<LongArrayList> map, long key, int initialCapacity) {
-        LongArrayList bucket = map.get(key);
-        if (bucket == null) {
-            bucket = new LongArrayList(initialCapacity);
-            map.put(key, bucket);
-        }
-        return bucket;
-    }
-
-    /** 셀을 활성 프론티어의 청크 버킷에 추가한다. 청크가 처음 생기면 frontierChunkKeys에도
-     *  등록해 다음 정렬 스냅샷에 포함시킨다. */
-    static void frontierPush(long cell, int cx, int cz) {
-        long chunkKey = ChunkPos.toLong(cx >> 4, cz >> 4);
-        getOrCreateBucket(frontierByChunk, chunkKey, 8).add(cell);
-        frontierChunkKeys.add(chunkKey); // Set이라 이미 있으면 no-op
-    }
-
-    static void enqueueFrontier(long cell, int cx, int cz, int sx, int sz, int maxRange) {
-        if (taxiDistance2D(cx, cz, sx, sz) <= maxRange) {
-            frontierPush(cell, cx, cz);
-        } else {
-            parkInExiledFrontier(cell, cx >> 4, cz >> 4);
-        }
-    }
-
-    static void parkInExiledFrontier(long packedPos, int chunkX, int chunkZ) {
-        long key = ChunkPos.toLong(chunkX, chunkZ);
-        getOrCreateBucket(exiledFrontierChunkHash, key, 4).add(packedPos);
-    }
-
-    /** 뷰 반경(range) 안에 아직 처리 못 한 프론티어 청크가 남아있는지 청크 단위로 싸게
-     *  확인한다(대기 청크 수는 보통 수십~수백 개). true면 이번 틱 URGENT_SEARCH_* 예산을 쓴다. */
-    private static boolean hasPendingFrontierWithin(int range, int sx, int sz) {
-        LongIterator it = frontierChunkKeys.iterator();
-        while (it.hasNext()) {
-            long k = it.nextLong();
-            if (taxiDistanceFromChunkToPos(ChunkPos.getPackedX(k), ChunkPos.getPackedZ(k), sx, sz) <= range) {
-                return true;
-            }
-        }
-        ObjectIterator<Long2ObjectMap.Entry<LongArrayList>> eIt = exiledFrontierChunkHash.long2ObjectEntrySet().iterator();
-        while (eIt.hasNext()) {
-            long k = eIt.next().getLongKey();
-            if (taxiDistanceFromChunkToPos(ChunkPos.getPackedX(k), ChunkPos.getPackedZ(k), sx, sz) <= range) {
-                return true;
-            }
-        }
-        return false;
+        return curColor;
     }
 
     // ═══════════════════════════ 플러드필 탐색 ═══════════════════════════
 
-    static boolean floodFillWithVertical(BlockPos start, int maxRange, int updatePixel) {
-        needsMoreSearching = false;
+    static void floodFillWithVertical(BlockPos start, int maxRange, int updatePixel) {
+        activeColorUpdatedThisTick = false;
         var world = MCRiderMinimap.client.world;
-        if (world == null) return false;
+        if (world == null) return;
 
-        // 청크 캐시는 틱 사이에 유지한다. stateAt() 호출 좌표는 전부 사전에 isChunkLoadedAt()
-        // 확인을 거치므로 언로드된 청크를 읽을 위험은 없다.
+        // 청크 캐시는 틱 사이에 유지한다(BlockSearch 소유). BlockSearch 호출 좌표는 전부
+        // 사전에 isChunkLoadedAt() 확인을 거치므로 언로드된 청크를 읽을 위험은 없다.
 
-        if (!isChunkLoadedAt(start.getX(), start.getZ())) {
-            needsMoreSearching = true;
-            return false;
-        }
+        if (!BlockSearch.isChunkLoadedAt(start.getX(), start.getZ())) return;
 
         int sx = start.getX(), sz = start.getZ();
         long anchorCell = findAnchorCell(sx, start.getY(), sz, world.getBottomY());
-        if (anchorCell == NO_ID) return true; // 바닥까지 다 공기 등 — 이번 틱은 스킵
+        if (anchorCell == NO_ID) return; // 바닥까지 다 공기 등 — 이번 틱은 스킵
         int sy = BlockPos.unpackLongY(anchorCell);
 
         // 규칙1: 발밑 셀이 미방문이면 새 루트 색 시드.
         long startCell = BlockPos.asLong(sx, sy, sz);
-        if (cellColor.get(startCell) == NO_ID && isStandable(sx, sy, sz, false)) {
+        if (cellColor.get(startCell) == NO_ID && BlockSearch.isStandable(sx, sy, sz, false)) {
             long c = ColorGraph.newColor(NO_ID);
             paintCell(sx, sy, sz, c);
-            frontierPush(startCell, sx, sz);
+            FrontierQueue.push(startCell, sx, sz);
         }
 
         // 오픈 필드 블리딩 억제: 프론티어 확장을 "플레이어가 서 있는 영역 + 자손"으로 제한한다.
@@ -461,6 +273,7 @@ final class FrontierSearch {
         // 확장한다. resolvePlayerCell은 여기서 한 번만 호출해 재사용한다.
         long playerCell = resolvePlayerCell(start);
         updateActiveColorFromCell(playerCell); // 표시용(히스테리시스 유지) — activeColor 갱신
+        activeColorUpdatedThisTick = true;      // onTickStart의 중복 갱신을 막는 신호
         rebuildActiveSet();                     // 표시용 activeSet
 
         // 탐색용: 히스테리시스 없이 "지금 이 틱에 서 있는 셀의 색"을 즉시 기준으로 삼는다.
@@ -470,95 +283,46 @@ final class FrontierSearch {
 
         // deadline은 exile 부활 단계와 메인 탐색 루프가 예산을 공유하도록 앞에서 선언한다.
         // 뷰 반경 안에 처리 못 한 프론티어가 남아있으면(=착지 직후) 이번 틱만 예산을 키운다.
-        boolean urgent = hasPendingFrontierWithin(URGENT_SEARCH_RANGE, sx, sz);
+        boolean urgent = FrontierQueue.hasPendingWithin(URGENT_SEARCH_RANGE, sx, sz);
         final long deadline = System.nanoTime() + (urgent ? URGENT_SEARCH_TIME_BUDGET_NANOS : STAGING_TIME_BUDGET_NANOS);
         if (urgent && updatePixel < URGENT_SEARCH_BUDGET_PER_TICK) {
             updatePixel = URGENT_SEARCH_BUDGET_PER_TICK;
         }
 
-        // 보류 프론티어 복귀(청크당 목록 전체). exiledFrontierChunkHash를 순회하며 직접
-        // 쓰면(enqueueFrontier→parkInExiledFrontier) 항목이 누락될 수 있으므로, 조건에 맞는
-        // 셀은 임시 리스트에 모았다가 순회가 끝난 뒤 재분류(enqueueFrontier)한다.
-        LongArrayList revivedCells = revivedScratch;
-        revivedCells.clear();
-        // exile 맵이 아주 커진 상태(텔레포트 등)면 이 스캔만으로 예산을 다 쓸 수 있으므로
-        // deadline을 체크한다. 초과 시 순회를 멈추고 남은 항목은 다음 틱에 재평가한다.
-        boolean revivalTimedOut = false;
-        ObjectIterator<Long2ObjectMap.Entry<LongArrayList>> exiledIt = exiledFrontierChunkHash.long2ObjectEntrySet().iterator();
-        while (exiledIt.hasNext()) {
-            if (System.nanoTime() >= deadline) {
-                needsMoreSearching = true;
-                revivalTimedOut = true;
-                break;
-            }
-            Long2ObjectMap.Entry<LongArrayList> e = exiledIt.next();
-            long chunkKey = e.getLongKey();
-            int chunkX = ChunkPos.getPackedX(chunkKey);
-            int chunkZ = ChunkPos.getPackedZ(chunkKey);
-            if (taxiDistanceFromChunkToPos(chunkX, chunkZ, sx, sz) < maxRange
-                    && world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
-                LongArrayList pending = e.getValue();
-                for (int i = 0, n = pending.size(); i < n; i++) {
-                    revivedCells.add(pending.getLong(i));
-                }
-                exiledIt.remove();
-            }
-        }
+        // 보류 프론티어 복귀. FrontierQueue가 range/loaded 조건에 맞는 exile 청크를 찾아
+        // revivedScratch에 모아주면, 여기서는 각 셀의 활성 여부만 판정해 재분류한다.
+        boolean revivalTimedOut = FrontierQueue.drainExiledWithinRange(sx, sz, maxRange, deadline);
+        var revivedCells = FrontierQueue.revivedScratch;
         for (int i = 0, n = revivedCells.size(); i < n; i++) {
             long cell = revivedCells.getLong(i);
             int cellX = BlockPos.unpackLongX(cell);
             int cellZ = BlockPos.unpackLongZ(cell);
             // 이미 exile 맵에서 꺼낸 셀이므로 deadline 초과 시 그냥 버리면 유실된다.
-            // parkInExiledFrontier로 되돌려 넣어 다음 틱 재평가로 미룬다.
+            // park으로 되돌려 넣어 다음 틱 재평가로 미룬다.
             if (!revivalTimedOut && System.nanoTime() >= deadline) revivalTimedOut = true;
             if (revivalTimedOut) {
-                parkInExiledFrontier(cell, cellX >> 4, cellZ >> 4);
-                needsMoreSearching = true;
+                FrontierQueue.park(cell, cellX, cellZ);
                 continue;
             }
-            // 활성 트리 조건(메인 라운드 루프와 동일)을 미리 검사해, 안 맞는 셀은 프론티어
-            // 등록→dequeue→재park의 왕복 없이 곧장 exile로 되돌린다.
-            long curColor = cellColor.get(cell);
+            long curColor = activeColorOrPark(cell, cellX, cellZ, containToActive);
             if (curColor == NO_ID) continue;
-            if (containToActive && !searchActiveSet.contains(ColorGraph.resolve(curColor))) {
-                parkInExiledFrontier(cell, cellX >> 4, cellZ >> 4);
-                continue;
-            }
-            enqueueFrontier(cell, cellX, cellZ, sx, sz, maxRange);
+            FrontierQueue.enqueue(cell, cellX, cellZ, sx, sz, maxRange);
         }
 
         // 프론티어를 청크 단위로 묶어 처리하되, 매 라운드마다 대기 청크를 플레이어와의
         // 거리순으로 정렬해 가까운 청크부터 비운다. 라운드 도중 새로 생긴 청크는 다음 라운드
         // 스냅샷에 자연스럽게 포함되므로, 시간/예산이 허용하는 한 유실 없이 계속 처리된다.
         boolean stop = false;
-        while (!stop && !frontierChunkKeys.isEmpty()) {
-            // 대기 청크 키를 스냅샷 떠서 거리순 정렬한다.
-            int n = frontierChunkKeys.size();
-            if (frontierSortSnap.length < n) {
-                frontierSortSnap = new long[n];
-                frontierSortPacked = new long[n];
-            }
-            long[] snap = frontierSortSnap;
-            long[] packed = frontierSortPacked;
-            int idx = 0;
-            LongIterator keyIt = frontierChunkKeys.iterator();
-            while (keyIt.hasNext()) {
-                long k = keyIt.nextLong();
-                snap[idx] = k;
-                int d = taxiDistanceFromChunkToPos(ChunkPos.getPackedX(k), ChunkPos.getPackedZ(k), sx, sz);
-                packed[idx] = ((long) d << 32) | (idx & 0xFFFFFFFFL);
-                idx++;
-            }
-            java.util.Arrays.sort(packed, 0, n);
+        while (!stop && !FrontierQueue.frontierChunkKeys.isEmpty()) {
+            int n = FrontierQueue.sortChunkKeysByDistance(sx, sz);
 
             for (int ci = 0; ci < n; ci++) {
-                long chunkKey = snap[(int) (packed[ci] & 0xFFFFFFFFL)];
-                LongArrayList bucket = frontierByChunk.get(chunkKey);
+                long chunkKey = FrontierQueue.sortSnap[(int) (FrontierQueue.sortPacked[ci] & 0xFFFFFFFFL)];
+                var bucket = FrontierQueue.frontierByChunk.get(chunkKey);
                 if (bucket == null) continue; // 이미 다른 경로로 비워졌을 수 있음(방어적)
 
                 while (!bucket.isEmpty()) {
                     if (System.nanoTime() >= deadline) {
-                        needsMoreSearching = true;
                         stop = true;
                         break;
                     }
@@ -570,74 +334,65 @@ final class FrontierSearch {
                     int cy = BlockPos.unpackLongY(curPacked);
                     int cz = BlockPos.unpackLongZ(curPacked);
 
-                    if (maxRange < taxiDistance2D(cx, cz, sx, sz)) {
-                        parkInExiledFrontier(curPacked, cx >> 4, cz >> 4);
+                    if (maxRange < FrontierQueue.taxiDistance2D(cx, cz, sx, sz)) {
+                        FrontierQueue.park(curPacked, cx, cz);
                         continue;
                     }
-                    if (!isChunkLoadedAt(cx, cz)) {
-                        parkInExiledFrontier(curPacked, cx >> 4, cz >> 4);
+                    if (!BlockSearch.isChunkLoadedAt(cx, cz)) {
+                        FrontierQueue.park(curPacked, cx, cz);
                         continue;
                     }
-
-                    long curColor = cellColor.get(curPacked);
-                    if (curColor == NO_ID) continue;
 
                     // 플레이어 영역(+자손)이 아니면 exile로 되돌린다. exile은 매 틱 복귀 루프가
                     // 자동 재평가하므로, 다시 활성이 되거나 병합되면 확장이 재개된다. 비활성인
                     // 동안은 실제 확장 없이 dequeue→검사→재park만 반복해 CPU를 아낀다.
-                    if (containToActive && !searchActiveSet.contains(ColorGraph.resolve(curColor))) {
-                        parkInExiledFrontier(curPacked, cx >> 4, cz >> 4);
-                        continue;
-                    }
+                    long curColor = activeColorOrPark(curPacked, cx, cz, containToActive);
+                    if (curColor == NO_ID) continue;
 
-                    boolean hasBlockAt2Meter = !isAirAt(cx, cy + 2, cz);
+                    boolean hasBlockAt2Meter = !BlockSearch.isAirAt(cx, cy + 2, cz);
 
-                    for (int[] d : DIRS) {
+                    for (int[] d : BlockSearch.DIRS) {
                         int nx = cx + d[0];
                         int nz = cz + d[1];
 
-                        if (!isChunkLoadedAt(nx, nz)) {
+                        if (!BlockSearch.isChunkLoadedAt(nx, nz)) {
                             // (nx,nz)는 아직 색 없는 미확정 좌표라 그대로 park하면 exile 복귀 시
                             // curColor==NO_ID로 버려진다. 대신 색이 확정된 부모 셀(curPacked)을
                             // park해, 청크 로딩 시 4방향을 처음부터 재검사하게 한다.
-                            parkInExiledFrontier(curPacked, cx >> 4, cz >> 4);
+                            FrontierQueue.park(curPacked, cx, cz);
                             continue;
                         }
 
                         // (nx,cy,nz)의 air/wall을 한 번만 조회해 게이트와 resolveTargetY에 재사용한다.
-                        boolean baseIsAir = isAirAt(nx, cy, nz);
-                        boolean baseIsWall = !baseIsAir && isWallAt(nx, cy, nz);
+                        boolean baseIsAir = BlockSearch.isAirAt(nx, cy, nz);
+                        boolean baseIsWall = !baseIsAir && BlockSearch.isWallAt(nx, cy, nz);
                         if (baseIsWall) {
                             // 목적지 몸체가 벽일 때만 차단("올라서기"만 막고 "내려가기"는
                             // resolveTargetY에서 정상 처리).
                             continue;
                         }
 
-                        int ty = resolveTargetY(nx, cy, nz, baseIsAir, baseIsWall, hasBlockAt2Meter, world.getBottomY());
+                        int ty = BlockSearch.resolveTargetY(nx, cy, nz, baseIsAir, baseIsWall, hasBlockAt2Meter, world.getBottomY());
                         if (ty == Integer.MIN_VALUE) continue;
 
-                        boolean twoWay = canMoveBetween(nx, ty, nz, cx, cy, cz, world.getBottomY());
+                        boolean twoWay = BlockSearch.canMoveBetween(nx, ty, nz, cx, cy, cz, world.getBottomY());
                         handleReach(cx, cy, cz, curColor, nx, ty, nz, twoWay, sx, sz, maxRange);
                     }
 
                     // 실제 확장 작업(4방향 검사)을 마친 셀만 예산을 소모한다. 재park된 값싼
                     // 셀은 예산을 안 먹으므로, 비활성 영역 churn이 활성 트랙 탐색을 굶기지 않는다.
                     if (--updatePixel <= 0) {
-                        needsMoreSearching = true;
                         stop = true;
                         break;
                     }
                 }
 
                 if (bucket.isEmpty()) {
-                    frontierByChunk.remove(chunkKey);
-                    frontierChunkKeys.remove(chunkKey);
+                    FrontierQueue.removeChunk(chunkKey);
                 }
                 if (stop) break;
             }
         }
-
-        return true;
     }
 
     static void handleReach(int cx, int cy, int cz, long curColor, int tx, int ty, int tz, boolean twoWay,
@@ -648,7 +403,7 @@ final class FrontierSearch {
             // 평지(ty==cy)·계단(ty==cy+1)은 resolveTargetY가 이미 같은 좌표의 머리 공간을
             // 확인했으므로 재조회하지 않는다. 낙하(ty<cy)는 착지 높이를 아직 안 봤으므로 재확인.
             boolean headAlreadyChecked = (ty >= cy);
-            if (!isStandable(tx, ty, tz, headAlreadyChecked)) return;
+            if (!BlockSearch.isStandable(tx, ty, tz, headAlreadyChecked)) return;
             long color;
             if (twoWay) {
                 color = curColor;
@@ -658,11 +413,12 @@ final class FrontierSearch {
                 // 모두에 넣는다. 표시용만 넣으면 다음 프론티어 처리에서 searchActiveSet
                 // 기준으로 곧바로 걸러져 exile되고, 정상화까지 한 틱 지연이 생긴다.
                 long curRoot = ColorGraph.resolve(curColor);
-                if (activeSet.contains(curRoot)) activeSet.add(ColorGraph.resolve(color));
-                if (searchActiveSet.contains(curRoot)) searchActiveSet.add(ColorGraph.resolve(color));
+                long childRoot = ColorGraph.resolve(color);
+                if (activeSet.contains(curRoot)) activeSet.add(childRoot);
+                if (searchActiveSet.contains(curRoot)) searchActiveSet.add(childRoot);
             }
             paintCell(tx, ty, tz, color);
-            enqueueFrontier(targetCell, tx, tz, sx, sz, maxRange);
+            FrontierQueue.enqueue(targetCell, tx, tz, sx, sz, maxRange);
         } else {
             if (twoWay) {
                 ColorGraph.mergeColors(curColor, existing);
@@ -674,17 +430,19 @@ final class FrontierSearch {
                 long parentRoot = ColorGraph.resolve(curColor);
                 long childRoot = ColorGraph.resolve(existing);
                 if (parentRoot != childRoot) {
-                    // 사이클 방지: 자식이 보통 부모보다 나중에 태어나므로 birth 비교로 대부분
-                    // 해결되고, 드문 경우(반대 방향 조상-자손 관계 존재 가능성)만 조상 집합을
-                    // 실제 검사해 사이클을 막는다.
-                    boolean safeToAdd = ColorGraph.colorBirth.get(childRoot) > ColorGraph.colorBirth.get(parentRoot);
-                    if (!safeToAdd) {
-                        LongOpenHashSet parentAncestors = ColorGraph.scratchParentAncestors;
-                        parentAncestors.clear();
-                        ColorGraph.collectAncestors(parentRoot, parentAncestors);
-                        safeToAdd = !parentAncestors.contains(childRoot);
+                    // 사이클 방지: childRoot가 이미 parentRoot의 조상이면 엣지를 추가하지 않는다.
+                    // birth(자식이 부모보다 나중에 태어남) 기반 지름길은 쓰지 않는다 — 병합
+                    // (ColorGraph.absorbInto)이 survivor를 최소 birth로 골라 간선을 재배선하면
+                    // 이 불변식이 깨질 수 있어, 그 경우 지름길이 실제 사이클을 놓칠 수 있다.
+                    // 조상 집합 계산은 보통 짧은 조상 사슬 하나만 훑으므로 비용도 낮다.
+                    LongOpenHashSet parentAncestors = ColorGraph.scratchParentAncestors;
+                    parentAncestors.clear();
+                    ColorGraph.collectAncestors(parentRoot, parentAncestors);
+                    boolean isCycleMergeRequired = parentAncestors.contains(childRoot);
+                    if (isCycleMergeRequired) {
+                        ColorGraph.mergeColors(parentRoot, childRoot);
                     }
-                    if (safeToAdd) {
+                    else {
                         ColorGraph.addEdge(parentRoot, childRoot);
                         if (activeSet.contains(parentRoot)) {
                             activeSet.add(childRoot);
@@ -733,28 +491,12 @@ final class FrontierSearch {
     static int unpackColumnX(long key) { return (int) (key >> 32); }
     static int unpackColumnZ(long key) { return (int) key; }
 
-    static int taxiDistance2D(int ax, int az, int bx, int bz) {
-        return Math.abs(ax - bx) + Math.abs(az - bz);
-    }
-    /** 청크가 차지하는 16×16 영역 중 플레이어에 가장 가까운 점까지의 택시 거리. 코너
-     *  좌표만으로 재면 특정 방향에서 거리가 과대평가돼 exile 복귀가 지연되므로, 가까운
-     *  변까지의 거리를 계산한다. */
-    static int taxiDistanceFromChunkToPos(int chunkX, int chunkZ, int bx, int bz) {
-        int minX = chunkX << 4, maxX = minX + 15;
-        int minZ = chunkZ << 4, maxZ = minZ + 15;
-        int dx = bx < minX ? minX - bx : (bx > maxX ? bx - maxX : 0);
-        int dz = bz < minZ ? minZ - bz : (bz > maxZ ? bz - maxZ : 0);
-        return dx + dz;
-    }
-
     static void reset() {
         cellColor.clear();
         visitedColumns.clear();
         dirtyColumns.clear();
         columnsByRoot.clear();
-        frontierByChunk.clear();
-        frontierChunkKeys.clear();
-        exiledFrontierChunkHash.clear();
+        FrontierQueue.reset();
         activeColor = NO_ID;
         activeSet.clear();
         activeSetVersion = -1;
@@ -764,6 +506,7 @@ final class FrontierSearch {
         searchActiveSetSnapshotRoot = NO_ID;
         pendingActiveColorCandidate = NO_ID;
         pendingActiveColorStreak = 0;
-        invalidateChunkCache();
+        activeColorUpdatedThisTick = false;
+        BlockSearch.invalidateChunkCache();
     }
 }

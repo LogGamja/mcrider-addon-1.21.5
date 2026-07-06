@@ -25,7 +25,7 @@ public class MCRiderMinimap implements ClientModInitializer {
 
     /** true면 색마다 다른 색으로 표시(디버그). 기본 false.
      *  FrontierSearch와 MinimapRenderer 양쪽이 참조하는 공용 토글이라 진입점에 둔다. */
-    public static final boolean DEBUG_COLORS = false;
+    public static final boolean DEBUG_COLORS = true;
 
     /** 여러 클래스가 공유하는 클라이언트 싱글턴. */
     static MinecraftClient client = MinecraftClient.getInstance();
@@ -43,14 +43,17 @@ public class MCRiderMinimap implements ClientModInitializer {
 
         final int playerMargin = 5;
         BlockPos start = client.player.getBlockPos().up();
-        FrontierSearch.lastPlayerPos = start;
 
         int searchRange = (int) ((MinimapRenderer.maxDist + playerMargin * 2) * 2);
         FrontierSearch.floodFillWithVertical(start, searchRange, FrontierSearch.STAGING_BUDGET_PER_TICK);
 
         // 텍스처 (재)생성 전에 activeColor/activeSet을 먼저 확정한다. 순서가 바뀌면
         // rebuildTexture가 새 컬럼을 잘못(투명하게) 그릴 수 있다.
-        FrontierSearch.updateActiveColor(start);
+        // floodFill이 정상 완주하면 이미 activeColor를 갱신하고 나오므로, 그때는 보정을
+        // 건너뛴다(하향 스캔 반복 + 히스테리시스 이중 증가 방지). 초기 리턴한 경우에만 보정.
+        if (!FrontierSearch.activeColorUpdatedThisTick) {
+            FrontierSearch.updateActiveColor(start);
+        }
         FrontierSearch.rebuildActiveSet();
 
         MinimapRenderer.ensureOriginFor(start);

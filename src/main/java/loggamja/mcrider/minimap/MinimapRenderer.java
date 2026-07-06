@@ -59,6 +59,10 @@ final class MinimapRenderer {
     private static final int TILE_SIZE = 32; // 512 / 32 = 16×16 = 256개 타일
     private static final int TILES_PER_ROW = TEX_SIZE / TILE_SIZE;
     private static final IntOpenHashSet dirtyTiles = new IntOpenHashSet();
+    /** 전체 텍스처를 통째로 올려야 하는 상황(재앵커/reset)이면 true. 이땐 타일 집합을 무시하고
+     *  한 번의 writeToTexture로 올린다 — markAllDirty가 256개 타일을 개별 업로드하며 GPU 호출이
+     *  한 프레임에 몰리던 스파이크를 없앤다. */
+    private static boolean uploadWholeTexture = false;
 
     private static int tileKey(int tileX, int tileZ) {
         return tileX * TILES_PER_ROW + tileZ;
@@ -72,22 +76,26 @@ final class MinimapRenderer {
 
     private static void markAllDirty() {
         dirtyTiles.clear();
-        for (int tx = 0; tx < TILES_PER_ROW; tx++) {
-            for (int tz = 0; tz < TILES_PER_ROW; tz++) {
-                dirtyTiles.add(tileKey(tx, tz));
-            }
-        }
+        uploadWholeTexture = true;
         textureDirty = true;
     }
 
-    private static void resetDirtyRect() {
+    private static void clearUploadState() {
         dirtyTiles.clear();
+        uploadWholeTexture = false;
     }
 
-    /** dirty 타일만 NativeImage → GPU 텍스처로 복사(1.21.5 blaze3d GPU 경로). */
+    /** dirty 영역을 NativeImage → GPU 텍스처로 복사(1.21.5 blaze3d GPU 경로). 전체 업로드
+     *  상황이면 한 번에, 아니면 dirty 타일만 개별로 올린다. */
     private static void uploadDirtyRegion() {
-        if (image == null || texture == null || dirtyTiles.isEmpty()) { dirtyTiles.clear(); return; }
+        if (image == null || texture == null) { clearUploadState(); return; }
+        if (!uploadWholeTexture && dirtyTiles.isEmpty()) return;
         var encoder = RenderSystem.getDevice().createCommandEncoder();
+        if (uploadWholeTexture) {
+            encoder.writeToTexture(texture.getGlTexture(), image, 0, 0, 0, TEX_SIZE, TEX_SIZE, 0, 0);
+            clearUploadState();
+            return;
+        }
         it.unimi.dsi.fastutil.ints.IntIterator it = dirtyTiles.iterator();
         while (it.hasNext()) {
             int key = it.nextInt();
@@ -99,7 +107,7 @@ final class MinimapRenderer {
             int h = Math.min(TILE_SIZE, TEX_SIZE - minY);
             encoder.writeToTexture(texture.getGlTexture(), image, 0, minX, minY, w, h, minX, minY);
         }
-        resetDirtyRect();
+        clearUploadState();
     }
 
     // ── 재도색 예산 ──────────────────────────────────────────────────────

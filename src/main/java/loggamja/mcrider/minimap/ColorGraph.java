@@ -209,29 +209,31 @@ final class ColorGraph {
         }
     }
 
+    /** 사이클로 남은 자손=조상 노드를 survivor로 계속 흡수한다. 매 라운드 그래프가 줄어들므로
+     *  실제 반복 횟수는 적지만, 재귀 대신 루프로 처리해 깊이에 상관없이 스택 걱정이 없다. */
     static void rescanCycles(long survivor) {
         survivor = resolve(survivor);
-        LongOpenHashSet descendants = scratchDescendants;
-        descendants.clear();
-        collectDescendants(survivor, descendants);
-        LongOpenHashSet ancestors = scratchAncestors;
-        ancestors.clear();
-        collectAncestors(survivor, ancestors);
+        boolean merged;
+        do {
+            LongOpenHashSet descendants = scratchDescendants;
+            descendants.clear();
+            collectDescendants(survivor, descendants);
+            LongOpenHashSet ancestors = scratchAncestors;
+            ancestors.clear();
+            collectAncestors(survivor, ancestors);
 
-        boolean merged = false;
-        LongIterator it = descendants.iterator();
-        while (it.hasNext()) {
-            long d = it.nextLong();
-            if (d != survivor && ancestors.contains(d)) {
-                absorbInto(d, survivor);
-                if (FrontierSearch.activeColor == d) FrontierSearch.activeColor = survivor;
-                merged = true;
+            merged = false;
+            LongIterator it = descendants.iterator();
+            while (it.hasNext()) {
+                long d = it.nextLong();
+                if (d != survivor && ancestors.contains(d)) {
+                    absorbInto(d, survivor);
+                    if (FrontierSearch.activeColor == d) FrontierSearch.activeColor = survivor;
+                    merged = true;
+                }
             }
-        }
-        if (merged) {
-            bumpColorGraphVersion();
-            rescanCycles(survivor);
-        }
+            if (merged) bumpColorGraphVersion();
+        } while (merged);
     }
 
     /** start에서 adj 방향으로 도달 가능한 (resolve된) 노드를 out에 모은다(start 자신 제외).
