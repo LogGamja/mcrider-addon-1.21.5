@@ -8,9 +8,9 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.text.Text;
 
-public class MCRiderSetting extends Screen {
+public class MCRiderSettingScreen extends Screen {
 
-    public MCRiderSetting() {
+    public MCRiderSettingScreen() {
         super(Text.translatable("mcrider.setting.title"));
     }
 
@@ -24,9 +24,9 @@ public class MCRiderSetting extends Screen {
         int startX = this.width / 2 - buttonWidth / 2;
         int startY = this.height / 5;
 
-        MCRiderOptionDefs.clampAllToggles();
+        MCRiderOptionTable.clampAllToggles();
 
-        var toggles = MCRiderOptionDefs.TOGGLES;
+        var toggles = MCRiderOptionTable.TOGGLES;
         int buttonsPerRow = 2;
         int gap = 12;
         int centerX = this.width / 2;
@@ -64,7 +64,7 @@ public class MCRiderSetting extends Screen {
         int toggleRows = (toggles.length + buttonsPerRow - 1) / buttonsPerRow;
 
         // Sliders
-        var sliders = MCRiderOptionDefs.SLIDERS;
+        var sliders = MCRiderOptionTable.SLIDERS;
         for (int i = 0; i < sliders.length; i++) {
             var def = sliders[i];
             double min = def.min();

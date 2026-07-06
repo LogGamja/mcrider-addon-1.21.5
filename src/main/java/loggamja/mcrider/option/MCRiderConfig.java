@@ -31,16 +31,16 @@ public class MCRiderConfig {
     public int MCRiderFOV = 90;
     public int MCRiderFOVEffects = 80;
 
-    // 싱글톤
-    public static final MCRiderConfig INSTANCE = new MCRiderConfig();
+    // 싱글톤 (load()가 역직렬화된 인스턴스로 통째로 교체하므로 final이 아님)
+    public static MCRiderConfig INSTANCE = new MCRiderConfig();
 
     public void load() {
         if (!CONFIG_FILE.exists()) return;
         try (FileReader reader = new FileReader(CONFIG_FILE)) {
             MCRiderConfig loaded = GSON.fromJson(reader, MCRiderConfig.class);
             if (loaded != null) {
-                copyFrom(loaded);
-                MCRiderOptionDefs.clampAllToggles();
+                INSTANCE = loaded;
+                MCRiderOptionTable.clampAllToggles();
             }
         } catch (IOException e) {
             LOGGER.error("[MCRider] 설정 파일을 불러오는 데 실패했습니다.", e);
@@ -49,23 +49,6 @@ public class MCRiderConfig {
         }
     }
 
-    private void copyFrom(MCRiderConfig other) {
-        this.MCRiderRotationOption     = other.MCRiderRotationOption;
-        this.MCRiderPacketAcceleration = other.MCRiderPacketAcceleration;
-        this.MCRiderRadarOption        = other.MCRiderRadarOption;
-
-        this.useMinimap                = other.useMinimap;
-        this.useNoclipCamera           = other.useNoclipCamera;
-        this.useDraftGauge             = other.useDraftGauge;
-        this.useAutoThirdPerson        = other.useAutoThirdPerson;
-        this.cameraMode                = other.cameraMode;
-
-        this.suspensionEffect          = other.suspensionEffect;
-        this.bikeSuspension            = other.bikeSuspension;
-
-        this.MCRiderFOV                = other.MCRiderFOV;
-        this.MCRiderFOVEffects         = other.MCRiderFOVEffects;
-    }
     public void save() {
         try (FileWriter writer = new FileWriter(CONFIG_FILE)) {
             GSON.toJson(this, writer);

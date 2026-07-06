@@ -10,8 +10,8 @@ import java.util.function.IntSupplier;
  * MCRiderSetting(화면)과 MCRiderConfig(로드 시 범위 클램프) 양쪽이 이 테이블 하나만 보고
  * 동작하므로, 옵션을 추가/변경할 때 이 파일 한 곳만 수정하면 된다.
  */
-final class MCRiderOptionDefs {
-    private MCRiderOptionDefs() {}
+final class MCRiderOptionTable {
+    private MCRiderOptionTable() {}
 
     record ToggleDef(String[] labelKeys, String tooltipKey, IntSupplier getter, IntConsumer setter) {
         int stateCount() { return labelKeys.length; }

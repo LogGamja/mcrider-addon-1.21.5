@@ -1,6 +1,6 @@
 package loggamja.mcrider.mixin;
 
-import loggamja.mcrider.option.MCRiderSetting;
+import loggamja.mcrider.option.MCRiderSettingScreen;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
@@ -21,7 +21,7 @@ public abstract class GameMenuScreenMixin extends Screen {
         this.addDrawableChild(
                 ButtonWidget.builder(Text.translatable("mcrider.setting.menu_button"), button -> {
                             assert this.client != null;
-                            this.client.setScreen(new MCRiderSetting());
+                            this.client.setScreen(new MCRiderSettingScreen());
                         })
                         .position(10, 35)
                         .size(100, 20)
