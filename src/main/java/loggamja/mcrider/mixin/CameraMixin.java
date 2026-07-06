@@ -63,7 +63,7 @@ public class CameraMixin {
         Entity focused = ((Camera) (Object) this).getFocusedEntity();
         if (!(focused instanceof PlayerEntity player)) return;
 
-        // 3) 이번 프레임 원본 롤(0 이어도 그대로 반영 → 평균이 0으로 수렴)
+        // 3) 이번 프레임 원본 롤(0이어도 그대로 반영해 평균이 0으로 수렴하게 함)
         float raw = EntityRollManager.getCurrentRoll(player.getUuid()) * mcrider$ROLL_MULTIPLIER;
         var isBike = MCRiderMain.getS2CValue(MCRiderMain.getRidingPlayer(), "data-is-bike");
         if (isBike == 1 && MCRiderConfig.INSTANCE.bikeSuspension == 3) {
@@ -81,9 +81,5 @@ public class CameraMixin {
         // 5) 적용
         if (Math.abs(mcrider$smoothRoll) < 1.0e-4f) return;
         this.rotation.rotateZ((float) Math.toRadians(mcrider$smoothRoll));
-
-        // rotation 이 완성된 뒤 방향 벡터를 재계산 → 컬링/파티클이 롤을 따라감
-        //this.horizontalPlane.set(1f, 0f, 0f).rotate(this.rotation);
-        //this.verticalPlane.set(0f, 1f, 0f).rotate(this.rotation);
     }
 }

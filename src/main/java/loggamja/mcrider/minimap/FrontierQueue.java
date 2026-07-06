@@ -16,14 +16,14 @@ import net.minecraft.util.math.ChunkPos;
 final class FrontierQueue {
     private FrontierQueue() {}
 
-    /** 활성 프론티어를 청크 단위로 묶어 보관: chunkKey(ChunkPos.toLong) → 대기 셀 목록.
+    /** 활성 프론티어를 청크 단위로 묶어 보관: chunkKey(ChunkPos.toLong)에 대기 셀 목록.
      *  청크별로 몰아 처리하면 BlockSearch의 청크 캐시(4슬롯) 히트율이 오른다. 처리 "순서"만
      *  바꿀 뿐 정확성엔 영향 없음. 모든 셀은 frontierByChunk 또는 exiledByChunk 둘 중
      *  하나에만 존재한다. */
     static Long2ObjectOpenHashMap<LongArrayList> frontierByChunk = new Long2ObjectOpenHashMap<>();
     /** frontierByChunk에 대기 셀이 있는 청크 키 집합(거리순 정렬 스냅샷용). */
     static LongOpenHashSet frontierChunkKeys = new LongOpenHashSet();
-    /** 미로딩/범위 밖 청크에 보류된 프론티어: ChunkPos.toLong → 셀 목록. */
+    /** 미로딩/범위 밖 청크에 보류된 프론티어: ChunkPos.toLong에 셀 목록. */
     static Long2ObjectOpenHashMap<LongArrayList> exiledByChunk = new Long2ObjectOpenHashMap<>();
 
     /** drainExiledWithinRange가 채우는 재사용 리스트(매 틱 new 방지). floodFill은 재진입하지 않는다. */
@@ -48,7 +48,7 @@ final class FrontierQueue {
         return Math.abs(ax - bx) + Math.abs(az - bz);
     }
 
-    /** 청크가 차지하는 16×16 영역 중 플레이어에 가장 가까운 점까지의 택시 거리. 코너
+    /** 청크가 차지하는 16x16 영역 중 플레이어에 가장 가까운 점까지의 택시 거리. 코너
      *  좌표만으로 재면 특정 방향에서 거리가 과대평가돼 exile 복귀가 지연되므로, 가까운
      *  변까지의 거리를 계산한다. */
     static int taxiDistanceFromChunkToPos(int chunkX, int chunkZ, int bx, int bz) {
@@ -149,10 +149,10 @@ final class FrontierQueue {
     }
 
     /** 로딩됐고 sx,sz 기준 maxRange 안에 든 exile 청크의 셀을 모두 revivedScratch에 모으고
-     *  그 청크들을 exile 맵에서 제거한다. exile 맵을 순회하며 직접 다른 곳에 쓰면
-     *  (enqueue→park) 항목이 누락될 수 있어, 후보만 여기서 안전하게 모아 반환한다.
-     *  deadline을 넘기면 그 시점까지 모은 것만 두고 true(타임아웃)를 돌려준다. 호출부는
-     *  타임아웃이면 이미 꺼낸 셀들을 park으로 되돌려 다음 틱 재평가로 미룬다. */
+     *  그 청크들을 exile 맵에서 제거한다. exile 맵을 순회하며 직접 enqueue/park하면 항목이
+     *  누락될 수 있어, 후보만 여기서 안전하게 모아 반환한다. deadline을 넘기면 그때까지 모은
+     *  것만 두고 true(타임아웃)를 돌려준다. 호출부는 타임아웃이면 이미 꺼낸 셀들을 park으로
+     *  되돌려 다음 틱 재평가로 미룬다. */
     static boolean drainExiledWithinRange(int sx, int sz, int maxRange, long deadline) {
         revivedScratch.clear();
         boolean timedOut = false;

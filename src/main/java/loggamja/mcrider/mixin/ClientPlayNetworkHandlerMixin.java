@@ -19,12 +19,8 @@ import java.util.regex.Pattern;
 
 @Mixin(ClientPlayNetworkHandler.class)
 public class ClientPlayNetworkHandlerMixin {
-    // 같은 틱 안에 액션바 패킷이 여러 개 도착할 수 있는데(속도 패킷 + 무관한 패킷 등),
-    // 그중 하나라도 속도 파싱에 성공했으면 그 틱은 "성공"으로 인정해야 한다.
-    // 이 필드에 마지막으로 성공한 월드타임(틱 카운터)을 기억해두고, 같은 틱 안에서
-    // 뒤이어 도착한 실패 패킷이 그 성공 기록을 덮어쓰지 못하게 막는다.
     @Unique
-    private long mcrider$lastSpeedSuccessWorldTime = Long.MIN_VALUE;
+    private long mcrider$lastSpeedSuccessTime = Long.MIN_VALUE;
 
     @Inject(method = "onOverlayMessage", at = @At("HEAD"))
     private void mcrider$onHandleGameMessage(OverlayMessageS2CPacket packet, CallbackInfo ci) {
@@ -42,23 +38,23 @@ public class ClientPlayNetworkHandlerMixin {
         }
 
         var world = MinecraftClient.getInstance().world;
-        long worldTime = (world != null) ? world.getTime() : mcrider$lastSpeedSuccessWorldTime;
+        long worldTime = (world != null) ? world.getTime() : mcrider$lastSpeedSuccessTime;
 
         if (matched) {
             MCRiderCamera.actionbarSpeed = speed;
             MCRiderCamera.timeAfterLastActionbar = 0;
-            mcrider$lastSpeedSuccessWorldTime = worldTime;
-        } else if (worldTime != mcrider$lastSpeedSuccessWorldTime) {
-            // 이번 틱에 아직 유효한 속도를 못 받았을 때만 "없음"으로 갱신한다.
-            // 같은 틱에 이미 성공했는데 뒤이어 온 무관한 패킷이 그걸 지우는 걸 방지.
+            mcrider$lastSpeedSuccessTime = worldTime;
+        } else if (worldTime != mcrider$lastSpeedSuccessTime) {
             MCRiderCamera.actionbarSpeed = speed;
             MCRiderCamera.timeAfterLastActionbar = 20;
         }
     }
     @Unique
+    private static final Pattern mcrider$SPEED_PATTERN = Pattern.compile("(\\d+(?:\\.\\d+)?)km/h");
+
+    @Unique
     float mcrider$extractSpeed(String text) {
-        Pattern p = Pattern.compile("(\\d+(?:\\.\\d+)?)km/h");
-        Matcher m = p.matcher(text);
+        Matcher m = mcrider$SPEED_PATTERN.matcher(text);
         if (m.find()) {
             return Math.max(Float.parseFloat(m.group(1)), 0);
         }

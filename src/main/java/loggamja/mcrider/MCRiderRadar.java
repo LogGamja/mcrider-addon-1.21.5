@@ -16,12 +16,10 @@ import net.minecraft.util.math.Vec3d;
 import java.util.Objects;
 
 public class MCRiderRadar implements ClientModInitializer {
-    // 원본 코드가 "GUI 배율 4" 환경에서 보기 좋게 튜닝되어 있었으므로,
-    // 그 시각적 크기를 기준(1920x1080, 배율무관 기준값)으로 그대로 가져오기 위한 보정 배수.
-    private static final double LEGACY_GUI_SCALE_BASIS = 4.0;
+    private static final double GUI_SCALE_BASIS = 4.0;
 
-    final int padding = (int) Math.round(10 * LEGACY_GUI_SCALE_BASIS);
-    final int baseRadius = (int) Math.round(50 * LEGACY_GUI_SCALE_BASIS);
+    final int padding = (int) Math.round(10 * GUI_SCALE_BASIS);
+    final int baseRadius = (int) Math.round(50 * GUI_SCALE_BASIS);
     final double baseDist = 25.0;
 
     final double uiScale = 0.75;
@@ -45,8 +43,8 @@ public class MCRiderRadar implements ClientModInitializer {
             Identifier.of("mcrider-official", "textures/hud/arrow_icon.png");
 
     private static final int TEX_SIZE = 16;
-    private static final float ARROW_SIZE = (float) (10f * LEGACY_GUI_SCALE_BASIS);
-    private static final double ARC_RADIUS_BASE = 46.0 * LEGACY_GUI_SCALE_BASIS;
+    private static final float ARROW_SIZE = (float) (10f * GUI_SCALE_BASIS);
+    private static final double ARC_RADIUS_BASE = 46.0 * GUI_SCALE_BASIS;
 
 
     @Override
@@ -66,18 +64,6 @@ public class MCRiderRadar implements ClientModInitializer {
             renderRadarMode1(context, tickDelta);
         }
     }
-
-    /**
-     * GUI 배율과 물리 해상도에 무관하게, "물리적으로 동일한 화면상 크기"를 만들기 위한 보정값.
-     *
-     * - physicalScale: 물리적 세로 해상도(window.getHeight())가 1080 기준 몇 배인지.
-     *   세로 해상도가 같으면(가로/화면비 무관) 항상 같은 값이 나온다.
-     * - scaleFactor: GUI 좌표계(scaledHeight) = 물리 해상도(getHeight()) / scaleFactor 관계이므로,
-     *   여기서 나눠주면 "GUI 좌표계에서 그려야 할 크기"가 되어 GUI 배율을 바꿔도
-     *   물리적으로 보이는 크기는 동일하게 유지된다.
-     *
-     * 즉 finalSize(GUI좌표) = baseSize(1920x1080, 배율무관 기준) * sizeFactor
-     */
     private double getSizeFactor(MinecraftClient client) {
         final double physicalScale = client.getWindow().getHeight() / 1080.0;
         final double scaleFactor = client.getWindow().getScaleFactor();
@@ -98,9 +84,7 @@ public class MCRiderRadar implements ClientModInitializer {
         final int centerX = (int) Math.round(scaledPadding + scaledRadius);
         final int centerY = (int) Math.round(screenHeight - scaledPadding - scaledRadius);
 
-        // 미니맵과 정확히 같은 화면 사각형(패딩/반지름 계산식이 동일)을 차지하므로, 미니맵이
-        // 켜져 있으면 배경은 미니맵 쪽에서 이미 그린다. 여기서 또 그리면 반투명이 두 번 겹쳐
-        // 훨씬 어둡게 보이는 중복 문제가 있었다.
+        // 미니맵과 배경색 중복되지 않도록 방지
         if (MCRiderConfig.INSTANCE.useMinimap == 0) {
             context.fill((int) Math.round(centerX - scaledRadius), (int) Math.round(centerY - scaledRadius),
                     (int) Math.round(centerX + scaledRadius), (int) Math.round(centerY + scaledRadius),
@@ -119,21 +103,17 @@ public class MCRiderRadar implements ClientModInitializer {
 
         final Vec3d p = MCRiderMain.getRidingPlayer().getCameraPosVec(tickDelta);
 
-        // 미니맵과 같은 원을 공유할 때는 미니맵의 표시 반경(월드 거리)에 맞춰 축척을 통일한다.
-        // 그러지 않으면 같은 화면 반지름이 서로 다른 실제 거리를 의미하게 돼(레이더 18.75블록
-        // vs 미니맵 75블록), 카트 아이콘 위치와 트랙 그림이 어긋나 보인다.
+        // 미니맵이 켜져 있으면 강제로 축척 일치
         final double effectiveMaxDist = (MCRiderConfig.INSTANCE.useMinimap != 0) ? MCRiderMinimap.getViewDistance() : maxDist;
 
         final double scale = scaledRadius / effectiveMaxDist;
 
-        // 아이콘은 "지도처럼 정확한 축척"이 아니라 방향을 읽어야 하는 요소다. 미니맵과
-        // 축척을 맞추면서(75블록 반경) 실제 크기 그대로 축소하면 몇 픽셀짜리 사각형이 돼서,
-        // 회전한 텍스처를 그 해상도로 래스터화할 때 각도 차이가 제대로 안 살고 "늘 한쪽으로
-        // 찌그러진 것처럼" 보이는 앨리어싱이 생긴다. 종횡비는 유지한 채 최소 높이만 강제해서
-        // 회전이 실제로 보일 만큼의 픽셀 수를 확보한다.
         float kartW = (float) (KART_WIDTH  * scale * KART_ICON_DISPLAY_SCALE);
         float kartH = (float) (KART_HEIGHT * scale * KART_ICON_DISPLAY_SCALE);
-        final float MIN_ICON_HEIGHT = 14f;
+
+        // 미니맵과 축척 일치, 기존의 절반보다 작아지지 않게 제한
+        final double radarOnlyScale = scaledRadius / maxDist;
+        final float MIN_ICON_HEIGHT = (float) (KART_HEIGHT * radarOnlyScale * KART_ICON_DISPLAY_SCALE / 2.0);
         if (kartH < MIN_ICON_HEIGHT) {
             final float upscale = MIN_ICON_HEIGHT / kartH;
             kartW *= upscale;
@@ -169,12 +149,6 @@ public class MCRiderRadar implements ClientModInitializer {
             drawKartIcon(context, KART_ICON_ENEMY, dotX, dotY, kartW, kartH, relativeYaw);
         }
     }
-
-    /**
-     * 플레이어가 탄 카트바디의 실제 yaw를 구한다.
-     * 카트바디(rootVehicle)의 passenger를 순회해 "mcrider-modelsaddle" 엔티티를 찾고 그 yaw를 반환한다.
-     * 찾지 못하면 플레이어 yaw로 폴백한다.
-     */
     private float getKartBodyYaw(PlayerEntity player) {
         Entity kart = player.getRootVehicle();
         if (kart != null && kart != player) {
@@ -188,14 +162,10 @@ public class MCRiderRadar implements ClientModInitializer {
     }
 
     /**
-     * 텍스처를 (cx, cy)를 중심으로 rotationDeg만큼 회전해서 그린다.
-     *
-     * 핵심 1) drawTexture에서 "그릴 크기(width/height)"와 "텍스처에서 잘라올 영역(regionWidth/regionHeight)"은
-     *         별개의 인자다. region을 명시하지 않는 오버로드는 width=region으로 간주해서,
-     *         작게 그리면 텍스처의 좌상단 일부만 잘려 나온다. → region을 16x16 전체로 명시한다.
-     *
-     * 핵심 2) 회전 피벗은 MatrixStack을 (cx,cy)로 옮긴 뒤 회전하고,
-     *         drawTexture는 (-w/2, -h/2) 중심 오프셋으로 그린다.
+     * 텍스처를 (cx, cy) 중심으로 rotationDeg만큼 회전해서 그린다.
+     * region을 생략하면 width=region으로 간주돼 축소 시 좌상단 일부만 잘리므로, region을
+     * 16x16 전체로 명시한다. 회전 피벗은 MatrixStack을 (cx,cy)로 옮긴 뒤 회전하고
+     * drawTexture는 (-w/2, -h/2) 중심 오프셋으로 그린다.
      */
     private void drawKartIcon(DrawContext context, Identifier texture, float cx, float cy,
                               float w, float h, float rotationDeg) {
@@ -212,7 +182,7 @@ public class MCRiderRadar implements ClientModInitializer {
         // 3) 중심 정렬 오프셋을 행렬에서 실수로 처리
         matrices.translate(-w / 2f, -h / 2f, 0);
 
-        // 4) region(잘라올 영역)을 텍스처 전체(16x16)로 명시 → 축소돼도 전체가 보임
+        // 4) region(잘라올 영역)을 텍스처 전체(16x16)로 명시해 축소돼도 전체가 보이게 함
         context.drawTexture(
                 RenderLayer::getGuiTextured,
                 texture,

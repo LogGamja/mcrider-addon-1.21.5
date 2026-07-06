@@ -20,17 +20,14 @@ import loggamja.mcrider.MCRiderMain;
 import static loggamja.mcrider.minimap.ColorGraph.NO_ID;
 
 /**
- * 미니맵 텍스처 관리(북쪽 고정, 부분 업로드), 화면 그리기, 셀 → 색상 계산.
- *
- * {@link FrontierSearch}가 채운 visitedColumns/cellColor/activeColor/activeSet을 읽어서
- * 텍스처에 칠하고 화면에 그리는 역할만 한다. 탐색/색 그래프에는 관여하지 않는다.
- * (paintCell의 디버그 모드(isDebugColors()) 즉시-도색 경로에서만 FrontierSearch → 이 클래스 역방향 호출이 있고,
- * 그 외엔 전부 이 클래스가 FrontierSearch를 읽기만 한다.)
+ * 미니맵 텍스처 관리(북쪽 고정, 부분 업로드), 화면 그리기, 셀->색상 계산 담당.
+ * {@link FrontierSearch}가 채운 visitedColumns/cellColor/activeColor/activeSet을 읽기만
+ * 한다(디버그 모드의 즉시 도색 경로에서만 FrontierSearch가 이 클래스를 역호출한다).
  */
 final class MinimapRenderer {
     private MinimapRenderer() {}
 
-    // ── 레이아웃 (MCRiderRadar와 동일 스킴) ──────────────────────────────
+    // 레이아웃(MCRiderRadar와 동일 스킴)
     private static final double LEGACY_GUI_SCALE_BASIS = 4.0;
     private static final int padding = (int) Math.round(10 * LEGACY_GUI_SCALE_BASIS);
     private static final int baseRadius = (int) Math.round(50 * LEGACY_GUI_SCALE_BASIS);
@@ -40,12 +37,12 @@ final class MinimapRenderer {
     private static final int radius = (int) Math.round(baseRadius * uiScale);
     static final double maxDist = baseDist * distScale;
 
-    // ── 북쪽 고정 텍스처 ─────────────────────────────────────────────────
+    // 북쪽 고정 텍스처
     private static final int TEX_SIZE = 512;
     private static final double SQRT2 = Math.sqrt(2.0);
     static final int REANCHOR_MARGIN = (int) Math.ceil(maxDist * SQRT2) + 8;
     private static final Identifier MINIMAP_ID = Identifier.of("mcrider-official", "minimap");
-    private static final int VISITED_COLOR = 0xBBFFFFFF;
+    private static final int VISITED_COLOR = 0xBBCCCCCC;
 
     private static NativeImage image;
     private static NativeImageBackedTexture texture;
@@ -56,12 +53,12 @@ final class MinimapRenderer {
     // 텍스처 부분 업로드는 "단일 바운딩 박스"가 아니라 "타일 단위 dirty 집합"으로 관리한다.
     // 멀리 떨어진 두 dirty 덩어리를 하나의 사각형으로 감싸면 사실상 풀업로드가 되므로,
     // TILE_SIZE 단위로 쪼개 실제로 바뀐 타일만 올린다.
-    private static final int TILE_SIZE = 32; // 512 / 32 = 16×16 = 256개 타일
+    private static final int TILE_SIZE = 32; // 512 / 32 = 16x16 = 256개 타일
     private static final int TILES_PER_ROW = TEX_SIZE / TILE_SIZE;
     private static final IntOpenHashSet dirtyTiles = new IntOpenHashSet();
-    /** 전체 텍스처를 통째로 올려야 하는 상황(재앵커/reset)이면 true. 이땐 타일 집합을 무시하고
-     *  한 번의 writeToTexture로 올린다 — markAllDirty가 256개 타일을 개별 업로드하며 GPU 호출이
-     *  한 프레임에 몰리던 스파이크를 없앤다. */
+    /** 전체 텍스처를 통째로 올려야 하는 상황(재앵커/reset)이면 true. 타일 집합을 무시하고
+     *  한 번의 writeToTexture로 올려, 256개 타일을 개별 업로드하며 생기던 GPU 호출 스파이크를
+     *  없앤다. */
     private static boolean uploadWholeTexture = false;
 
     private static int tileKey(int tileX, int tileZ) {
@@ -85,7 +82,7 @@ final class MinimapRenderer {
         uploadWholeTexture = false;
     }
 
-    /** dirty 영역을 NativeImage → GPU 텍스처로 복사(1.21.5 blaze3d GPU 경로). 전체 업로드
+    /** dirty 영역을 NativeImage에서 GPU 텍스처로 복사(1.21.5 blaze3d GPU 경로). 전체 업로드
      *  상황이면 한 번에, 아니면 dirty 타일만 개별로 올린다. */
     private static void uploadDirtyRegion() {
         if (image == null || texture == null) { clearUploadState(); return; }
@@ -110,7 +107,7 @@ final class MinimapRenderer {
         clearUploadState();
     }
 
-    // ── 재도색 예산 ──────────────────────────────────────────────────────
+    // 재도색 예산
     /** dirtyColumns 재도색(plotColumn) 시간 예산. 컬럼 하나는 저렴하므로 "개수"가 아니라
      *  "이번 틱에 실제로 쓴 시간"으로 제한한다. 평소엔 이 안에 다 끝나 즉시 반영되고,
      *  대용량 트랙이 한꺼번에 dirty해지는 극단적 경우만 여러 틱에 나눠 그려진다. */
@@ -222,33 +219,20 @@ final class MinimapRenderer {
         IntOpenHashSet ys = FrontierSearch.visitedColumns.get(FrontierSearch.packColumn(x, z));
         if (ys == null || ys.isEmpty()) return 0;
 
+        final boolean debug = MCRiderMinimap.isDebugColors();
+        if (!debug && FrontierSearch.activeColor == NO_ID) return 0;
+
+        int repY = Integer.MIN_VALUE;
+        long repRoot = NO_ID;
         it.unimi.dsi.fastutil.ints.IntIterator yi = ys.iterator();
-        if (MCRiderMinimap.isDebugColors()) {
-            int repY = Integer.MIN_VALUE;
-            long repRoot = NO_ID;
-            while (yi.hasNext()) {
-                int y = yi.nextInt();
-                long root = FrontierSearch.resolvedRootAt(x, y, z);
-                if (root == NO_ID) continue;
-                if (y >= repY) { repY = y; repRoot = root; }
-            }
-            return colorForRoot(repRoot);
-        } else {
-            if (FrontierSearch.activeColor == NO_ID) return 0;
-            // DEBUG 분기와 동일하게 "가장 높은 y"(=위에서 내려다볼 때 실제로 보이는 표면)만
-            // 대표로 삼는다. 아무 y나 activeSet에 걸리면 칠하던 예전 방식은, 다리가 활성
-            // 터널 위를 지나가는 경우처럼 물리적으로 안 이어진(그래프상 무관한) 위쪽 트랙까지
-            // "활성"으로 잘못 표시하는 문제가 있었다.
-            int repY = Integer.MIN_VALUE;
-            long repRoot = NO_ID;
-            while (yi.hasNext()) {
-                int y = yi.nextInt();
-                long root = FrontierSearch.resolvedRootAt(x, y, z);
-                if (root == NO_ID) continue;
-                if (y >= repY) { repY = y; repRoot = root; }
-            }
-            return (repRoot != NO_ID && FrontierSearch.activeSet.contains(repRoot)) ? VISITED_COLOR : 0;
+        while (yi.hasNext()) {
+            int y = yi.nextInt();
+            long root = FrontierSearch.resolvedRootAt(x, y, z);
+            if (root == NO_ID) continue;
+            if (y >= repY) { repY = y; repRoot = root; }
         }
+        if (debug) return colorForRoot(repRoot);
+        return (repRoot != NO_ID && FrontierSearch.activeSet.contains(repRoot)) ? VISITED_COLOR : 0;
     }
 
     private static int colorForRoot(long root) {

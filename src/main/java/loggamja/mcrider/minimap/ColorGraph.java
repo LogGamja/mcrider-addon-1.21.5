@@ -9,13 +9,10 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 
 /**
  * 색(트랙 조각) 간 부모/자식 관계 그래프 + union-find(경로 압축).
- *
- * 규칙0: 양방향 이동 → 색 유지. 규칙1: 고아 진입(TP/리스폰 포함) → 새 루트 색.
- * 규칙2: 단방향 이동 → 새 색(직전 색의 자식). 규칙3: 양방향 인접 시만 병합.
- *
- * 색 "관계"만 다룬다. 색이 실제로 어디 칠해졌는지(cellColor 등)나 화면 표시(activeColor 등)는
- * {@link FrontierSearch} 책임. 단 병합(mergeColors/absorbInto/rescanCycles)은 양쪽에 영향을
- * 주므로, 여기서만 예외적으로 FrontierSearch의 정적 상태를 직접 참조/갱신한다.
+ * 규칙0: 양방향 이동은 색 유지.
+ * 규칙1: 고아 진입(TP/리스폰 포함)은 새 루트 색.
+ * 규칙2: 단방향 이동은 새 색(직전 색의 자식).
+ * 규칙3: 양방향 인접 시, 혹은 자식이 조상에게 단방향 인접 시 병합.
  */
 final class ColorGraph {
     private ColorGraph() {}
@@ -81,9 +78,9 @@ final class ColorGraph {
         bumpColorGraphVersion();
     }
 
-    // ═══════════════════════════ 병합 ═══════════════════════════
+    // -- 병합 --
 
-    // 병합/사이클 재검사용 재사용 스크래치(GC 압박 방지). 역할별로 하나씩만 두고,
+    // 병합 / 사이클 재검사용 재사용 스크래치(GC 압박 방지). 역할별로 하나씩만 두고,
     // 각 함수는 호출 시작 시 자기 몫을 clear() 후 쓴다.
     private static final LongOpenHashSet scratchGroup = new LongOpenHashSet();
     private static final LongOpenHashSet scratchReachable = new LongOpenHashSet();
@@ -93,7 +90,8 @@ final class ColorGraph {
     private static final LongArrayFIFOQueue scratchSeenQueue = new LongArrayFIFOQueue();
     private static final LongOpenHashSet scratchDescendants = new LongOpenHashSet();
     private static final LongOpenHashSet scratchAncestors = new LongOpenHashSet();
-    /** FrontierSearch.handleReach 단방향-재조우 분기(사이클 방지 조상 검사) 전용 스크래치. */
+
+    // FrontierSearch.handleReach 단방향-재조우 분기(사이클 방지 조상 검사) 전용 스크래치.
     static final LongOpenHashSet scratchParentAncestors = new LongOpenHashSet();
 
     static void mergeColors(long aId, long bId) {
@@ -134,11 +132,9 @@ final class ColorGraph {
     }
 
     /**
-     * from이 to의 조상이면 그 경로 위 모든 색을 out에 추가한다.
-     * (예전에는 colorBirth로 두 지점을 가지치기했으나, absorbInto가 survivor를 최소 birth로
-     * 골라 간선을 재배선하면서 "자식은 항상 부모보다 늦게 태어난다"는 불변식이 깨질 수 있어
-     * 실제 조상 관계를 놓치는 문제가 있었다. 그래서 birth 힌트 없이 완전 BFS로 판정한다.
-     * 큐 기반이라 스택 오버플로는 없다.)
+     * from이 to의 조상이면 그 경로 위 모든 색을 out에 추가한다. colorBirth 기반 가지치기는
+     * absorbInto가 survivor를 최소 birth로 재배선하면서 "자식은 부모보다 늦게 태어난다"는
+     * 불변식을 깰 수 있어 쓰지 않고, birth 힌트 없이 완전 BFS(큐 기반, 스택오버플로 없음)로 판정한다.
      */
     static void collectChainIfAncestor(long from, long to, LongOpenHashSet out) {
         from = resolve(from);
@@ -163,9 +159,9 @@ final class ColorGraph {
                 if (reachable.add(kid)) q.enqueue(kid);
             }
         }
-        if (!reachable.contains(to)) return; // to에 도달 불가 → 조상 아님
+        if (!reachable.contains(to)) return; // to에 도달 불가하면 조상이 아님
 
-        // to의 조상 집합과 교집합 = from→to 경로
+        // to의 조상 집합과 교집합 = from에서 to로 가는 경로
         LongOpenHashSet ancestorsOfTo = scratchAncestorsOfTo;
         ancestorsOfTo.clear();
         ancestorsOfTo.add(to);

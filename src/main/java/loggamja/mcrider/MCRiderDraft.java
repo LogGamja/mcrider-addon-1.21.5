@@ -29,9 +29,6 @@ public class MCRiderDraft implements ClientModInitializer {
     public static void draftGauge() {
         if (!MCRiderMain.isRidingKart || !MCRiderMain.isPlayingInGame() || !MCRiderConfig.INSTANCE.useDraftGauge) return;
 
-        // client.player(항상 나 자신)가 아니라 getRidingPlayer()를 써야 한다 — 죽어서 다른
-        // 레이서를 관전 중일 때는 client.player엔 이 이펙트가 있을 리 없어서 이 분기가
-        // 항상 실패하고, 아래 draftState 폴백 분기로만 동작하는 불일치가 있었다.
         var ridingPlayer = MCRiderMain.getRidingPlayer();
         var effect = ridingPlayer.getStatusEffect(StatusEffects.WIND_CHARGED);
         var draftState = MCRiderMain.getS2CValue(ridingPlayer, "state-draft");
@@ -127,15 +124,6 @@ public class MCRiderDraft implements ClientModInitializer {
                 context.drawTextWithShadow(renderer, text, localX, localY, color);
                 context.getMatrices().pop();
             }
-            //{
-            //context.getMatrices().translate(anchorX, anchorY);
-            //context.getMatrices().scale(scale, scale);
-//
-            //int localX = -textWidth / 2;
-            //int localY = -renderer.fontHeight;
-//
-            //context.drawTextWithShadow(renderer, text, localX, localY, color);
-            //}
         }
     }
 }

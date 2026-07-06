@@ -33,8 +33,8 @@ public class MCRiderSuspension implements ClientModInitializer {
     private static final int DRIFT_START_TICKS = 10;
     private int driftJustStartedTicks = 0;
 
-    // 질량체의 현재 상태(위치/속도). 매 틱 갱신.
-    private final SpringSimulator.State state = new SpringSimulator.State();
+    // 질량체의 현재 상태(위치/속도)
+    private final SpringSimulator.SpringState state = new SpringSimulator.SpringState();
 
     @Override
     public void onInitializeClient() {
@@ -74,9 +74,11 @@ public class MCRiderSuspension implements ClientModInitializer {
         boolean hasDriftStarted = driftJustStartedTicks > 0;
         if (driftJustStartedTicks > 0) driftJustStartedTicks--;
 
-        var filteredSteerGradient = steerGradientBuffer.stream().mapToDouble(Float::floatValue)
-                .average()
-                .orElse(0.0);
+        double steerGradientSum = 0.0;
+        for (int i = 0; i < steerGradientBuffer.size(); i++) {
+            steerGradientSum += steerGradientBuffer.get(i);
+        }
+        var filteredSteerGradient = steerGradientSum / steerGradientBuffer.size();
 
         boolean disableSwingAnimation = isBike == 1 && MCRiderConfig.INSTANCE.bikeSuspension >= 2;
         boolean isDriftingTemp = detectDriftState(kart);

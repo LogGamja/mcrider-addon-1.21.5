@@ -1,11 +1,12 @@
 package loggamja.mcrider.helper;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 public class EntityRollManager {
-    private static final Map<UUID, RollState> rollStates = new ConcurrentHashMap<>();
+    // 클라이언트 틱/렌더 콜백 전부 단일 클라이언트 스레드에서만 호출되므로 동시성 안전장치가 불필요하다.
+    private static final Map<UUID, RollState> rollStates = new HashMap<>();
 
     public static void setRoll(UUID entityId, float targetRollDeg, int durationTicks) {
         float current = getCurrentRoll(entityId);

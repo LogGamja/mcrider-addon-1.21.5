@@ -24,7 +24,7 @@ public class MCRiderSetting extends Screen {
 
             { "Suspension Effect: OFF", "Suspension Effect: Kart", "Suspension Effect: Kart and Camera" },
             { "Bike Suspension: Default", "Bike Suspension: 4-Wheel", "Bike Suspension: Realistic", "Bike Suspension: Extreme!" },
-            { "Track Minimap (WIP): OFF", "Track Minimap (WIP): ON", "Track Minimap (WIP): DEBUG" }
+            { "Track Minimap: OFF", "Track Minimap: ON", "Track Minimap: DEBUG" }
     };
     static String[] tooltips = {
             "Optimize the rotation of karts when riding a kart.",
@@ -68,7 +68,7 @@ public class MCRiderSetting extends Screen {
 
                     { "서스펜션 효과: 꺼짐", "서스펜션 효과: 카트바디", "서스펜션 효과: 카트와 카메라" },
                     { "바이크 서스펜션: 기본", "바이크 서스펜션: 4륜 카트", "바이크 서스펜션: 현실적", "바이크 서스펜션: 익스트림" },
-                    { "트랙 미니맵 (개발중): 꺼짐", "트랙 미니맵 (개발중): 켜짐", "트랙 미니맵 (개발중): 디버그" }
+                    { "트랙 미니맵: 꺼짐", "트랙 미니맵: 켜짐", "트랙 미니맵: 디버그" }
             };
             tooltips = new String[] {
                     "카트 탑승 시 조작감을 최적화합니다.",

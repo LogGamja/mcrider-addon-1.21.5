@@ -14,8 +14,7 @@ import java.util.function.Predicate;
 
 /**
  * 월드 블록 조회 전담: 벽/공기/void 태그 판정, 청크 블록 캐시, "서 있을 수 있는 칸"과
- * "두 칸 사이 이동 가능 여부" 판정. 색/방문 상태(cellColor 등)는 전혀 모르는 순수 지형
- * 질의 계층이라, {@link FrontierSearch}가 읽기만 하는 방향으로 의존한다.
+ * "두 칸 사이 이동 가능 여부" 판정. 색/방문 상태(cellColor 등)는 전혀 모르는 순수 지형 질의
  */
 final class BlockSearch {
     private BlockSearch() {}
@@ -26,14 +25,10 @@ final class BlockSearch {
     static final Predicate<BlockState> isAir = state -> state.isIn(KART_AIR);
     private static final Predicate<BlockState> isVoid = state -> state.isOf(Blocks.STRUCTURE_VOID);
 
-    /** 4방향 이웃 오프셋. 불변이므로 매 틱 재할당하지 않고 상수로 공유한다. */
-    static final int[][] DIRS = { {1, 0}, {-1, 0}, {0, 1}, {0, -1} };
-
-    /** 낙하/하강 탐색을 얼마나 허용할지(findAnchorCell/resolveTargetY 공용). 트랙 표면이
-     *  ignoreblock 태그로 "공기"처럼 보일 때 무한정 하강하지 않도록 막는 안전장치. */
+    static final int[][] DIRECTIONS = { {1, 0}, {-1, 0}, {0, 1}, {0, -1} };
     static final int MAX_ANCHOR_DROP_SEARCH = 64;
 
-    // 4슬롯을 "0번 = 최근 사용"으로 유지하는 move-to-front LRU 청크 캐시.
+    // 4슬롯을 최근 사용으로 유지하는 move-to-front LRU 청크 캐시.
     private static final int CHUNK_CACHE_SLOTS = 4;
     private static final long[] cacheKeys = new long[CHUNK_CACHE_SLOTS];
     private static final Chunk[] cacheChunks = new Chunk[CHUNK_CACHE_SLOTS];
@@ -61,6 +56,7 @@ final class BlockSearch {
             }
         }
         Chunk chunk = MCRiderMinimap.client.world.getChunk(x >> 4, z >> 4);
+
         // miss: 가장 오래된 슬롯을 밀어내고 새 청크를 맨 앞에 넣는다.
         System.arraycopy(cacheKeys, 0, cacheKeys, 1, CHUNK_CACHE_SLOTS - 1);
         System.arraycopy(cacheChunks, 0, cacheChunks, 1, CHUNK_CACHE_SLOTS - 1);
@@ -112,8 +108,6 @@ final class BlockSearch {
             if (isAirAt(nx, cy + 2, nz) && !fromHasBlockAt2Meter) return cy + 1;
             return Integer.MIN_VALUE;
         } else if (isAirAt(nx, cy - 1, nz)) {
-            // findAnchorCell과 동일하게 MAX_ANCHOR_DROP_SEARCH로 낙하 깊이를 제한한다
-            // (없으면 void 위 공중 트랙에서 프론티어 셀 하나가 bottomY까지 훑어 예산이 급감).
             int fy = cy;
             int dropped = 0;
             while (isAirAt(nx, fy - 1, nz) && fy > bottomY) {
@@ -126,19 +120,11 @@ final class BlockSearch {
         }
     }
 
-    /** 폭 판정 전용 "옆으로 비켜설 수 있는 칸"인지 확인. 머리 공간/발판 유무 같은 "여기 서
-     *  있을 수 있는가"는 resolveTargetY·isStandable이 이미 별도로 검증하므로, 여긴 그것과
-     *  독립적인 질문("옆이 벽으로 막혀 있는가")만 본다. 여기에 머리 공간 체크까지 넣으면
-     *  옆 칸이 벽은 아니지만 낮은 턱이라 못 서는 경우까지 "막힘"으로 오판해 실제로는 폭이
-     *  있는 통로를 narrow로 잘못 판정하게 된다. */
+    // 폭 판정 전용
     private static boolean isLaterallyOpen(int x, int y, int z) {
         if (!isChunkLoadedAt(x, z)) return false;
         return isAirAt(x, y, z);
     }
-
-    /** (nx,ny,nz) 한 층에서, 이동 방향(dx,dz)에 수직인 두 이웃 칸을 확인해 그 층이 폭 1칸인지
-     *  판정한다. 양쪽 다 막혀 있으면 옆으로 비켜설 공간이 전혀 없다는 뜻이므로 narrow(true).
-     *  dx!=0이면 이동축이 x라 z축 이웃이 "옆", 반대면 x축 이웃이 "옆". */
     static boolean isNarrowPassage(int nx, int ny, int nz, int dx, int dz) {
         if (dx != 0) {
             return !isLaterallyOpen(nx, ny, nz - 1) && !isLaterallyOpen(nx, ny, nz + 1);
@@ -146,12 +132,6 @@ final class BlockSearch {
             return !isLaterallyOpen(nx - 1, ny, nz) && !isLaterallyOpen(nx + 1, ny, nz);
         }
     }
-
-    /** cy에서 ty로 이동하는 동안 실제로 몸이 지나가는 모든 높이를 훑어 폭 1칸 구간이 하나라도
-     *  있으면 narrow로 본다. ty>=cy(같은 층/계단 오르기)면 실제로 몸이 위치하는 높이는 ty
-     *  하나뿐이라 그 한 층만 본다. ty<cy(낙하)면 몸이 cy부터 ty까지 순차로 통과하므로 그
-     *  구간 전체를 스캔한다 — 위쪽은 넓다가 착지 지점만 좁아지는 굴, 반대로 입구만 좁고
-     *  아래는 넓어지는 굴 양쪽 다 놓치지 않기 위함이다. */
     static boolean isNarrowPassageInRange(int nx, int cy, int ty, int nz, int dx, int dz) {
         if (ty >= cy) {
             return isNarrowPassage(nx, ty, nz, dx, dz);
@@ -163,7 +143,6 @@ final class BlockSearch {
         return false;
     }
 
-    /** 목적지에서 출발지로 되돌아가는 이동이 규칙상 성립하면 양방향. */
     static boolean canMoveBetween(int tx, int ty, int tz, int fx, int fy, int fz, int bottomY) {
         boolean baseIsWall = isWallAt(fx, ty, fz); // 되돌아갈 칸 기저가 벽이면 역방향 불가
         if (baseIsWall) return false;

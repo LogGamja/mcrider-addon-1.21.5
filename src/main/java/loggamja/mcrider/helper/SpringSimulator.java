@@ -1,8 +1,6 @@
 package loggamja.mcrider.helper;
 
-/**
-Claude Opus 4.9로 제작된 스프링 시뮬레이터 클래스입니다.
- **/
+// Claude Opus 4.8로 제작된 질량 스프링 물리 계산기
 public final class SpringSimulator {
 
     private static final double MAX_OMEGA_DT = 0.4;
@@ -11,13 +9,12 @@ public final class SpringSimulator {
     private static final double MIN_Q        = 1.0e-3;
     private static final double TWO_PI       = 2.0 * Math.PI;
 
-    /** 위치와 속도를 함께 담는 상태 홀더. */
-    public static final class State {
+    public static final class SpringState {
         public double x; // 변위 (m)
         public double v; // 속도 (m/s)
 
-        public State() { this(0.0, 0.0); }
-        public State(double x, double v) { this.x = x; this.v = v; }
+        public SpringState() { this(0.0, 0.0); }
+        public SpringState(double x, double v) { this.x = x; this.v = v; }
     }
 
     private SpringSimulator() {}
@@ -28,13 +25,13 @@ public final class SpringSimulator {
      * @param dt 시간 간격 (s), 마인크래프트 기본 0.05
      * @param f  공진주파수 (Hz)
      * @param Q  공진 팩터
-     * @param a  구동 가속도 (m/s²)
+     * @param a  구동 가속도 (m/s^2)
      * @param v  현재 속도 (m/s)
      * @param x  현재 변위 (m)
-     * @return   갱신된 {@link State}(x, v)
+     * @return   갱신된 {@link SpringState}(x, v)
      */
-    public static State step(double dt, double f, double Q,
-                             double a, double v, double x) {
+    public static SpringState step(double dt, double f, double Q,
+                                   double a, double v, double x) {
 
         // --- 입력 위생 처리 ---
         if (!Double.isFinite(x)) x = 0.0;
@@ -43,7 +40,7 @@ public final class SpringSimulator {
 
         // --- 파라미터 가드 ---
         if (f <= 0.0 || dt <= 0.0) {
-            return new State(x, v); // 복원력이 없으면(주파수 0) 진동도 없음
+            return new SpringState(x, v); // 복원력이 없으면(주파수 0) 진동도 없음
         }
         if (Q < MIN_Q) Q = MIN_Q;
 
@@ -51,7 +48,7 @@ public final class SpringSimulator {
         final double omega0Sq = omega0 * omega0;
         final double dampRate = omega0 / Q;   // 감쇠율
 
-        // --- 서브스텝 분할: ω0·h <= MAX_OMEGA_DT ---
+        // 서브스텝 분할: omega0*h <= MAX_OMEGA_DT
         int substeps = (int) Math.ceil((omega0 * dt) / MAX_OMEGA_DT);
         if (substeps < 1) substeps = 1;
         if (substeps > MAX_SUBSTEPS) substeps = MAX_SUBSTEPS;
@@ -73,12 +70,12 @@ public final class SpringSimulator {
         if (v >  MAX_STATE) v =  MAX_STATE;
         if (v < -MAX_STATE) v = -MAX_STATE;
 
-        return new State(x, v);
+        return new SpringState(x, v);
     }
 
     /** State 를 제자리로 갱신하는 편의 메서드. */
-    public static void step(State s, double dt, double f, double Q, double a) {
-        final State r = step(dt, f, Q, a, s.v, s.x);
+    public static void step(SpringState s, double dt, double f, double Q, double a) {
+        final SpringState r = step(dt, f, Q, a, s.v, s.x);
         s.x = r.x;
         s.v = r.v;
     }

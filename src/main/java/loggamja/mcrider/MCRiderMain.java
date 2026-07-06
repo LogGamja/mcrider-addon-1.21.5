@@ -35,8 +35,6 @@ public class MCRiderMain implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             onClientTickEnd();
         });
-
-        // 월드 언로드 시 롤 상태 전체 정리
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
             EntityRollManager.clear();
         });
@@ -245,8 +243,10 @@ public class MCRiderMain implements ClientModInitializer {
         long k = Math.round(criteriaMs  / frameMs);
         return Math.max(1L, k);
     }
+    private static final Map<String, Identifier> s2cIdCache = new HashMap<>();
+
     public static int getS2CValue(PlayerEntity player, String name) {
-        Identifier id = Identifier.of("minecraft", name);
+        Identifier id = s2cIdCache.computeIfAbsent(name, n -> Identifier.of("minecraft", n));
 
         Entity saddle = player.getVehicle();
         if (saddle == null || !saddle.isLiving()) return 0;
