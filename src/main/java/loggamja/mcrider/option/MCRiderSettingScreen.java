@@ -22,7 +22,8 @@ public class MCRiderSettingScreen extends Screen {
         int buttonHeight = 20;
         int spacing = 25;
         int startX = this.width / 2 - buttonWidth / 2;
-        int startY = this.height / 5;
+        int topGap = 15;
+        int startY = topGap + 24;
 
         MCRiderOptionTable.clampAllToggles();
 
@@ -74,7 +75,7 @@ public class MCRiderSettingScreen extends Screen {
             double normalized = (value - min) / (max - min);
             String labelText = Text.translatable(def.labelKey()).getString();
 
-            SliderWidget slider = new SliderWidget(startX, startY + (toggleRows + i + 1) * spacing,
+            SliderWidget slider = new SliderWidget(startX, startY + (toggleRows + i) * spacing,
                     buttonWidth, buttonHeight, Text.literal(labelText + ": " + (int) value), normalized) {
                 @Override
                 protected void updateMessage() {
@@ -100,7 +101,7 @@ public class MCRiderSettingScreen extends Screen {
                     this.client.setScreen(new GameMenuScreen(true));
                     MCRiderConfig.INSTANCE.save();
                 })
-                .position(startX, startY + (toggleRows + sliders.length + 1) * spacing)
+                .position(startX, startY + (toggleRows + sliders.length) * spacing)
                 .size(buttonWidth, buttonHeight)
                 .build()
         );
@@ -108,7 +109,7 @@ public class MCRiderSettingScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        context.drawCenteredTextWithShadow(this.textRenderer, Text.translatable("mcrider.setting.title"), this.width / 2, 20, 0xFFFFFF);
+        context.drawCenteredTextWithShadow(this.textRenderer, Text.translatable("mcrider.setting.title"), this.width / 2, 15, 0xFFFFFF);
         super.render(context, mouseX, mouseY, delta);
     }
 }
