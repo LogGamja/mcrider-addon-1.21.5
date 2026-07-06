@@ -2,6 +2,7 @@ package loggamja.mcrider;
 
 import loggamja.mcrider.helper.EntityRollManager;
 import loggamja.mcrider.helper.SpringSimulator;
+import loggamja.mcrider.option.MCRiderConfig;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.entity.Entity;

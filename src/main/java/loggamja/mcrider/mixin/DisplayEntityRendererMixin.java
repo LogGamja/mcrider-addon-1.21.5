@@ -55,11 +55,7 @@ public class DisplayEntityRendererMixin {
         Matrix4f m = new Matrix4f(affine.getMatrix());
         Matrix4f roll = new Matrix4f().rotateZ((float) Math.toRadians(rollDeg));
 
-        // JOML의 invert()는 제자리(in-place) 변형이라, m을 담은 이 객체는 첫 줄에서 m^-1이 되고
-        // 마지막 줄의 invert() 호출이 그 m^-1을 다시 뒤집어 원래 m으로 되돌린다("두 번 반전"이
-        // 아니라 반전 → 원복). 그 사이에서 pivotY 기준 롤 회전을 끼워 넣어, 결과적으로
-        // "엔티티 고유 변환을 잠깐 무효화한 좌표계에서 회전 후 원래 변환으로 복귀"하는
-        // 켤레(conjugation) 변환이 된다.
+        // 역행렬 관련은 의도된 사항임
         matrices.multiplyPositionMatrix(m.invert());
         matrices.translate(0.0f, (float) -pivotY, 0.0f);
         matrices.multiplyPositionMatrix(roll);

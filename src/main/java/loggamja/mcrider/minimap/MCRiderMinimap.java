@@ -11,7 +11,7 @@ import net.minecraft.util.math.BlockPos;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import loggamja.mcrider.MCRiderConfig;
+import loggamja.mcrider.option.MCRiderConfig;
 import loggamja.mcrider.MCRiderMain;
 import net.minecraft.world.World;
 

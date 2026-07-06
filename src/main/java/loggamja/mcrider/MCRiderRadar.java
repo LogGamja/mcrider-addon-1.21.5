@@ -1,5 +1,6 @@
 package loggamja.mcrider;
 
+import loggamja.mcrider.option.MCRiderConfig;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.rendering.v1.HudLayerRegistrationCallback;
 import net.fabricmc.fabric.api.client.rendering.v1.IdentifiedLayer;
@@ -32,8 +33,6 @@ public class MCRiderRadar implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        // EXPERIENCE_LEVEL 뒤(핫바 등 주요 HUD와 같은 자리)에 붙여서, hudHidden(F1) 조건을
-        // 그대로 물려받아 F1로 자동으로 함께 감춰지게 한다.
         HudLayerRegistrationCallback.EVENT.register(layeredDrawer ->
                 layeredDrawer.attachLayerAfter(IdentifiedLayer.EXPERIENCE_LEVEL,
                         Identifier.of("mcrider-official", "radar_hud"),

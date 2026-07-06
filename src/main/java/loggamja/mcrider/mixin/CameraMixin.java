@@ -1,7 +1,7 @@
 package loggamja.mcrider.mixin;
 
 import loggamja.mcrider.MCRiderCamera;
-import loggamja.mcrider.MCRiderConfig;
+import loggamja.mcrider.option.MCRiderConfig;
 import loggamja.mcrider.MCRiderMain;
 import loggamja.mcrider.helper.EntityRollManager;
 import net.minecraft.client.MinecraftClient;

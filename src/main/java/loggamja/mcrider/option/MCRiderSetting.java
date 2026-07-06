@@ -1,4 +1,4 @@
-package loggamja.mcrider;
+package loggamja.mcrider.option;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.GameMenuScreen;
@@ -24,7 +24,6 @@ public class MCRiderSetting extends Screen {
         int startX = this.width / 2 - buttonWidth / 2;
         int startY = this.height / 5;
 
-        // 옛 config에 남아있을 수 있는 범위 밖 값 보정(예: 삭제된 옵션 상태).
         MCRiderOptionDefs.clampAllToggles();
 
         var toggles = MCRiderOptionDefs.TOGGLES;
@@ -62,6 +61,8 @@ public class MCRiderSetting extends Screen {
             this.addDrawableChild(toggleButton);
         }
 
+        int toggleRows = (toggles.length + buttonsPerRow - 1) / buttonsPerRow;
+
         // Sliders
         var sliders = MCRiderOptionDefs.SLIDERS;
         for (int i = 0; i < sliders.length; i++) {
@@ -73,7 +74,7 @@ public class MCRiderSetting extends Screen {
             double normalized = (value - min) / (max - min);
             String labelText = Text.translatable(def.labelKey()).getString();
 
-            SliderWidget slider = new SliderWidget(startX, startY + (toggles.length / 2 + i + 1) * spacing,
+            SliderWidget slider = new SliderWidget(startX, startY + (toggleRows + i + 1) * spacing,
                     buttonWidth, buttonHeight, Text.literal(labelText + ": " + (int) value), normalized) {
                 @Override
                 protected void updateMessage() {
@@ -99,7 +100,7 @@ public class MCRiderSetting extends Screen {
                     this.client.setScreen(new GameMenuScreen(true));
                     MCRiderConfig.INSTANCE.save();
                 })
-                .position(startX, startY + (toggles.length + sliders.length) * spacing)
+                .position(startX, startY + (toggleRows + sliders.length + 1) * spacing)
                 .size(buttonWidth, buttonHeight)
                 .build()
         );

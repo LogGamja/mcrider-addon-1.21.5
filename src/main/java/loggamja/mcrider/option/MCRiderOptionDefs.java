@@ -1,4 +1,4 @@
-package loggamja.mcrider;
+package loggamja.mcrider.option;
 
 import java.util.function.Consumer;
 import java.util.function.DoubleSupplier;
@@ -95,9 +95,6 @@ final class MCRiderOptionDefs {
                     v -> MCRiderConfig.INSTANCE.MCRiderFOVEffects = Math.round(v)
             ),
     };
-
-    /** 옛 버전 config에 남아있을 수 있는 범위 밖 토글 값(예: 삭제된 옵션 상태)을 전부
-     *  0..stateCount-1로 되돌린다. 옵션별 특수 처리 없이 TOGGLES 테이블 하나로 전체를 훑는다. */
     static void clampAllToggles() {
         for (ToggleDef def : TOGGLES) {
             int current = def.getter().getAsInt();

@@ -1,6 +1,7 @@
 package loggamja.mcrider;
 
 import loggamja.mcrider.minimap.MCRiderMinimap;
+import loggamja.mcrider.option.MCRiderConfig;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -45,7 +46,7 @@ public class MCRiderMain implements ClientModInitializer {
     //MinecraftClient mc = MinecraftClient.getInstance();
     //mc.getWindow().setWindowedSize(1024, 768);
     private static int rollPruneTickCounter = 0;
-    private static final int ROLL_PRUNE_INTERVAL_TICKS = 200; // 10초마다, 나갔다 들어오는 다른 플레이어의 롤 엔트리가 계속 쌓이는 것을 방지
+    private static final int ROLL_PRUNE_INTERVAL_TICKS = 200;
 
     void onClientTickEnd() {
         if (!isPlayingInGame()) return;

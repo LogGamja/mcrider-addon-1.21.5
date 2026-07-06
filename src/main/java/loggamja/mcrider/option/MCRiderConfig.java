@@ -1,4 +1,4 @@
-package loggamja.mcrider;
+package loggamja.mcrider.option;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;

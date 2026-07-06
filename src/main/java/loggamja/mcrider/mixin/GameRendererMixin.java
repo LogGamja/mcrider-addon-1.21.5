@@ -3,7 +3,7 @@ package loggamja.mcrider.mixin;
 
 import loggamja.mcrider.MCRiderCamera;
 import loggamja.mcrider.MCRiderMain;
-import loggamja.mcrider.MCRiderConfig;
+import loggamja.mcrider.option.MCRiderConfig;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.option.GameOptions;
