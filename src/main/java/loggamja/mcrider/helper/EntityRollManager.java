@@ -5,7 +5,7 @@ import java.util.Map;
 import java.util.UUID;
 
 public class EntityRollManager {
-    // 클라이언트 틱/렌더 콜백 전부 단일 클라이언트 스레드에서만 호출되므로 동시성 안전장치가 불필요하다.
+    // 클라이언트 틱 / 렌더 콜백 전부 단일 클라이언트 스레드에서만 호출되므로 동시성 안전장치가 불필요하다
     private static final Map<UUID, RollState> rollStates = new HashMap<>();
 
     public static void setRoll(UUID entityId, float targetRollDeg, int durationTicks) {

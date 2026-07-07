@@ -19,17 +19,9 @@ public final class SpringSimulator {
 
     private SpringSimulator() {}
 
-    /**
-     * 한 틱(dt) 동안 적분하여 갱신된 변위/속도를 반환한다.
-     *
-     * @param dt 시간 간격 (s), 마인크래프트 기본 0.05
-     * @param f  공진주파수 (Hz)
-     * @param Q  공진 팩터
-     * @param a  구동 가속도 (m/s^2)
-     * @param v  현재 속도 (m/s)
-     * @param x  현재 변위 (m)
-     * @return   갱신된 {@link SpringState}(x, v)
-     */
+    // 한 틱(dt) 동안 적분하여 갱신된 변위/속도를 반환한다
+    // dt 시간 간격 (s, 마인크래프트 기본 0.05), f 공진주파수(Hz), Q 공진 팩터
+    // a 구동 가속도(m/s^2), v 현재 속도(m/s), x 현재 변위(m). 반환값은 갱신된 SpringState(x, v)
     public static SpringState step(double dt, double f, double Q,
                                    double a, double v, double x) {
 
@@ -73,7 +65,7 @@ public final class SpringSimulator {
         return new SpringState(x, v);
     }
 
-    /** State 를 제자리로 갱신하는 편의 메서드. */
+    // State 를 제자리로 갱신하는 헬퍼 메서드
     public static void step(SpringState s, double dt, double f, double Q, double a) {
         final SpringState r = step(dt, f, Q, a, s.v, s.x);
         s.x = r.x;

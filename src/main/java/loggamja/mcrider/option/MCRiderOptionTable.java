@@ -5,11 +5,9 @@ import java.util.function.DoubleSupplier;
 import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
 
-/**
- * 토글/슬라이더 옵션의 "번역 키 + config 필드 getter/setter" 정의 테이블.
- * MCRiderSetting(화면)과 MCRiderConfig(로드 시 범위 클램프) 양쪽이 이 테이블 하나만 보고
- * 동작하므로, 옵션을 추가/변경할 때 이 파일 한 곳만 수정하면 된다.
- */
+// 토글/슬라이더 옵션의 번역 키 + config 필드 getter/setter 정의 테이블
+// MCRiderSetting(화면)과 MCRiderConfig(로드 시 범위 클램프) 양쪽이 이 테이블 하나만 보고 동작하므로
+// 옵션을 추가 / 변경할 때 이 파일 한 곳만 수정하면 된다
 final class MCRiderOptionTable {
     private MCRiderOptionTable() {}
 

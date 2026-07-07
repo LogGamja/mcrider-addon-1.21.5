@@ -12,10 +12,7 @@ import net.minecraft.world.chunk.Chunk;
 
 import java.util.function.Predicate;
 
-/**
- * 월드 블록 조회 전담: 벽/공기/void 태그 판정, 청크 블록 캐시, "서 있을 수 있는 칸"과
- * "두 칸 사이 이동 가능 여부" 판정. 색/방문 상태(cellColor 등)는 전혀 모르는 순수 지형 질의
- */
+// 월드 블록 조회 등
 final class BlockSearch {
     private BlockSearch() {}
 
@@ -93,12 +90,11 @@ final class BlockSearch {
         return true;
     }
 
-    /** (nx,cy,nz)의 air/wall 판정을 호출부에서 미리 구해 넘겨받아 중복 조회를 피한다. */
+    // (nx, cy, nz)의 air/wall 판정을 호출부에서 미리 구해 넘겨받아 중복 조회를 피한다
     static int resolveTargetY(int nx, int cy, int nz, boolean baseIsAir, boolean baseIsWall,
                               boolean fromHasBlockAt2Meter, int bottomY) {
         if (!isAirAt(nx, cy + 1, nz)) return Integer.MIN_VALUE;
         if (!baseIsAir) {
-            // 기저가 벽 태그면 절대 올라설 수 없다(단방향 예외 없음).
             if (baseIsWall) return Integer.MIN_VALUE;
             if (isAirAt(nx, cy + 2, nz) && !fromHasBlockAt2Meter) return cy + 1;
             return Integer.MIN_VALUE;
@@ -132,14 +128,14 @@ final class BlockSearch {
             return isNarrowPassage(nx, ty, nz, dx, dz);
         }
         for (int y = cy; y >= ty; y--) {
-            // 낙하 중엔 이동 방향이 수직이라 두 수평축 모두를 봐야 함
+            // 낙하 중엔 동서남북 다봐야함
             if (isNarrowPassage(nx, y, nz, 1, 0) || isNarrowPassage(nx, y, nz, 0, 1)) return true;
         }
         return false;
     }
 
     static boolean canMoveBetween(int tx, int ty, int tz, int fx, int fy, int fz, int bottomY) {
-        boolean baseIsWall = isWallAt(fx, ty, fz); // 되돌아갈 칸 기저가 벽이면 역방향 불가
+        boolean baseIsWall = isWallAt(fx, ty, fz); // 역방향 못 감
         if (baseIsWall) return false;
         boolean baseIsAir = isAirAt(fx, ty, fz);
         boolean tHasBlockAt2 = !isAirAt(tx, ty + 2, tz);

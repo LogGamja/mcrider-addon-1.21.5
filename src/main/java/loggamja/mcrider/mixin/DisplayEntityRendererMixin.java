@@ -29,10 +29,8 @@ public class DisplayEntityRendererMixin {
     private static final Matrix4f mcrider$scratchInverse = new Matrix4f();
     private static final Matrix4f mcrider$scratchRoll = new Matrix4f();
 
-    /**
-     * render() 호출 시 MatrixStack에 roll rotation을 주입합니다.
-     * AT 타겟: setupTransforms 이후, 실제 geometry 렌더링 직전
-     */
+    // render() 호출 시 MatrixStack에 roll rotation을 주입합니다.
+    // AT 타겟: setupTransforms 이후, 실제 geometry 렌더링 직전
     @Inject(
             method = "render(Lnet/minecraft/client/render/entity/state/DisplayEntityRenderState;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V",
             at = @At(
@@ -57,7 +55,6 @@ public class DisplayEntityRendererMixin {
 
         double pivotY = ((DisplayEntityRenderStateAccessor) state).mcrider$getPivotY();
 
-        // 역행렬 관련 연산
         AffineTransformation affine = state.displayRenderState.transformation().interpolate(state.lerpProgress);
         mcrider$scratchOriginal.set(affine.getMatrix());
         mcrider$scratchInverse.set(mcrider$scratchOriginal).invert();
@@ -77,8 +74,7 @@ public class DisplayEntityRendererMixin {
         DisplayEntityRenderStateAccessor accessor = (DisplayEntityRenderStateAccessor) state;
         accessor.mcrider$setUuid(entity.getUuid());
 
-        // 회전 중심 y 오프셋: 엔티티 y - RootVehicle y - pivotYOffset
-        // pivotYOffset이 클수록 회전 중심이 위로 올라감
+        // pivotYOffset이 클수록 회전 중심이 위로 올라간다.
         if (MCRiderMain.isRidingKart && entity.hasVehicle()) {
             double pivotY = entity.getY() - entity.getRootVehicle().getY() - MCRiderSuspension.pivotYOffset;
             accessor.mcrider$setPivotY(pivotY);

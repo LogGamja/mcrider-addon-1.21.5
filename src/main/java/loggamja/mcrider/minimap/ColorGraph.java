@@ -7,13 +7,11 @@ import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
 import it.unimi.dsi.fastutil.longs.LongIterator;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 
-/**
- * 색(트랙 조각) 간 부모/자식 관계 그래프 + union-find(경로 압축).
- * 규칙0: 양방향 이동은 색 유지.
- * 규칙1: 고아 진입(TP/리스폰 포함)은 새 루트 색.
- * 규칙2: 단방향 이동은 새 색(직전 색의 자식).
- * 규칙3: 양방향 인접 시, 혹은 자식이 조상에게 단방향 인접 시 병합.
- */
+// 색(트랙 조각) 간 부모/자식 관계 그래프 + union-find(경로 압축)
+// 규칙0: 양방향 이동은 색 유지
+// 규칙1: 고아 진입(TP/리스폰 포함)은 새 루트 색
+// 규칙2: 단방향 이동은 새 색(직전 색의 자식)
+// 규칙3: 양방향 인접 시, 혹은 자식이 조상에게 단방향 인접 시 병합
 final class ColorGraph {
     private ColorGraph() {}
 
@@ -27,7 +25,7 @@ final class ColorGraph {
     static long nextColorId = 0;
     static int birthCounter = 0;
 
-    // 그래프 구조가 바뀔 때(엣지 추가 / 병합) 증가. FrontierSearch의 activeSet 캐시 무효화 판단용.
+    // 그래프 구조가 바뀔 때(엣지 추가 / 병합) 증가. FrontierSearch의 activeSet 캐시 무효화 판단용
     static long colorGraphVersion = 0;
     static int actualColorCount = 0;
 
@@ -82,8 +80,7 @@ final class ColorGraph {
 
     // -- 병합 --
 
-    // 병합 / 사이클 재검사용 재사용 스크래치(GC 압박 방지). 역할별로 하나씩만 두고,
-    // 각 함수는 호출 시작 시 자기 몫을 clear() 후 쓴다.
+    // 병합 / 사이클 재검사용 스크래치. 역할별로 하나씩만 두고, 각 함수는 호출 시작 시 자기 몫을 clear() 후 쓴다
     private static final LongOpenHashSet scratchGroup = new LongOpenHashSet();
     private static final LongOpenHashSet scratchReachable = new LongOpenHashSet();
     private static final LongArrayFIFOQueue scratchReachQueue = new LongArrayFIFOQueue();
@@ -93,7 +90,7 @@ final class ColorGraph {
     private static final LongOpenHashSet scratchDescendants = new LongOpenHashSet();
     private static final LongOpenHashSet scratchAncestors = new LongOpenHashSet();
 
-    // FrontierSearch.handleReach 단방향-재조우 분기(사이클 방지 조상 검사) 전용 스크래치.
+    // FrontierSearch.handleReach 단방향-재조우 분기(사이클 방지 조상 검사) 전용 스크래치
     static final LongOpenHashSet scratchParentAncestors = new LongOpenHashSet();
 
     static void mergeColors(long aId, long bId) {
@@ -105,8 +102,8 @@ final class ColorGraph {
         group.clear();
         group.add(a);
         group.add(b);
-        collectChainIfAncestor(a, b, group);
-        collectChainIfAncestor(b, a, group);
+        collectChainIfAncestorBFS(a, b, group);
+        collectChainIfAncestorBFS(b, a, group);
 
         long survivor = NO_ID;
         int bestBirth = Integer.MAX_VALUE;
@@ -133,17 +130,13 @@ final class ColorGraph {
         rescanCycles(survivor);
     }
 
-    /**
-     * from이 to의 조상이면 그 경로 위 모든 색을 out에 추가한다. colorBirth 기반 가지치기는
-     * absorbInto가 survivor를 최소 birth로 재배선하면서 "자식은 부모보다 늦게 태어난다"는
-     * 불변식을 깰 수 있어 쓰지 않고, birth 힌트 없이 완전 BFS(큐 기반, 스택오버플로 없음)로 판정한다.
-     */
-    static void collectChainIfAncestor(long from, long to, LongOpenHashSet out) {
+    // from이 to의 조상이면 BFS를 사용해 그 path 위 모든 색을 out에 추가한다.
+    static void collectChainIfAncestorBFS(long from, long to, LongOpenHashSet out) {
         from = resolve(from);
         to = resolve(to);
         if (from == to) return;
 
-        // from에서 자식 방향으로 도달 가능한 모든 노드(가지치기 없음)
+        // from에서 자식 방향으로 도달 가능한 모든 노드
         LongOpenHashSet reachable = scratchReachable;
         reachable.clear();
         LongArrayFIFOQueue q = scratchReachQueue;
@@ -163,7 +156,7 @@ final class ColorGraph {
         }
         if (!reachable.contains(to)) return;
 
-        // to의 조상 집합과 교집합 = from에서 to로 가는 경로
+        // to의 조상 집합과 교집합 == from에서 to로 가는 경로
         LongOpenHashSet ancestorsOfTo = scratchAncestorsOfTo;
         ancestorsOfTo.clear();
         ancestorsOfTo.add(to);
@@ -176,18 +169,17 @@ final class ColorGraph {
         }
     }
 
-    /** loser의 컬럼을 survivor로 이전(dirty 표시 포함)하고, loser의 간선을 survivor로 옮긴 뒤
-     *  loser의 부모 포인터를 survivor로 재지정한다. activeColor 갱신은 호출부 몫.
-     *  columnsByRoot는 FrontierSearch 소유라 여기서 직접 참조한다. */
+    // loser의 컬럼을 survivor로 이전(dirty 표시 포함)하고
+    // loser의 간선을 survivor로 옮긴 뒤 loser의 부모 포인터를 survivor로 재지정한다. activeColor 갱신은 호출부 몫
+    // columnsByRoot는 FrontierSearch 소유라 여기서 직접 참조한다.
     static void absorbInto(long loser, long survivor) {
-        actualColorCount--; // loser는 호출 시점에 항상 resolve된(자기 자신을 가리키던) 루트였다.
+        actualColorCount--; // loser는 호출 시점에 항상 resolve된(자기 자신을 가리키던) 루트였다
         FrontierSearch.markColumnsDirtyForRoot(loser);
         LongOpenHashSet cols = FrontierSearch.columnsByRoot.remove(loser);
         if (cols != null) {
             FrontierSearch.columnsByRoot.computeIfAbsent(survivor, k -> new LongOpenHashSet()).addAll(cols);
         }
-        // parentToChildren/childToParents의 loser 키 버킷은 resolve()로 자동 정규화되지
-        // 않으므로 survivor 키로 직접 옮긴다.
+        // parentToChildren/childToParents의 loser 키 버킷은 resolve()로 자동 정규화되지 않으므로 survivor 키로 직접 옮긴다
         migrateAdjacency(parentToChildren, loser, survivor);
         migrateAdjacency(childToParents, loser, survivor);
         colorParentPtr.put(loser, survivor);
@@ -204,8 +196,8 @@ final class ColorGraph {
         }
     }
 
-    /** 사이클로 남은 자손=조상 노드를 survivor로 계속 흡수한다. 매 라운드 그래프가 줄어들므로
-     *  실제 반복 횟수는 적지만, 재귀 대신 루프로 처리해 깊이에 상관없이 스택 걱정이 없다. */
+    // 사이클로 남은 자손 == 조상 노드를 survivor로 계속 흡수한다
+    // 매 라운드 그래프가 줄어들기에 실제 반복 횟수는 적지만 재귀 대신 루프로 처리해 깊이에 상관없이 스택 걱정이 없다
     static void rescanCycles(long survivor) {
         survivor = resolve(survivor);
         boolean merged;
@@ -231,9 +223,9 @@ final class ColorGraph {
         } while (merged);
     }
 
-    /** start에서 adj 방향으로 도달 가능한 (resolve된) 노드를 out에 모은다(start 자신 제외).
-     *  collectDescendants/collectAncestors가 인접 맵만 달리해 공유하는 공용 BFS. */
-    static void collectReachable(long start, Long2ObjectOpenHashMap<LongOpenHashSet> adj, LongOpenHashSet out) {
+    // start에서 adj 방향으로 도달 가능한 (resolve된) 노드를 out에 모은다(start 자신 제외)
+    // collectDescendants / collectAncestors가 인접 맵만 달리해 공유하는 공용 BFS
+    static void collectReachableBFS(long start, Long2ObjectOpenHashMap<LongOpenHashSet> adj, LongOpenHashSet out) {
         start = resolve(start);
         LongArrayFIFOQueue q = scratchSeenQueue;
         q.clear();
@@ -253,11 +245,11 @@ final class ColorGraph {
     }
 
     static void collectDescendants(long start, LongOpenHashSet out) {
-        collectReachable(start, parentToChildren, out);
+        collectReachableBFS(start, parentToChildren, out);
     }
 
     static void collectAncestors(long start, LongOpenHashSet out) {
-        collectReachable(start, childToParents, out);
+        collectReachableBFS(start, childToParents, out);
     }
 
     static void reset() {
