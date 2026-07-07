@@ -15,6 +15,7 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
@@ -31,20 +32,31 @@ public class CameraMixin {
     @Unique private static final float mcrider$SMOOTH_TIME = 0.15f;
     @Unique private static final float mcrider$ROLL_MULTIPLIER = 0.25f;
 
-    @Inject(method = "clipToSpace", at = @At("HEAD"), cancellable = true)
-    private void mcrider$clipToSpace(float f, CallbackInfoReturnable<Float> cir) {
-        if (!MCRiderMain.isRidingKart) return;
+    // 기본 카메라이면 null을 반환해 vanilla 거리를 그대로 사용
+    @Unique
+    private static Float mcrider$computeCustomDistance(float f) {
+        var newDistance = MCRiderCamera.getCameraDistanceOffset(f);
+        if (newDistance == f) return null;
 
         var delta = MinecraftClient.getInstance().getRenderTickCounter().getTickProgress(false);
-
-        var newDistance = MCRiderCamera.getCameraDistanceOffset(f);
         var newDistanceAtPrevTick = MCRiderCamera.getCameraDistanceOffsetAtPrevTick(f);
+        return MathHelper.lerp(delta, newDistanceAtPrevTick, newDistance);
+    }
+    // 카메라 모드에 무관하게 노클립
+    @Inject(method = "clipToSpace", at = @At("HEAD"), cancellable = true)
+    private void mcrider$clipToSpace(float f, CallbackInfoReturnable<Float> cir) {
+        if (!MCRiderMain.isRidingKart || !MCRiderConfig.INSTANCE.useNoclipCamera) return;
 
-        var lerpedDistance = MathHelper.lerp(delta, newDistanceAtPrevTick, newDistance);
+        Float distance = mcrider$computeCustomDistance(f);
+        cir.setReturnValue(distance != null ? distance : f);
+    }
+    // 바닐라가 커스텀 카메라 거리로 벽 충돌검사를 하도록 바꿔치기한다
+    @ModifyVariable(method = "clipToSpace", at = @At("HEAD"), argsOnly = true)
+    private float mcrider$overrideClipDistance(float f) {
+        if (!MCRiderMain.isRidingKart || MCRiderConfig.INSTANCE.useNoclipCamera) return f;
 
-        if (MCRiderConfig.INSTANCE.useNoclipCamera || newDistance != f) {
-            cir.setReturnValue(lerpedDistance);
-        }
+        Float distance = mcrider$computeCustomDistance(f);
+        return distance != null ? distance : f;
     }
 
     @Inject(method = "setRotation(FF)V", at = @At("TAIL"))
