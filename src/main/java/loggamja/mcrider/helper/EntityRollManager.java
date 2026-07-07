@@ -1,11 +1,14 @@
 package loggamja.mcrider.helper;
 
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.world.ClientWorld;
+import net.minecraft.world.tick.TickManager;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
 public class EntityRollManager {
-    // 클라이언트 틱 / 렌더 콜백 전부 단일 클라이언트 스레드에서만 호출되므로 동시성 안전장치가 불필요하다
     private static final Map<UUID, RollState> rollStates = new HashMap<>();
 
     public static void setRoll(UUID entityId, float targetRollDeg, int durationTicks) {
@@ -14,8 +17,16 @@ public class EntityRollManager {
                 current,
                 targetRollDeg,
                 System.currentTimeMillis(),
-                durationTicks * 50L
+                Math.round(durationTicks * getMillisPerTick())
         ));
+    }
+    private static float getMillisPerTick() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        ClientWorld world = client.world;
+        if (world == null) return 50;
+
+        TickManager tickManager = world.getTickManager();
+        return tickManager.getMillisPerTick();
     }
 
     public static float getCurrentRoll(UUID entityId) {
