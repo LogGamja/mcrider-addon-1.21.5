@@ -164,7 +164,7 @@ final class MinimapRenderer {
     private static final long REPAINT_TIME_BUDGET_NANOS = 2_000_000L; // 2ms (50ms 틱의 4%)
     // 시간 예산과 별개인 개수 안전장치. 컬럼당 비용이 비정상적으로 커져도 한 틱이 무한정
     // 길어지지 않게 한다(평소엔 시간 예산이 먼저 걸려 도달하지 않음)
-    private static final int REPAINT_HARD_CAP_PER_TICK = 200_000;
+    private static final int REPAINT_HARD_CAP_PER_TICK = 262_144;
 
     // 재앵커 시 새 화면을 여러 틱에 걸쳐 준비하는 상태. front가 이미 표시 중이면 back에 준비 후 swapBuffers
     // 처음이면 back 없이 front에 바로 채운다

@@ -7,8 +7,6 @@ import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
 import it.unimi.dsi.fastutil.longs.LongIterator;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.util.math.BlockPos;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static loggamja.mcrider.minimap.ColorGraph.NO_ID;
 
@@ -44,67 +42,6 @@ final class FrontierSearch {
     // activeColor 전환 히스테리시스: 같은 후보 색이 이 값만큼 연속으로 나와야 전환한다
     // 벽 경계처럼 매 틱 흔들리는 위치에서 잡음성 전환을 막는다
     static final int ACTIVE_COLOR_SWITCH_STREAK = 3;
-
-    // STAGING/URGENT 예산 캘리브레이팅용 임시 계측. 캘리브레이팅 끝나면 DEBUG_BUDGET_LOG를
-    // false로 돌리거나 이 블록 + floodFillWithVertical 안의 계측 코드를 통째로 지운다.
-    private static final Logger DEBUG_BUDGET_LOGGER = LoggerFactory.getLogger("mcrider");
-    private static final boolean DEBUG_BUDGET_LOG = true;
-    private static final int DEBUG_LOG_INTERVAL_TICKS = 20;
-    private static int debugTicksInWindow = 0;
-    private static int debugStagingCalls = 0, debugUrgentCalls = 0;
-    private static long debugStagingNanosSum = 0, debugUrgentNanosSum = 0;
-    private static long debugStagingNanosMax = 0, debugUrgentNanosMax = 0;
-    private static long debugStagingCellsSum = 0, debugUrgentCellsSum = 0;
-    private static int debugStagingTimeStops = 0, debugUrgentTimeStops = 0;
-    private static int debugStagingCountStops = 0, debugUrgentCountStops = 0;
-
-    private static void debugRecordBudgetUsage(boolean urgent, long elapsedNanos, int cellsUsed,
-                                                boolean timeStop, boolean countStop) {
-        if (!DEBUG_BUDGET_LOG) return;
-        if (urgent) {
-            debugUrgentCalls++;
-            debugUrgentNanosSum += elapsedNanos;
-            debugUrgentNanosMax = Math.max(debugUrgentNanosMax, elapsedNanos);
-            debugUrgentCellsSum += cellsUsed;
-            if (timeStop) debugUrgentTimeStops++;
-            if (countStop) debugUrgentCountStops++;
-        } else {
-            debugStagingCalls++;
-            debugStagingNanosSum += elapsedNanos;
-            debugStagingNanosMax = Math.max(debugStagingNanosMax, elapsedNanos);
-            debugStagingCellsSum += cellsUsed;
-            if (timeStop) debugStagingTimeStops++;
-            if (countStop) debugStagingCountStops++;
-        }
-
-        if (++debugTicksInWindow >= DEBUG_LOG_INTERVAL_TICKS) {
-            if (debugStagingCalls > 0) {
-                DEBUG_BUDGET_LOGGER.info(
-                        "[BudgetDebug] STAGING calls={} avg={}us max={}us avgCells={} timeStop={} countStop={}",
-                        debugStagingCalls,
-                        debugStagingNanosSum / debugStagingCalls / 1000,
-                        debugStagingNanosMax / 1000,
-                        debugStagingCellsSum / debugStagingCalls,
-                        debugStagingTimeStops, debugStagingCountStops);
-            }
-            if (debugUrgentCalls > 0) {
-                DEBUG_BUDGET_LOGGER.info(
-                        "[BudgetDebug] URGENT  calls={} avg={}us max={}us avgCells={} timeStop={} countStop={}",
-                        debugUrgentCalls,
-                        debugUrgentNanosSum / debugUrgentCalls / 1000,
-                        debugUrgentNanosMax / 1000,
-                        debugUrgentCellsSum / debugUrgentCalls,
-                        debugUrgentTimeStops, debugUrgentCountStops);
-            }
-            debugTicksInWindow = 0;
-            debugStagingCalls = 0; debugUrgentCalls = 0;
-            debugStagingNanosSum = 0; debugUrgentNanosSum = 0;
-            debugStagingNanosMax = 0; debugUrgentNanosMax = 0;
-            debugStagingCellsSum = 0; debugUrgentCellsSum = 0;
-            debugStagingTimeStops = 0; debugUrgentTimeStops = 0;
-            debugStagingCountStops = 0; debugUrgentCountStops = 0;
-        }
-    }
 
     // 표시/탐색용 activeSet
 
@@ -315,8 +252,6 @@ final class FrontierSearch {
         if (urgent && updatePixel < URGENT_SEARCH_BUDGET_PER_TICK) {
             updatePixel = URGENT_SEARCH_BUDGET_PER_TICK;
         }
-        final long debugCallStart = DEBUG_BUDGET_LOG ? System.nanoTime() : 0;
-        final int debugBudgetAtStart = updatePixel;
 
         // 보류 프론티어 복귀. FrontierQueue가 range/loaded 조건에 맞는 exile 청크를 모아주면
         // 여기서는 각 셀의 활성 여부만 판정해 재분류한다
@@ -428,14 +363,6 @@ final class FrontierSearch {
                 }
                 if (stop) break;
             }
-        }
-
-        if (DEBUG_BUDGET_LOG) {
-            long elapsedNanos = System.nanoTime() - debugCallStart;
-            int cellsUsed = debugBudgetAtStart - updatePixel;
-            boolean countStop = updatePixel <= 0;
-            boolean timeStop = stop && !countStop;
-            debugRecordBudgetUsage(urgent, elapsedNanos, cellsUsed, timeStop, countStop);
         }
     }
 
