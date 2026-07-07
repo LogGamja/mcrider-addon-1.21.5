@@ -85,6 +85,7 @@ final class ColorGraph {
     private static final LongOpenHashSet scratchReachable = new LongOpenHashSet();
     private static final LongArrayFIFOQueue scratchReachQueue = new LongArrayFIFOQueue();
     private static final LongOpenHashSet scratchAncestorsOfTo = new LongOpenHashSet();
+    private static final LongArrayFIFOQueue scratchAncestorsOfToQueue = new LongArrayFIFOQueue();
     private static final LongOpenHashSet scratchSeen = new LongOpenHashSet();
     private static final LongArrayFIFOQueue scratchSeenQueue = new LongArrayFIFOQueue();
     private static final LongOpenHashSet scratchDescendants = new LongOpenHashSet();
@@ -130,37 +131,62 @@ final class ColorGraph {
         rescanCycles(survivor);
     }
 
-    // from이 to의 조상이면 BFS를 사용해 그 path 위 모든 색을 out에 추가한다.
+    // 양방향 BFS로 무관계 증명 비용을 양쪽 중 작은 쪽으로 제한한다.
+    // from에서 도달 가능한 노드 또는 to의 조상 중 먼저 소진되는 쪽이 끝나면 관계 판정 가능.
     static void collectChainIfAncestorBFS(long from, long to, LongOpenHashSet out) {
         from = resolve(from);
         to = resolve(to);
         if (from == to) return;
 
-        // from에서 자식 방향으로 도달 가능한 모든 노드
         LongOpenHashSet reachable = scratchReachable;
         reachable.clear();
-        LongArrayFIFOQueue q = scratchReachQueue;
-        q.clear();
+        LongArrayFIFOQueue qFwd = scratchReachQueue;
+        qFwd.clear();
         reachable.add(from);
-        q.enqueue(from);
-        while (!q.isEmpty()) {
-            long cur = q.dequeueLong();
-            LongOpenHashSet kids = parentToChildren.get(cur);
-            if (kids == null) continue;
-            LongIterator kit = kids.iterator();
-            while (kit.hasNext()) {
-                long kid = resolve(kit.nextLong());
-                if (kid == cur) continue;
-                if (reachable.add(kid)) q.enqueue(kid);
-            }
-        }
-        if (!reachable.contains(to)) return;
+        qFwd.enqueue(from);
 
-        // to의 조상 집합과 교집합 == from에서 to로 가는 경로
         LongOpenHashSet ancestorsOfTo = scratchAncestorsOfTo;
         ancestorsOfTo.clear();
+        LongArrayFIFOQueue qBack = scratchAncestorsOfToQueue;
+        qBack.clear();
         ancestorsOfTo.add(to);
-        collectAncestors(to, ancestorsOfTo);
+        qBack.enqueue(to);
+
+        boolean fwdDone = false, backDone = false;
+        while (!fwdDone || !backDone) {
+            if (!fwdDone) {
+                if (qFwd.isEmpty()) {
+                    fwdDone = true;
+                    if (!reachable.contains(to)) return;
+                } else {
+                    long cur = qFwd.dequeueLong();
+                    LongOpenHashSet kids = parentToChildren.get(cur);
+                    if (kids != null) {
+                        LongIterator kit = kids.iterator();
+                        while (kit.hasNext()) {
+                            long kid = resolve(kit.nextLong());
+                            if (kid != cur && reachable.add(kid)) qFwd.enqueue(kid);
+                        }
+                    }
+                }
+            }
+            if (!backDone) {
+                if (qBack.isEmpty()) {
+                    backDone = true;
+                    if (!ancestorsOfTo.contains(from)) return;
+                } else {
+                    long cur = qBack.dequeueLong();
+                    LongOpenHashSet parents = childToParents.get(cur);
+                    if (parents != null) {
+                        LongIterator pit = parents.iterator();
+                        while (pit.hasNext()) {
+                            long par = resolve(pit.nextLong());
+                            if (par != cur && ancestorsOfTo.add(par)) qBack.enqueue(par);
+                        }
+                    }
+                }
+            }
+        }
 
         LongIterator it = reachable.iterator();
         while (it.hasNext()) {
@@ -169,9 +195,6 @@ final class ColorGraph {
         }
     }
 
-    // loser의 컬럼을 survivor로 이전(dirty 표시 포함)하고
-    // loser의 간선을 survivor로 옮긴 뒤 loser의 부모 포인터를 survivor로 재지정한다. activeColor 갱신은 호출부 몫
-    // columnsByRoot는 FrontierSearch 소유라 여기서 직접 참조한다.
     static void absorbInto(long loser, long survivor) {
         actualColorCount--; // loser는 호출 시점에 항상 resolve된(자기 자신을 가리키던) 루트였다
         FrontierSearch.markColumnsDirtyForRoot(loser);
@@ -196,8 +219,7 @@ final class ColorGraph {
         }
     }
 
-    // 사이클로 남은 자손 == 조상 노드를 survivor로 계속 흡수한다
-    // 매 라운드 그래프가 줄어들기에 실제 반복 횟수는 적지만 재귀 대신 루프로 처리해 깊이에 상관없이 스택 걱정이 없다
+    // 루프 사용: 재귀 깊이 제한 없음
     static void rescanCycles(long survivor) {
         survivor = resolve(survivor);
         boolean merged;

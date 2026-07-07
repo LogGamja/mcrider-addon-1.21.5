@@ -86,26 +86,6 @@ final class FrontierQueue {
         getOrCreateBucket(exiledByChunk, key, 4).add(packedPos);
     }
 
-    // 뷰 반경(range) 안에 아직 처리 못 한 프론티어 청크가 남아있는지 청크 단위로 싸게 확인한다(대기 청크 수는 보통 수십~수백 개)
-    // true면 이번 틱 URGENT_SEARCH_ 예산을 쓴다
-    static boolean hasPendingWithin(int range, int sx, int sz) {
-        LongIterator it = frontierChunkKeys.iterator();
-        while (it.hasNext()) {
-            long k = it.nextLong();
-            if (taxiDistanceFromChunkToPos(ChunkPos.getPackedX(k), ChunkPos.getPackedZ(k), sx, sz) <= range) {
-                return true;
-            }
-        }
-        ObjectIterator<Long2ObjectMap.Entry<LongArrayList>> eIt = exiledByChunk.long2ObjectEntrySet().iterator();
-        while (eIt.hasNext()) {
-            long k = eIt.next().getLongKey();
-            if (taxiDistanceFromChunkToPos(ChunkPos.getPackedX(k), ChunkPos.getPackedZ(k), sx, sz) <= range) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     // 대기 중인 프론티어 청크 키를 sx,sz 기준 거리순으로 정렬해 sortSnap/sortPacked에 채운다
     // 둘 다 재사용 배열이라 다음 호출 전까지만(같은 틱 안에서 바로 소비) 유효하다
     // 지난 정렬 이후 청크 집합도 기준 좌표도 안 바뀌었으면 재정렬 없이 지난 결과를 그대로 쓴다

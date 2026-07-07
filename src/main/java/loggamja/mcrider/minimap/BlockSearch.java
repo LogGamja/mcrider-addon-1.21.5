@@ -1,5 +1,7 @@
 package loggamja.mcrider.minimap;
 
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
@@ -23,9 +25,8 @@ final class BlockSearch {
     private static final Predicate<BlockState> isVoid = state -> state.isOf(Blocks.STRUCTURE_VOID);
 
     static final int[][] DIRECTIONS = { {1, 0}, {-1, 0}, {0, 1}, {0, -1} };
-    static final int MAX_ANCHOR_DROP_SEARCH = 64;
+    static final int MAX_ANCHOR_DROP_SEARCH = 16;
 
-    // 4슬롯을 최근 사용으로 유지하는 move-to-front LRU 청크 캐시.
     private static final int CHUNK_CACHE_SLOTS = 4;
     private static final long[] cacheKeys = new long[CHUNK_CACHE_SLOTS];
     private static final Chunk[] cacheChunks = new Chunk[CHUNK_CACHE_SLOTS];
@@ -36,12 +37,12 @@ final class BlockSearch {
         java.util.Arrays.fill(cacheChunks, null);
     }
 
+
     private static BlockState stateAt(int x, int y, int z) {
         long key = ChunkPos.toLong(x >> 4, z >> 4);
         for (int i = 0; i < CHUNK_CACHE_SLOTS; i++) {
             if (cacheKeys[i] == key && cacheChunks[i] != null) {
                 if (i != 0) {
-                    // 히트한 슬롯을 맨 앞으로 옮긴다.
                     long hitKey = cacheKeys[i];
                     Chunk hitChunk = cacheChunks[i];
                     System.arraycopy(cacheKeys, 0, cacheKeys, 1, i);
@@ -53,8 +54,6 @@ final class BlockSearch {
             }
         }
         Chunk chunk = MCRiderMinimap.client.world.getChunk(x >> 4, z >> 4);
-
-        // miss: 가장 오래된 슬롯을 밀어내고 새 청크를 맨 앞에 넣는다.
         System.arraycopy(cacheKeys, 0, cacheKeys, 1, CHUNK_CACHE_SLOTS - 1);
         System.arraycopy(cacheChunks, 0, cacheChunks, 1, CHUNK_CACHE_SLOTS - 1);
         cacheKeys[0] = key;
@@ -103,7 +102,9 @@ final class BlockSearch {
             int dropped = 0;
             while (isAirAt(nx, fy - 1, nz) && fy > bottomY) {
                 fy--;
-                if (++dropped >= MAX_ANCHOR_DROP_SEARCH) return Integer.MIN_VALUE;
+                if (++dropped >= MAX_ANCHOR_DROP_SEARCH) {
+                    return Integer.MIN_VALUE;
+                }
             }
             return fy;
         } else {

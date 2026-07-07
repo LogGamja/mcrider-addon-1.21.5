@@ -29,15 +29,11 @@ import java.util.Objects;
 
 import static loggamja.mcrider.minimap.ColorGraph.NO_ID;
 
-// 미니맵 텍스처 관리(북쪽 고정, 부분 업로드), 화면 그리기, 셀->색상 계산 담당
-// FrontierSearch가 채운 visitedColumns/cellColor/activeColor/activeSet을
-// 읽기만 한다(디버그 모드의 즉시 도색 경로에서만 FrontierSearch가 이 클래스를 역호출한다)
 final class MinimapRenderer {
     private MinimapRenderer() {}
 
     private static final Logger LOGGER = LoggerFactory.getLogger("mcrider");
 
-    // 레이아웃(MCRiderRadar와 동일 스킴)
     private static final double LEGACY_GUI_SCALE_BASIS = 4.0;
     private static final int padding = (int) Math.round(10 * LEGACY_GUI_SCALE_BASIS);
     private static final int baseRadius = (int) Math.round(50 * LEGACY_GUI_SCALE_BASIS);
@@ -48,7 +44,6 @@ final class MinimapRenderer {
     private static final int radius = (int) Math.round(baseRadius * uiScale);
     static final double maxDist = baseDist * distScale;
 
-    // 북쪽 고정 텍스처
     private static final int TEX_SIZE = 512;
     private static final double SQRT2 = Math.sqrt(2.0);
     static final int REANCHOR_MARGIN = (int) Math.ceil(maxDist * SQRT2) + 8;
@@ -63,8 +58,6 @@ final class MinimapRenderer {
     private static final float ENEMY_HEAD_OUTLINE_THICKNESS = 0.4f;
     private static final int ENEMY_HEAD_OUTLINE_COLOR = 0xFF000000;
 
-    // 텍스처 버퍼. front는 화면에 보이는 텍스처, back은 재앵커 시 뒤에서 새로 준비하는 텍스처다
-    // 다 채워지면 swapBuffers로 참조만 바꿔치기해 깜빡임/찢어짐 없이 반영한다
     private static final class TextureBuffer {
         final Identifier id;
         NativeImage image;
@@ -102,7 +95,6 @@ final class MinimapRenderer {
             uploadWholeTexture = false;
         }
 
-        // dirty 영역만 NativeImage에서 GPU 텍스처로 복사한다(전체 갱신이면 한 번에, 아니면 타일별로)
         void uploadDirtyRegion() {
             if (image == null || texture == null) { clearUploadState(); return; }
             if (!uploadWholeTexture && dirtyTiles.isEmpty()) return;
@@ -149,8 +141,6 @@ final class MinimapRenderer {
     private static TextureBuffer front = new TextureBuffer(MINIMAP_ID_A);
     private static TextureBuffer back = new TextureBuffer(MINIMAP_ID_B);
 
-    // 바운딩 박스 대신 타일 단위 dirty 집합을 쓴다 — 멀리 떨어진 dirty 두 덩어리를 하나의
-    // 사각형으로 감싸면 사실상 풀업로드가 되기 때문
     private static final int TILE_SIZE = 32;
     private static final int TILES_PER_ROW = TEX_SIZE / TILE_SIZE;
 
@@ -158,16 +148,9 @@ final class MinimapRenderer {
         return tileX * TILES_PER_ROW + tileZ;
     }
 
-    // 재도색 예산
-    // 재도색 시간 예산. 컬럼 하나는 저렴하니 개수 대신 시간으로 제한한다
-    // 평소엔 안에서 끝나고 대량 dirty가 몰릴 때만 여러 틱에 나눠 그려진다
-    private static final long REPAINT_TIME_BUDGET_NANOS = 2_000_000L; // 2ms (50ms 틱의 4%)
-    // 시간 예산과 별개인 개수 안전장치. 컬럼당 비용이 비정상적으로 커져도 한 틱이 무한정
-    // 길어지지 않게 한다(평소엔 시간 예산이 먼저 걸려 도달하지 않음)
+    private static final long REPAINT_TIME_BUDGET_NANOS = 2_000_000L;
     private static final int REPAINT_HARD_CAP_PER_TICK = 262_144;
 
-    // 재앵커 시 새 화면을 여러 틱에 걸쳐 준비하는 상태. front가 이미 표시 중이면 back에 준비 후 swapBuffers
-    // 처음이면 back 없이 front에 바로 채운다
     private static TextureBuffer rebuildTarget = null;
     private static int rebuildPixelIndex = 0;
     private static boolean rebuildInProgress = false;
@@ -181,20 +164,15 @@ final class MinimapRenderer {
         target.image.fillRect(0, 0, TEX_SIZE, TEX_SIZE, 0);
 
         if (target == front) {
-            // 화면에 아직 아무것도 안 보였으므로 지운 상태를 바로 반영해도 문제없다
             target.markAllDirty();
             FrontierSearch.dirtyColumns.clear();
         }
-        // target이 back이면 dirtyColumns를 비우지 않는다 — 스왑 후 남은 dirty는 새 front가
-        // 된 그 버퍼에 repaintDirtyColumns가 이어서 반영해야 하기 때문
 
         rebuildTarget = target;
         rebuildPixelIndex = 0;
         rebuildInProgress = true;
     }
 
-    // rebuildTexture가 시작한 재빌드를 예산만큼 이어 그린다(repaintDirtyColumns와 예산 공유)
-    // 텍스처 크기에만 비례하는 고정 비용이라 트랙 크기와 무관하다. target이 back이면 완료 시 swap한다
     private static void continueRebuildIfInProgress() {
         if (!rebuildInProgress) return;
         final long deadline = System.nanoTime() + REPAINT_TIME_BUDGET_NANOS;
@@ -211,8 +189,6 @@ final class MinimapRenderer {
         }
         if (rebuildPixelIndex >= total) {
             rebuildInProgress = false;
-            // 빌드 중엔 타일 단위로만 dirty 표시됐으므로, 완료 시 markAllDirty로 갈아치워
-            // 스왑 직후 업로드가 한 번의 통짜 업로드로 끝나게 한다
             rebuildTarget.markAllDirty();
             if (rebuildTarget == back) {
                 swapBuffers();
@@ -258,8 +234,6 @@ final class MinimapRenderer {
     }
     static void repaintDirtyColumns(BlockPos start) {
         if (FrontierSearch.dirtyColumns.isEmpty() || !front.originSet) return;
-        // back이 재빌드 중이면 같은 변경을 back에도 반영한다 — 안 그러면 스왑 후 그 사이
-        // 칠해진 컬럼이 back에서 누락된다.
         boolean mirrorToBack = rebuildInProgress && rebuildTarget == back;
 
         int px = start.getX(), pz = start.getZ();
@@ -278,7 +252,6 @@ final class MinimapRenderer {
                 dirtyIt.remove();
                 hardCap--;
             }
-            // nanoTime() 호출도 공짜가 아니므로 대용량 백로그 스캔 시 256개마다만 확인한다
             if ((++sinceTimeCheck & 0xFF) == 0 && System.nanoTime() >= repaintDeadline) {
                 timedOut = true;
             }
@@ -474,7 +447,8 @@ final class MinimapRenderer {
         try {
             matrices.translate(cx, cy, 0);
             matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(rotationDeg));
-            matrices.translate(-size / 2f, -size / 2f, 0);
+            int roundedSize = Math.round(size);
+            matrices.translate(-roundedSize / 2f, -roundedSize / 2f, 0);
             drawArrowIcon(context, size, 0xFFFFFFFF);
         } finally {
             matrices.pop();
@@ -556,14 +530,15 @@ final class MinimapRenderer {
             matrices.translate(cx, cy, 0);
             matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(rotationDeg));
             final float ringSize = size * selfMarkerRingScale;
-            matrices.translate(-ringSize / 2f, -ringSize / 2f, 0);
+            int roundedRingSize = Math.round(ringSize);
+            matrices.translate(-roundedRingSize / 2f, -roundedRingSize / 2f, 0);
 
             context.drawTexture(
                     RenderLayer::getGuiTextured,
                     selfMarkerRingIcon,
                     0, 0,
                     0f, 0f,
-                    Math.round(ringSize), Math.round(ringSize),
+                    roundedRingSize, roundedRingSize,
                     selfMarkerRingTexSize, selfMarkerRingTexSize,
                     selfMarkerRingTexSize, selfMarkerRingTexSize,
                     0xFFFFFFFF
