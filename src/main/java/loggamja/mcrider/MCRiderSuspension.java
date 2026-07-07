@@ -60,11 +60,10 @@ public class MCRiderSuspension implements ClientModInitializer {
         if (world == null) return;
 
         if (MCRiderConfig.INSTANCE.suspensionEffect == 0) {
-            if (!states.isEmpty()) {
-                for (PlayerEntity player : world.getPlayers()) {
-                    if (MCRiderMain.isRidingKart(player)) zeroRoll(player);
-                }
+            // 대상별 0 되돌리기 순회 대신 통째로 비우기
+            if (!states.isEmpty() || !EntityRollManager.isEmpty()) {
                 states.clear();
+                EntityRollManager.clear();
             }
             return;
         }
@@ -74,7 +73,11 @@ public class MCRiderSuspension implements ClientModInitializer {
         for (PlayerEntity player : world.getPlayers()) {
             if (!MCRiderMain.isRidingKart(player)) continue;
 
-            SuspensionState st = states.computeIfAbsent(player.getUuid(), k -> new SuspensionState());
+            SuspensionState st = states.computeIfAbsent(player.getUuid(), k -> {
+                SuspensionState s = new SuspensionState();
+                s.prevPlayerYaw = player.getYaw(); // 재진입 시 가짜 steerGradient 스파이크 방지
+                return s;
+            });
             st.lastSeenTick = tickCounter;
             processPlayer(player, st);
             processed++;
@@ -95,7 +98,9 @@ public class MCRiderSuspension implements ClientModInitializer {
         boolean isModelRotateAllowed = MCRiderMain.getAllowModelRotation(kart, player);
 
         float playerYaw = player.getYaw();
-        st.steerGradientBuffer.add(Math.abs(st.prevPlayerYaw - playerYaw));
+
+        float wrappedDegree = Math.abs(MathHelper.wrapDegrees(st.prevPlayerYaw - playerYaw));
+        st.steerGradientBuffer.add(wrappedDegree);
         if (st.steerGradientBuffer.size() > 5) st.steerGradientBuffer.removeFirst();
         st.prevPlayerYaw = playerYaw;
 
@@ -179,17 +184,6 @@ public class MCRiderSuspension implements ClientModInitializer {
         EntityRollManager.setRoll(player.getUuid(), (float) modelRollValue, 1);
     }
 
-    private static void zeroRoll(PlayerEntity player) {
-        EntityRollManager.setRoll(player.getUuid(), 0f, 1);
-        Entity kart = player.getRootVehicle();
-        for (var i : kart.getPassengerList()) {
-            if (MCRiderMain.hasCertainName(i, "mcrider-modelsaddle")) {
-                for (var j : i.getPassengerList()) {
-                    EntityRollManager.setRoll(j.getUuid(), 0f, 1);
-                }
-            }
-        }
-    }
     static boolean detectDriftState(Entity kart) {
         if (kart.isPlayer()) return false;
 

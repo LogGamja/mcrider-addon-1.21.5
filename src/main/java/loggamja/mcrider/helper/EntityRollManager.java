@@ -1,5 +1,6 @@
 package loggamja.mcrider.helper;
 
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientEntityEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.world.tick.TickManager;
@@ -49,9 +50,12 @@ public class EntityRollManager {
     public static void remove(UUID entityId) {
         rollStates.remove(entityId);
     }
-
     public static void clear() {
         rollStates.clear();
+    }
+
+    public static boolean isEmpty() {
+        return rollStates.isEmpty();
     }
 
     public record RollState(

@@ -65,7 +65,7 @@ public class MCRiderMinimap implements ClientModInitializer {
         }
 
         final int playerMargin = 5;
-        BlockPos start = client.player.getBlockPos().up();
+        BlockPos start = MCRiderMain.getRidingPlayer().getBlockPos().up();
 
         int searchRange = (int) ((MinimapRenderer.maxDist + playerMargin * 2) * 2);
         FrontierSearch.floodFillWithVertical(start, searchRange, FrontierSearch.STAGING_BUDGET_PER_TICK);
