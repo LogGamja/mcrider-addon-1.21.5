@@ -23,7 +23,6 @@ import org.slf4j.LoggerFactory;
 import loggamja.mcrider.option.MCRiderConfig;
 import loggamja.mcrider.MCRiderMain;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.util.Objects;
 
@@ -359,8 +358,8 @@ final class MinimapRenderer {
         final double blockToScreen = scaledRadius / maxDist;
         final int texRegion = 2 * (int) Math.ceil(maxDist * SQRT2);
         final int drawSize = (int) Math.round(texRegion * blockToScreen);
-        final float u0 = (float) (p.x - front.originX - texRegion / 2.0);
-        final float v0 = (float) (p.z - front.originZ - texRegion / 2.0);
+        final float u0 = (float) Math.max(0, Math.min(TEX_SIZE - texRegion, p.x - front.originX - texRegion / 2.0));
+        final float v0 = (float) Math.max(0, Math.min(TEX_SIZE - texRegion, p.z - front.originZ - texRegion / 2.0));
 
         // try/finally로 disableScissor를 보장한다
         // pop이 누락되면 GL scissor가 다음 프레임까지 새어나가 화면 전체(엔티티 포함)가 클리핑된다(실제 발생 이력 있음)
@@ -479,8 +478,6 @@ final class MinimapRenderer {
             final int r = SELF_MARKER_RING_RADIUS;
 
             NativeImage ring = new NativeImage(NativeImage.Format.RGBA, pw, ph, false);
-            // NativeImage는 새로 할당해도 메모리가 0으로 안 채워진다 — 전체를 투명으로 먼저
-            // 채우지 않으면 잔여 메모리가 잡음으로 보인다.
             ring.fillRect(0, 0, pw, ph, 0);
             for (int y = 0; y < ph; y++) {
                 for (int x = 0; x < pw; x++) {
@@ -508,9 +505,7 @@ final class MinimapRenderer {
             selfMarkerRingIcon = Identifier.of("mcrider-official", "generated/self_marker_ring");
             NativeImageBackedTexture tex = new NativeImageBackedTexture(() -> "mcrider-self-marker-ring", ring);
             MinecraftClient.getInstance().getTextureManager().registerTexture(selfMarkerRingIcon, tex);
-        } catch (IOException e) {
-            // 렌더 경로에서 예외를 던지면 렌더 스레드가 죽는다 — 로그만 남기고 null로 남겨
-            // 호출부(drawSelfMarkerOutlined)가 조용히 스킵하게 한다.
+        } catch (Exception e) {
             LOGGER.error("[MCRider] 자기 마커 윤곽선 텍스처 생성에 실패했습니다.", e);
         }
     }

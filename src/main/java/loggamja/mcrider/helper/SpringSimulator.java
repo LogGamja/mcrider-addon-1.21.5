@@ -10,8 +10,8 @@ public final class SpringSimulator {
     private static final double TWO_PI       = 2.0 * Math.PI;
 
     public static final class SpringState {
-        public double x; // 변위 (m)
-        public double v; // 속도 (m/s)
+        public double x;
+        public double v;
 
         public SpringState() { this(0.0, 0.0); }
         public SpringState(double x, double v) { this.x = x; this.v = v; }
@@ -19,9 +19,8 @@ public final class SpringSimulator {
 
     private SpringSimulator() {}
 
-    // 한 틱(dt) 동안 적분하여 갱신된 변위/속도를 반환한다
-    // dt 시간 간격 (s, 마인크래프트 기본 0.05), f 공진주파수(Hz), Q 공진 팩터
-    // a 구동 가속도(m/s^2), v 현재 속도(m/s), x 현재 변위(m). 반환값은 갱신된 SpringState(x, v)
+    // 감쇠 조화 진동 시뮬레이션 (x/v: 각도/각속도, a: 각가속도)
+    // dt: 시간 간격(s, 기본 0.05), f: 공진주파수(Hz), Q: 공진 팩터
     public static SpringState step(double dt, double f, double Q,
                                    double a, double v, double x) {
 

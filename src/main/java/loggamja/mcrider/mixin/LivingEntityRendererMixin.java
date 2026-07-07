@@ -42,6 +42,7 @@ public abstract class LivingEntityRendererMixin {
     )
     private void mcrider$captureRoll(LivingEntity entity, LivingEntityRenderState state, float tickDelta, CallbackInfo ci) {
         if (entity instanceof PlayerEntity player && MCRiderMain.isRidingKart(player)) {
+            // 플레이어 몸체만 반대 방향 롤을 적용 (카트/카메라와 다른 방향으로 기울어지는 것은 의도된 동작)
             this.mcrider$roll = -EntityRollManager.getCurrentRoll(player.getUuid());
 
             Entity root = entity.getRootVehicle();

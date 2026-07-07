@@ -86,7 +86,13 @@ public class MCRiderSuspension implements ClientModInitializer {
         // 이번 틱에 카트를 타지 않은 플레이어의 상태 제거
         if (states.size() > processed) {
             final long tc = tickCounter;
-            states.values().removeIf(s -> s.lastSeenTick != tc);
+            states.entrySet().removeIf(e -> {
+                if (e.getValue().lastSeenTick != tc) {
+                    EntityRollManager.remove(e.getKey());
+                    return true;
+                }
+                return false;
+            });
         }
     }
 

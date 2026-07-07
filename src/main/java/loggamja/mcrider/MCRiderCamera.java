@@ -34,7 +34,7 @@ public class MCRiderCamera implements ClientModInitializer {
 
     static double linearTransformTargetBaseDistance = BASE_DISTANCE;
 
-    Vec3d lastPos = null;
+    static Vec3d lastPos = null;
     float speed = 0f;
     public static float realSpeed = 0f;
     public static float actionbarSpeed = 0f;

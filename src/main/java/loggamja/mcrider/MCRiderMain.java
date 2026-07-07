@@ -46,6 +46,7 @@ public class MCRiderMain implements ClientModInitializer {
             MCRiderSuspension.clearStates();
         });
         ClientPlayConnectionEvents.DISCONNECT.register((client, handler) -> {
+            isRidingKart = false;
             useLegacyKartStopData = false;
         });
 
@@ -140,6 +141,7 @@ public class MCRiderMain implements ClientModInitializer {
         if (currentSaddleType.equals("none") == isRidingKart) {
             isRidingKart = !isRidingKart;
 
+            MCRiderCamera.lastPos = null;
             MCRiderMinimap.clearAllMap();
             autoThirdPerson();
         }
