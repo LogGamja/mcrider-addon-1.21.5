@@ -65,7 +65,7 @@ public class CameraMixin {
 
         // 3) 이번 프레임 원본 롤(0이어도 그대로 반영해 평균이 0으로 수렴하게 함)
         float raw = EntityRollManager.getCurrentRoll(player.getUuid()) * mcrider$ROLL_MULTIPLIER;
-        var isBike = MCRiderMain.getS2CValue(MCRiderMain.getRidingPlayer(), "data-is-bike");
+        var isBike = MCRiderMain.getS2CValue(player, "data-is-bike");
         if (isBike == 1 && MCRiderConfig.INSTANCE.bikeSuspension == 3) {
             raw /= 4;
         }

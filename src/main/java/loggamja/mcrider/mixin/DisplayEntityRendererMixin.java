@@ -1,7 +1,6 @@
 
 package loggamja.mcrider.mixin;
 
-import loggamja.mcrider.MCRiderMain;
 import loggamja.mcrider.MCRiderSuspension;
 import loggamja.mcrider.helper.EntityRollManager;
 import loggamja.mcrider.interfaces.DisplayEntityRenderStateAccessor;
@@ -76,7 +75,9 @@ public class DisplayEntityRendererMixin {
         accessor.mcrider$setUuid(entity.getUuid());
 
         // pivotYOffset이 클수록 회전 중심이 위로 올라간다.
-        if (MCRiderMain.isRidingKart && entity.hasVehicle()) {
+        // "나"의 전역 탑승 여부가 아니라 이 엔티티 자체가 차량에 타고 있는지로만 판단한다 -
+        // 다른 플레이어의 카트 바디는 내 탑승 상태와 무관하게 항상 올바른 피벗이 필요하다
+        if (entity.hasVehicle()) {
             double pivotY = entity.getY() - entity.getRootVehicle().getY() - MCRiderSuspension.pivotYOffset;
             accessor.mcrider$setPivotY(pivotY);
         } else {

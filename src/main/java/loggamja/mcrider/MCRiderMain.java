@@ -38,6 +38,7 @@ public class MCRiderMain implements ClientModInitializer {
         });
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
             EntityRollManager.clear();
+            MCRiderSuspension.clearStates();
         });
 
         MCRiderConfig.INSTANCE.load();
@@ -78,12 +79,15 @@ public class MCRiderMain implements ClientModInitializer {
         return !getSaddleType(kartSaddle).equals("none");
     }
     public static boolean getAllowModelRotation(Entity kartMobil) {
+        return getAllowModelRotation(kartMobil, getRidingPlayer());
+    }
+    public static boolean getAllowModelRotation(Entity kartMobil, PlayerEntity player) {
         if (hasCertainName(kartMobil, "mcrider-stop")) useLegacyKartStopData = true;
 
         if (useLegacyKartStopData) {
             return !hasCertainName(kartMobil, "mcrider-stop");
         }
-        return getS2CValue(getRidingPlayer(), "state-allow-model-rotation") == 1;
+        return getS2CValue(player, "state-allow-model-rotation") == 1;
     }
     public static boolean isPlayingInGame() {
         MinecraftClient client = MinecraftClient.getInstance();
@@ -130,7 +134,6 @@ public class MCRiderMain implements ClientModInitializer {
 
             if (!isRidingKart) {
                 useLegacyKartStopData = false;
-                EntityRollManager.clear();
             }
             MCRiderMinimap.clearAllMap();
             autoThirdPerson();
