@@ -74,7 +74,16 @@ final class MCRiderOptionTable {
                     v -> MCRiderConfig.INSTANCE.bikeSuspension = v
             ),
             new ToggleDef(
-                    new String[]{"mcrider.option.track_minimap.off", "mcrider.option.track_minimap.on", "mcrider.option.track_minimap.debug"},
+                    new String[]{
+                            "mcrider.option.track_minimap.off",
+                            "mcrider.option.track_minimap.bottom_left",
+                            "mcrider.option.track_minimap.bottom_right",
+                            "mcrider.option.track_minimap.left_middle",
+                            "mcrider.option.track_minimap.right_middle",
+                            "mcrider.option.track_minimap.top_left",
+                            "mcrider.option.track_minimap.top_right",
+                            "mcrider.option.track_minimap.debug"
+                    },
                     "mcrider.tooltip.track_minimap",
                     () -> MCRiderConfig.INSTANCE.useMinimap,
                     v -> MCRiderConfig.INSTANCE.useMinimap = v

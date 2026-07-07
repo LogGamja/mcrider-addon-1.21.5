@@ -46,7 +46,12 @@
   "mcrider.tooltip.bike_suspension": "Change bike suspension effect when enable suspension effect.",
 
   "mcrider.option.track_minimap.off": "Track Minimap: OFF",
-  "mcrider.option.track_minimap.on": "Track Minimap: ON",
+  "mcrider.option.track_minimap.bottom_left": "Track Minimap: Bottom Left",
+  "mcrider.option.track_minimap.bottom_right": "Track Minimap: Bottom Right",
+  "mcrider.option.track_minimap.left_middle": "Track Minimap: Left Middle",
+  "mcrider.option.track_minimap.right_middle": "Track Minimap: Right Middle",
+  "mcrider.option.track_minimap.top_left": "Track Minimap: Top Left",
+  "mcrider.option.track_minimap.top_right": "Track Minimap: Top Right",
   "mcrider.option.track_minimap.debug": "Track Minimap: DEBUG",
   "mcrider.tooltip.track_minimap": "Automatically search the track and display a minimap with rider positions when riding a kart.",
 

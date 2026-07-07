@@ -340,11 +340,23 @@ final class MinimapRenderer {
         }
 
         final double sizeFactor = getSizeFactor(client);
+        final int screenWidth = client.getWindow().getScaledWidth();
         final int screenHeight = client.getWindow().getScaledHeight();
         final double scaledPadding = padding * sizeFactor;
         final double scaledRadius = radius * sizeFactor;
-        final int centerX = (int) Math.round(scaledPadding + scaledRadius);
-        final int centerY = (int) Math.round(screenHeight - scaledPadding - scaledRadius);
+
+        // 미니맵 위치 옵션에 따른 렌더링
+        final int position = MCRiderConfig.INSTANCE.useMinimap;
+        final boolean isRight = position == 2 || position == 4 || position == 6;
+        final int centerX = (int) Math.round(isRight
+                ? screenWidth - scaledPadding - scaledRadius
+                : scaledPadding + scaledRadius);
+        final int centerY = switch (position) {
+            case 3, 4 -> screenHeight / 2;
+            case 5, 6 -> (int) Math.round(scaledPadding + scaledRadius);
+            default -> (int) Math.round(screenHeight - scaledPadding - scaledRadius);
+        };
+
         final int viewX1 = (int) Math.round(centerX - scaledRadius);
         final int viewY1 = (int) Math.round(centerY - scaledRadius);
         final int viewX2 = (int) Math.round(centerX + scaledRadius);

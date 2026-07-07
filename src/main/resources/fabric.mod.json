@@ -8,8 +8,8 @@
 		"LogGamja"
 	],
 	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
+		"homepage": "https://modrinth.com/mod/mcrider",
+		"sources": "https://github.com/LogGamja/mcrider-addon-1.21.5"
 	},
 	"license": "CC0-1.0",
 	"icon": "assets/mcrider-official/icon.png",

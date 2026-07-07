@@ -46,7 +46,12 @@
   "mcrider.tooltip.bike_suspension": "서스펜션 효과 활성화 시 바이크의 서스펜션 연출을 변경합니다.",
 
   "mcrider.option.track_minimap.off": "트랙 미니맵: 꺼짐",
-  "mcrider.option.track_minimap.on": "트랙 미니맵: 켜짐",
+  "mcrider.option.track_minimap.bottom_left": "트랙 미니맵: 좌측 하단",
+  "mcrider.option.track_minimap.bottom_right": "트랙 미니맵: 우측 하단",
+  "mcrider.option.track_minimap.left_middle": "트랙 미니맵: 좌측 중간",
+  "mcrider.option.track_minimap.right_middle": "트랙 미니맵: 우측 중간",
+  "mcrider.option.track_minimap.top_left": "트랙 미니맵: 좌측 상단",
+  "mcrider.option.track_minimap.top_right": "트랙 미니맵: 우측 상단",
   "mcrider.option.track_minimap.debug": "트랙 미니맵: 디버그",
   "mcrider.tooltip.track_minimap": "카트 탑승 시 주변 환경을 자동으로 탐색해 미니맵과 라이더 위치를 보여줍니다.",
 

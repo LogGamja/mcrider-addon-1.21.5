@@ -24,7 +24,7 @@ public class MCRiderMinimap implements ClientModInitializer {
     private static final Logger LOGGER = LoggerFactory.getLogger("mcrider");
 
     public static boolean isDebugColors() {
-        return MCRiderConfig.INSTANCE.useMinimap == 2;
+        return MCRiderConfig.INSTANCE.useMinimap == 7;
     }
     public static final boolean EXCLUDE_NARROW_PATHS = true;
 
@@ -34,8 +34,6 @@ public class MCRiderMinimap implements ClientModInitializer {
     public void onInitializeClient() {
         ClientTickEvents.START_CLIENT_TICK.register(client -> onTickStart());
 
-        // 채팅과 겹칠 때 항상 미니맵이 위에 보이도록 CHAT 레이어 뒤에 붙이고
-        // hudHidden(F1)도 CHAT 레이어의 렌더 조건을 그대로 물려받아 자동으로 함께 감춰지게 한다
         HudLayerRegistrationCallback.EVENT.register(layeredDrawer ->
                 layeredDrawer.attachLayerAfter(IdentifiedLayer.CHAT,
                         Identifier.of("mcrider-official", "minimap_hud"),
