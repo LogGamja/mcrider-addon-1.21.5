@@ -1,9 +1,7 @@
 package loggamja.mcrider.helper;
 
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 public class EntityRollManager {
@@ -43,16 +41,6 @@ public class EntityRollManager {
 
     public static void clear() {
         rollStates.clear();
-    }
-
-    /** stillPresent에 없는 UUID의 엔트리를 전부 지운다. 월드를 나갔다 들어오길 반복하는 다른
-     *  플레이어들의 항목이 무기한 쌓이는 것을 막기 위해, 호출부가 주기적으로(매 틱이 아니라)
-     *  현재 월드의 플레이어 UUID 집합을 넘겨 호출한다. */
-    public static void pruneExcept(Set<UUID> stillPresent) {
-        Iterator<UUID> it = rollStates.keySet().iterator();
-        while (it.hasNext()) {
-            if (!stillPresent.contains(it.next())) it.remove();
-        }
     }
 
     public record RollState(

@@ -50,6 +50,7 @@ public class ClientPlayNetworkHandlerMixin {
 
     @Unique
     float mcrider$extractSpeed(String text) {
+        if (!text.contains("km/h")) return Float.NaN; // 정규식 엔진을 돌리기 전 저렴한 1차 필터링
         Matcher m = mcrider$SPEED_PATTERN.matcher(text);
         if (m.find()) {
             return Math.max(Float.parseFloat(m.group(1)), 0);

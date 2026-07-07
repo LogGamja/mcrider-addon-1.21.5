@@ -141,19 +141,45 @@ final class MinimapRenderer {
         MCRiderMinimap.client.getTextureManager().registerTexture(MINIMAP_ID, texture);
     }
 
+    // 재빌드를 여러 틱에 나눠 이어그릴 때 쓰는 상태. 재앵커 직후 visitedColumns 전체를 한
+    // 프레임에 순회하면 오래 탐색된 대용량 트랙에서 프레임이 오래 걸릴 수 있어, 스냅샷을 떠
+    // repaintDirtyColumns와 같은 예산으로 여러 틱에 걸쳐 이어 그린다.
+    private static long[] rebuildKeys = null;
+    private static int rebuildIndex = 0;
+    private static boolean rebuildInProgress = false;
+
     private static void rebuildTexture(BlockPos center) {
         ensureTexture();
         originX = center.getX() - TEX_SIZE / 2;
         originZ = center.getZ() - TEX_SIZE / 2;
         originSet = true;
         image.fillRect(0, 0, TEX_SIZE, TEX_SIZE, 0);
-        LongIterator it = FrontierSearch.visitedColumns.keySet().longIterator();
-        while (it.hasNext()) {
-            long key = it.nextLong();
-            plotColumn(FrontierSearch.unpackColumnX(key), FrontierSearch.unpackColumnZ(key));
-        }
-        markAllDirty(); // fillRect로 전체를 지웠으므로 전체를 다시 올려야 한다.
+        markAllDirty(); // 지운 화면을 즉시 반영. 재도색 자체는 아래에서 여러 틱에 걸쳐 이어진다.
         FrontierSearch.dirtyColumns.clear();
+        rebuildKeys = FrontierSearch.visitedColumns.keySet().toLongArray();
+        rebuildIndex = 0;
+        rebuildInProgress = true;
+    }
+
+    /** rebuildTexture가 시작한 재도색을 이번 틱 예산만큼 이어 그린다(repaintDirtyColumns와
+     *  같은 예산 상수 공유). 한 틱에 다 못 그리면 다음 틱에 이어서 계속되고, 그동안 미니맵은
+     *  방금 지워진 상태에서 서서히 다시 채워진다 — 재앵커 직후 한 프레임이 통째로 오래
+     *  걸리는 것보다는 여러 틱에 나눠 자연스럽게 다시 그려지는 편이 낫다는 판단. */
+    private static void continueRebuildIfInProgress() {
+        if (!rebuildInProgress) return;
+        final long deadline = System.nanoTime() + REPAINT_TIME_BUDGET_NANOS;
+        int budget = REPAINT_HARD_CAP_PER_TICK;
+        int sinceTimeCheck = 0;
+        while (rebuildIndex < rebuildKeys.length && budget > 0) {
+            long key = rebuildKeys[rebuildIndex++];
+            plotColumn(FrontierSearch.unpackColumnX(key), FrontierSearch.unpackColumnZ(key));
+            budget--;
+            if ((++sinceTimeCheck & 0xFF) == 0 && System.nanoTime() >= deadline) break;
+        }
+        if (rebuildIndex >= rebuildKeys.length) {
+            rebuildInProgress = false;
+            rebuildKeys = null;
+        }
     }
 
     /** originSet이 아니거나 플레이어가 재앵커 여유 범위를 벗어났으면 텍스처를 재생성한다.
@@ -169,6 +195,7 @@ final class MinimapRenderer {
                 rebuildTexture(start);
             }
         }
+        continueRebuildIfInProgress();
     }
 
     static void plotColumn(int worldX, int worldZ) {

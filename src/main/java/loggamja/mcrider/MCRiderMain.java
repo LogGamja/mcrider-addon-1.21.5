@@ -45,18 +45,9 @@ public class MCRiderMain implements ClientModInitializer {
     }
     //MinecraftClient mc = MinecraftClient.getInstance();
     //mc.getWindow().setWindowedSize(1024, 768);
-    private static int rollPruneTickCounter = 0;
-    private static final int ROLL_PRUNE_INTERVAL_TICKS = 200;
 
     void onClientTickEnd() {
         if (!isPlayingInGame()) return;
-
-        if (++rollPruneTickCounter >= ROLL_PRUNE_INTERVAL_TICKS) {
-            rollPruneTickCounter = 0;
-            Set<UUID> present = new HashSet<>();
-            for (PlayerEntity p : client.world.getPlayers()) present.add(p.getUuid());
-            EntityRollManager.pruneExcept(present);
-        }
 
         Entity vehicle = getRidingPlayer().getVehicle();
         currentSaddleType = getSaddleType(vehicle);
