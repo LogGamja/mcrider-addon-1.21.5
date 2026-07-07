@@ -7,6 +7,8 @@ import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
 import it.unimi.dsi.fastutil.longs.LongIterator;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.util.math.BlockPos;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static loggamja.mcrider.minimap.ColorGraph.NO_ID;
 
@@ -37,18 +39,81 @@ final class FrontierSearch {
     static { cellColor.defaultReturnValue(NO_ID); }
 
     // 예산
-    static final int STAGING_BUDGET_PER_TICK = 512;
-    static final long STAGING_TIME_BUDGET_NANOS = 500_000L; // 0.5ms
+    static final int STAGING_BUDGET_PER_TICK = 1024;
+    static final long STAGING_TIME_BUDGET_NANOS = 1_000_000L; // 1ms (50ms 틱의 2%)
     /** 착지/텔레포트 직후처럼 뷰 반경 안에 아직 못 훑은 프론티어가 남아있을 때만 쓰는 확장
      *  예산. 뷰 반경(REANCHOR_MARGIN과 동일)이 다 채워지면 다음 틱부터 STAGING_*으로 복귀한다.
      *  MinimapRenderer의 REPAINT 예산(이미 그려진 셀 재도색)과는 별개라 서로 간섭하지 않는다. */
     static final int URGENT_SEARCH_RANGE = MinimapRenderer.REANCHOR_MARGIN;
-    static final int URGENT_SEARCH_BUDGET_PER_TICK = 6000;
-    static final long URGENT_SEARCH_TIME_BUDGET_NANOS = 3_000_000L; // 3ms (50ms 틱의 6%)
+    static final int URGENT_SEARCH_BUDGET_PER_TICK = 4096;
+    static final long URGENT_SEARCH_TIME_BUDGET_NANOS = 4_000_000L; // 4ms (50ms 틱의 8%)
     /** activeColor 전환 히스테리시스: 같은 후보 색이 이 값만큼 연속으로 나와야 전환한다.
      *  벽 경계처럼 anchor 판정이 매 틱 흔들리는 위치에서 activeColor가 잡음성으로 반복
      *  전환되는 것을 막는다. */
     static final int ACTIVE_COLOR_SWITCH_STREAK = 3;
+
+    // ---- STAGING/URGENT 예산 캘리브레이팅용 임시 계측. 튜닝 끝나면 DEBUG_BUDGET_LOG를 false로
+    // 돌리거나 이 블록과 floodFillWithVertical 안의 계측 코드를 통째로 지운다. 1초(20틱)마다
+    // staging/urgent 각각 호출 횟수, 평균/최대 소요 시간, 평균 처리 셀 수, 그리고 "시간 예산에
+    // 걸려 멈춤" vs "카운트 예산에 걸려 멈춤" 횟수를 한 줄로 요약해 찍는다. ----
+    private static final Logger DEBUG_BUDGET_LOGGER = LoggerFactory.getLogger("mcrider");
+    private static final boolean DEBUG_BUDGET_LOG = true;
+    private static final int DEBUG_LOG_INTERVAL_TICKS = 20;
+    private static int debugTicksInWindow = 0;
+    private static int debugStagingCalls = 0, debugUrgentCalls = 0;
+    private static long debugStagingNanosSum = 0, debugUrgentNanosSum = 0;
+    private static long debugStagingNanosMax = 0, debugUrgentNanosMax = 0;
+    private static long debugStagingCellsSum = 0, debugUrgentCellsSum = 0;
+    private static int debugStagingTimeStops = 0, debugUrgentTimeStops = 0;
+    private static int debugStagingCountStops = 0, debugUrgentCountStops = 0;
+
+    private static void debugRecordBudgetUsage(boolean urgent, long elapsedNanos, int cellsUsed,
+                                                boolean timeStop, boolean countStop) {
+        if (!DEBUG_BUDGET_LOG) return;
+        if (urgent) {
+            debugUrgentCalls++;
+            debugUrgentNanosSum += elapsedNanos;
+            debugUrgentNanosMax = Math.max(debugUrgentNanosMax, elapsedNanos);
+            debugUrgentCellsSum += cellsUsed;
+            if (timeStop) debugUrgentTimeStops++;
+            if (countStop) debugUrgentCountStops++;
+        } else {
+            debugStagingCalls++;
+            debugStagingNanosSum += elapsedNanos;
+            debugStagingNanosMax = Math.max(debugStagingNanosMax, elapsedNanos);
+            debugStagingCellsSum += cellsUsed;
+            if (timeStop) debugStagingTimeStops++;
+            if (countStop) debugStagingCountStops++;
+        }
+
+        if (++debugTicksInWindow >= DEBUG_LOG_INTERVAL_TICKS) {
+            if (debugStagingCalls > 0) {
+                DEBUG_BUDGET_LOGGER.info(
+                        "[BudgetDebug] STAGING calls={} avg={}us max={}us avgCells={} timeStop={} countStop={}",
+                        debugStagingCalls,
+                        debugStagingNanosSum / debugStagingCalls / 1000,
+                        debugStagingNanosMax / 1000,
+                        debugStagingCellsSum / debugStagingCalls,
+                        debugStagingTimeStops, debugStagingCountStops);
+            }
+            if (debugUrgentCalls > 0) {
+                DEBUG_BUDGET_LOGGER.info(
+                        "[BudgetDebug] URGENT  calls={} avg={}us max={}us avgCells={} timeStop={} countStop={}",
+                        debugUrgentCalls,
+                        debugUrgentNanosSum / debugUrgentCalls / 1000,
+                        debugUrgentNanosMax / 1000,
+                        debugUrgentCellsSum / debugUrgentCalls,
+                        debugUrgentTimeStops, debugUrgentCountStops);
+            }
+            debugTicksInWindow = 0;
+            debugStagingCalls = 0; debugUrgentCalls = 0;
+            debugStagingNanosSum = 0; debugUrgentNanosSum = 0;
+            debugStagingNanosMax = 0; debugUrgentNanosMax = 0;
+            debugStagingCellsSum = 0; debugUrgentCellsSum = 0;
+            debugStagingTimeStops = 0; debugUrgentTimeStops = 0;
+            debugStagingCountStops = 0; debugUrgentCountStops = 0;
+        }
+    }
 
     // 표시/탐색용 activeSet
 
@@ -266,6 +331,8 @@ final class FrontierSearch {
         if (urgent && updatePixel < URGENT_SEARCH_BUDGET_PER_TICK) {
             updatePixel = URGENT_SEARCH_BUDGET_PER_TICK;
         }
+        final long debugCallStart = DEBUG_BUDGET_LOG ? System.nanoTime() : 0;
+        final int debugBudgetAtStart = updatePixel;
 
         // 보류 프론티어 복귀. FrontierQueue가 range/loaded 조건에 맞는 exile 청크를 찾아
         // revivedScratch에 모아주면, 여기서는 각 셀의 활성 여부만 판정해 재분류한다.
@@ -300,6 +367,10 @@ final class FrontierSearch {
                 if (bucket == null) continue; // 이미 다른 경로로 비워졌을 수 있음(방어적)
 
                 while (!bucket.isEmpty()) {
+                    // 이 루프의 반복 하나(셀 하나 처리)는 이미 수 μs급이라 nanoTime() 호출
+                    // 오버헤드(수십 ns)가 무시할 수준이다. 배칭하면 오히려 그 배치 크기만큼
+                    // 예산을 초과해서 흘려보내게 되므로(실측: 256개 배칭 시 최대 ~1ms 초과),
+                    // 매 반복 정확히 체크한다.
                     if (System.nanoTime() >= deadline) {
                         stop = true;
                         break;
@@ -386,6 +457,14 @@ final class FrontierSearch {
                 }
                 if (stop) break;
             }
+        }
+
+        if (DEBUG_BUDGET_LOG) {
+            long elapsedNanos = System.nanoTime() - debugCallStart;
+            int cellsUsed = debugBudgetAtStart - updatePixel;
+            boolean countStop = updatePixel <= 0;
+            boolean timeStop = stop && !countStop;
+            debugRecordBudgetUsage(urgent, elapsedNanos, cellsUsed, timeStop, countStop);
         }
     }
 

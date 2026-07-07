@@ -21,8 +21,6 @@ import net.minecraft.util.math.Vec3d;
 import loggamja.mcrider.option.MCRiderConfig;
 import loggamja.mcrider.MCRiderMain;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 
 import static loggamja.mcrider.minimap.ColorGraph.NO_ID;
@@ -50,7 +48,6 @@ final class MinimapRenderer {
     private static final int TEX_SIZE = 512;
     private static final double SQRT2 = Math.sqrt(2.0);
     static final int REANCHOR_MARGIN = (int) Math.ceil(maxDist * SQRT2) + 8;
-    private static final Identifier MINIMAP_ID = Identifier.of("mcrider-official", "minimap");
     private static final int VISITED_COLOR = 0xBBCCCCCC;
 
     private static final float IMAGE_CORRECTION_TRICK = 0.001f;
@@ -61,67 +58,106 @@ final class MinimapRenderer {
 
     private static final float ENEMY_HEAD_OUTLINE_THICKNESS = 0.4f;
     private static final int ENEMY_HEAD_OUTLINE_COLOR = 0xFF000000;
-    private static final int SELF_OVERLAP_ALPHA = 0x80;
+    // 70.71%(1/sqrt(2)) 알파. 255 * 0.7071 ≈ 180(0xB4).
+    private static final int SELF_MARKER_ALPHA = 0xB4;
 
-    private static NativeImage image;
-    private static NativeImageBackedTexture texture;
-    private static boolean textureDirty = false;
-    private static int originX, originZ;
-    private static boolean originSet = false;
+    /** 텍스처 하나(원본 이미지 + GPU 텍스처 + 원점 + dirty 상태) 전체를 묶은 버퍼. front는
+     *  지금 화면에 보이는 텍스처, back은 재앵커 시 화면 뒤에서 조용히 새로 준비하는 텍스처다.
+     *  back이 다 채워지면 참조만 맞바꿔(swapBuffers) 화면에 표시하므로, 재앵커 중에도
+     *  "비었다가 채워지는" 깜빡임이나 "밀던 도중" 상태가 화면에 보이는 일이 없다. */
+    private static final class TextureBuffer {
+        final Identifier id;
+        NativeImage image;
+        NativeImageBackedTexture texture;
+        int originX, originZ;
+        boolean originSet = false;
+        boolean textureDirty = false;
+        final IntOpenHashSet dirtyTiles = new IntOpenHashSet();
+        boolean uploadWholeTexture = false;
+
+        TextureBuffer(Identifier id) { this.id = id; }
+
+        void ensure() {
+            if (texture != null) return;
+            image = new NativeImage(NativeImage.Format.RGBA, TEX_SIZE, TEX_SIZE, false);
+            image.fillRect(0, 0, TEX_SIZE, TEX_SIZE, 0);
+            texture = new NativeImageBackedTexture(() -> "mcrider-minimap-" + id.getPath(), image);
+            MCRiderMinimap.client.getTextureManager().registerTexture(id, texture);
+        }
+
+        void markPixelDirty(int tx, int tz) {
+            if (tx < 0 || tx >= TEX_SIZE || tz < 0 || tz >= TEX_SIZE) return;
+            dirtyTiles.add(tileKey(tx / TILE_SIZE, tz / TILE_SIZE));
+            textureDirty = true;
+        }
+
+        void markAllDirty() {
+            dirtyTiles.clear();
+            uploadWholeTexture = true;
+            textureDirty = true;
+        }
+
+        void clearUploadState() {
+            dirtyTiles.clear();
+            uploadWholeTexture = false;
+        }
+
+        /** dirty 영역을 NativeImage에서 GPU 텍스처로 복사(1.21.5 blaze3d GPU 경로). 전체 업로드
+         *  상황이면 한 번에, 아니면 dirty 타일만 개별로 올린다. */
+        void uploadDirtyRegion() {
+            if (image == null || texture == null) { clearUploadState(); return; }
+            if (!uploadWholeTexture && dirtyTiles.isEmpty()) return;
+            var encoder = RenderSystem.getDevice().createCommandEncoder();
+            if (uploadWholeTexture) {
+                encoder.writeToTexture(texture.getGlTexture(), image, 0, 0, 0, TEX_SIZE, TEX_SIZE, 0, 0);
+                clearUploadState();
+                return;
+            }
+            it.unimi.dsi.fastutil.ints.IntIterator it = dirtyTiles.iterator();
+            while (it.hasNext()) {
+                int key = it.nextInt();
+                int tileX = key / TILES_PER_ROW;
+                int tileZ = key % TILES_PER_ROW;
+                int minX = tileX * TILE_SIZE;
+                int minY = tileZ * TILE_SIZE;
+                int w = Math.min(TILE_SIZE, TEX_SIZE - minX);
+                int h = Math.min(TILE_SIZE, TEX_SIZE - minY);
+                encoder.writeToTexture(texture.getGlTexture(), image, 0, minX, minY, w, h, minX, minY);
+            }
+            clearUploadState();
+        }
+
+        void plotColumn(int worldX, int worldZ) {
+            if (image == null || !originSet) return;
+            int tx = worldX - originX;
+            int tz = worldZ - originZ;
+            if (tx < 0 || tx >= TEX_SIZE || tz < 0 || tz >= TEX_SIZE) return;
+            image.setColorArgb(tx, tz, computeColumnColor(worldX, worldZ));
+            markPixelDirty(tx, tz);
+        }
+
+        void reset() {
+            if (image != null) {
+                image.fillRect(0, 0, TEX_SIZE, TEX_SIZE, 0);
+                markAllDirty();
+            }
+            originSet = false;
+        }
+    }
+
+    private static final Identifier MINIMAP_ID_A = Identifier.of("mcrider-official", "minimap_a");
+    private static final Identifier MINIMAP_ID_B = Identifier.of("mcrider-official", "minimap_b");
+    private static TextureBuffer front = new TextureBuffer(MINIMAP_ID_A);
+    private static TextureBuffer back = new TextureBuffer(MINIMAP_ID_B);
 
     // 텍스처 부분 업로드는 "단일 바운딩 박스"가 아니라 "타일 단위 dirty 집합"으로 관리한다.
     // 멀리 떨어진 두 dirty 덩어리를 하나의 사각형으로 감싸면 사실상 풀업로드가 되므로,
     // TILE_SIZE 단위로 쪼개 실제로 바뀐 타일만 올린다.
     private static final int TILE_SIZE = 32;
     private static final int TILES_PER_ROW = TEX_SIZE / TILE_SIZE;
-    private static final IntOpenHashSet dirtyTiles = new IntOpenHashSet();
-
-    private static boolean uploadWholeTexture = false;
 
     private static int tileKey(int tileX, int tileZ) {
         return tileX * TILES_PER_ROW + tileZ;
-    }
-
-    private static void markPixelDirty(int tx, int tz) {
-        if (tx < 0 || tx >= TEX_SIZE || tz < 0 || tz >= TEX_SIZE) return;
-        dirtyTiles.add(tileKey(tx / TILE_SIZE, tz / TILE_SIZE));
-        textureDirty = true;
-    }
-
-    private static void markAllDirty() {
-        dirtyTiles.clear();
-        uploadWholeTexture = true;
-        textureDirty = true;
-    }
-
-    private static void clearUploadState() {
-        dirtyTiles.clear();
-        uploadWholeTexture = false;
-    }
-
-    /** dirty 영역을 NativeImage에서 GPU 텍스처로 복사(1.21.5 blaze3d GPU 경로). 전체 업로드
-     *  상황이면 한 번에, 아니면 dirty 타일만 개별로 올린다. */
-    private static void uploadDirtyRegion() {
-        if (image == null || texture == null) { clearUploadState(); return; }
-        if (!uploadWholeTexture && dirtyTiles.isEmpty()) return;
-        var encoder = RenderSystem.getDevice().createCommandEncoder();
-        if (uploadWholeTexture) {
-            encoder.writeToTexture(texture.getGlTexture(), image, 0, 0, 0, TEX_SIZE, TEX_SIZE, 0, 0);
-            clearUploadState();
-            return;
-        }
-        it.unimi.dsi.fastutil.ints.IntIterator it = dirtyTiles.iterator();
-        while (it.hasNext()) {
-            int key = it.nextInt();
-            int tileX = key / TILES_PER_ROW;
-            int tileZ = key % TILES_PER_ROW;
-            int minX = tileX * TILE_SIZE;
-            int minY = tileZ * TILE_SIZE;
-            int w = Math.min(TILE_SIZE, TEX_SIZE - minX);
-            int h = Math.min(TILE_SIZE, TEX_SIZE - minY);
-            encoder.writeToTexture(texture.getGlTexture(), image, 0, minX, minY, w, h, minX, minY);
-        }
-        clearUploadState();
     }
 
     // 재도색 예산
@@ -133,78 +169,97 @@ final class MinimapRenderer {
      *  한 틱이 무한정 길어지는 것을 막는다. 평소엔 시간 예산이 먼저 걸려 거의 도달하지 않는다. */
     private static final int REPAINT_HARD_CAP_PER_TICK = 200_000;
 
-    private static void ensureTexture() {
-        if (texture != null) return;
-        image = new NativeImage(NativeImage.Format.RGBA, TEX_SIZE, TEX_SIZE, false);
-        image.fillRect(0, 0, TEX_SIZE, TEX_SIZE, 0);
-        texture = new NativeImageBackedTexture(() -> "mcrider-minimap", image);
-        MCRiderMinimap.client.getTextureManager().registerTexture(MINIMAP_ID, texture);
-    }
-
-    // 재빌드를 여러 틱에 나눠 이어그릴 때 쓰는 상태. 재앵커 직후 visitedColumns 전체를 한
-    // 프레임에 순회하면 오래 탐색된 대용량 트랙에서 프레임이 오래 걸릴 수 있어, 스냅샷을 떠
-    // repaintDirtyColumns와 같은 예산으로 여러 틱에 걸쳐 이어 그린다.
-    private static long[] rebuildKeys = null;
-    private static int rebuildIndex = 0;
+    // 재앵커 시 새 화면을 여러 틱에 걸쳐 준비하는 상태. front가 이미 화면에 표시된 적 있으면
+    // back에 새 화면을 준비해 다 채워진 뒤 한 번에 swapBuffers하고(화면엔 계속 front가
+    // 보이므로 깜빡임/찢어짐이 없다), 아직 아무것도 표시된 적 없으면(최초 설정) 굳이 back을
+    // 거칠 필요 없이 front에 바로 채운다.
+    private static TextureBuffer rebuildTarget = null;
+    private static int rebuildPixelIndex = 0;
     private static boolean rebuildInProgress = false;
 
     private static void rebuildTexture(BlockPos center) {
-        ensureTexture();
-        originX = center.getX() - TEX_SIZE / 2;
-        originZ = center.getZ() - TEX_SIZE / 2;
-        originSet = true;
-        image.fillRect(0, 0, TEX_SIZE, TEX_SIZE, 0);
-        markAllDirty(); // 지운 화면을 즉시 반영. 재도색 자체는 아래에서 여러 틱에 걸쳐 이어진다.
-        FrontierSearch.dirtyColumns.clear();
-        rebuildKeys = FrontierSearch.visitedColumns.keySet().toLongArray();
-        rebuildIndex = 0;
+        TextureBuffer target = front.originSet ? back : front;
+        target.ensure();
+        target.originX = center.getX() - TEX_SIZE / 2;
+        target.originZ = center.getZ() - TEX_SIZE / 2;
+        target.originSet = true;
+        target.image.fillRect(0, 0, TEX_SIZE, TEX_SIZE, 0);
+
+        if (target == front) {
+            // 화면에 아직 아무것도 안 보였으므로 지운 상태를 바로 반영해도 문제없다.
+            target.markAllDirty();
+            FrontierSearch.dirtyColumns.clear();
+        }
+        // target이 back인 경우 dirtyColumns는 비우지 않는다 — front는 계속 최신으로 유지되고,
+        // 스왑 후 남은 dirty가 있으면 새 front(옛 back)에 repaintDirtyColumns가 마저 반영한다.
+
+        rebuildTarget = target;
+        rebuildPixelIndex = 0;
         rebuildInProgress = true;
     }
 
     /** rebuildTexture가 시작한 재도색을 이번 틱 예산만큼 이어 그린다(repaintDirtyColumns와
-     *  같은 예산 상수 공유). 한 틱에 다 못 그리면 다음 틱에 이어서 계속되고, 그동안 미니맵은
-     *  방금 지워진 상태에서 서서히 다시 채워진다 — 재앵커 직후 한 프레임이 통째로 오래
-     *  걸리는 것보다는 여러 틱에 나눠 자연스럽게 다시 그려지는 편이 낫다는 판단. */
+     *  같은 예산 상수 공유). rebuildTarget의 텍스처 전체(TEX_SIZE x TEX_SIZE)를 월드 좌표
+     *  기준으로 직접 계산해 채우므로, 트랙 전체 크기와 무관하게 항상 텍스처 크기에만 비례하는
+     *  고정 비용이다. 한 틱에 다 못 그리면 다음 틱에 이어서 계속된다. target이 back이면
+     *  완료 시점에 swapBuffers로 화면에 반영한다. */
     private static void continueRebuildIfInProgress() {
         if (!rebuildInProgress) return;
         final long deadline = System.nanoTime() + REPAINT_TIME_BUDGET_NANOS;
         int budget = REPAINT_HARD_CAP_PER_TICK;
         int sinceTimeCheck = 0;
-        while (rebuildIndex < rebuildKeys.length && budget > 0) {
-            long key = rebuildKeys[rebuildIndex++];
-            plotColumn(FrontierSearch.unpackColumnX(key), FrontierSearch.unpackColumnZ(key));
+        final int total = TEX_SIZE * TEX_SIZE;
+        while (rebuildPixelIndex < total && budget > 0) {
+            int px = rebuildPixelIndex % TEX_SIZE;
+            int pz = rebuildPixelIndex / TEX_SIZE;
+            rebuildTarget.plotColumn(rebuildTarget.originX + px, rebuildTarget.originZ + pz);
+            rebuildPixelIndex++;
             budget--;
             if ((++sinceTimeCheck & 0xFF) == 0 && System.nanoTime() >= deadline) break;
         }
-        if (rebuildIndex >= rebuildKeys.length) {
+        if (rebuildPixelIndex >= total) {
             rebuildInProgress = false;
-            rebuildKeys = null;
+            // 빌드 도중엔 plotColumn이 타일 단위로만 dirty 표시했으므로, 완료 시점에
+            // markAllDirty로 갈아치워 스왑 직후 첫 업로드가 타일 수십 개가 아니라 한 번의
+            // 통짜 업로드로 끝나게 한다.
+            rebuildTarget.markAllDirty();
+            if (rebuildTarget == back) {
+                swapBuffers();
+            }
+            rebuildTarget = null;
+            rebuildPixelIndex = 0;
         }
     }
 
+    private static void swapBuffers() {
+        TextureBuffer tmp = front;
+        front = back;
+        back = tmp;
+    }
+
     /** originSet이 아니거나 플레이어가 재앵커 여유 범위를 벗어났으면 텍스처를 재생성한다.
-     *  onTickStart에서 탐색 직후, 재도색 직전에 호출된다. */
+     *  onTickStart에서 탐색 직후, 재도색 직전에 호출된다. 이미 진행 중인 재빌드가 있으면
+     *  새로 트리거하지 않는다 — front의 원점은 스왑 전까지 안 바뀌므로, 그러지 않으면 플레이어가
+     *  계속 이동하는 동안 매 틱 새로 트리거되어 재빌드가 영원히 못 끝난다. */
     static void ensureOriginFor(BlockPos start) {
-        if (!originSet) {
-            rebuildTexture(start);
-        } else {
-            int cx = start.getX() - (originX + TEX_SIZE / 2);
-            int cz = start.getZ() - (originZ + TEX_SIZE / 2);
-            if (Math.abs(cx) > TEX_SIZE / 2 - REANCHOR_MARGIN
-                    || Math.abs(cz) > TEX_SIZE / 2 - REANCHOR_MARGIN) {
+        front.ensure();
+        if (!rebuildInProgress) {
+            if (!front.originSet) {
                 rebuildTexture(start);
+            } else {
+                int cx = start.getX() - (front.originX + TEX_SIZE / 2);
+                int cz = start.getZ() - (front.originZ + TEX_SIZE / 2);
+                if (Math.abs(cx) > TEX_SIZE / 2 - REANCHOR_MARGIN
+                        || Math.abs(cz) > TEX_SIZE / 2 - REANCHOR_MARGIN) {
+                    rebuildTexture(start);
+                }
             }
         }
         continueRebuildIfInProgress();
     }
 
     static void plotColumn(int worldX, int worldZ) {
-        if (image == null || !originSet) return;
-        int tx = worldX - originX;
-        int tz = worldZ - originZ;
-        if (tx < 0 || tx >= TEX_SIZE || tz < 0 || tz >= TEX_SIZE) return;
-        image.setColorArgb(tx, tz, computeColumnColor(worldX, worldZ));
-        markPixelDirty(tx, tz);
+        front.plotColumn(worldX, worldZ);
     }
     private static boolean isInCurrentView(int worldX, int worldZ, int px, int pz) {
         double dx = worldX - px;
@@ -213,7 +268,10 @@ final class MinimapRenderer {
         return dx * dx + dz * dz <= r * r;
     }
     static void repaintDirtyColumns(BlockPos start) {
-        if (FrontierSearch.dirtyColumns.isEmpty() || !originSet) return;
+        if (FrontierSearch.dirtyColumns.isEmpty() || !front.originSet) return;
+        // back이 재빌드 중이면 같은 변경분을 back에도 반영해야, 완료 후 스왑됐을 때 그 사이
+        // 새로 칠해진 컬럼이 back에서 누락되지 않는다.
+        boolean mirrorToBack = rebuildInProgress && rebuildTarget == back;
 
         int px = start.getX(), pz = start.getZ();
         final long repaintDeadline = System.nanoTime() + REPAINT_TIME_BUDGET_NANOS;
@@ -226,7 +284,8 @@ final class MinimapRenderer {
             long key = dirtyIt.nextLong();
             int wx = FrontierSearch.unpackColumnX(key), wz = FrontierSearch.unpackColumnZ(key);
             if (isInCurrentView(wx, wz, px, pz)) {
-                plotColumn(wx, wz);
+                front.plotColumn(wx, wz);
+                if (mirrorToBack) back.plotColumn(wx, wz);
                 dirtyIt.remove();
                 hardCap--;
             }
@@ -240,7 +299,9 @@ final class MinimapRenderer {
             dirtyIt = FrontierSearch.dirtyColumns.iterator();
             while (dirtyIt.hasNext() && hardCap > 0) {
                 long key = dirtyIt.nextLong();
-                plotColumn(FrontierSearch.unpackColumnX(key), FrontierSearch.unpackColumnZ(key));
+                int wx = FrontierSearch.unpackColumnX(key), wz = FrontierSearch.unpackColumnZ(key);
+                front.plotColumn(wx, wz);
+                if (mirrorToBack) back.plotColumn(wx, wz);
                 dirtyIt.remove();
                 hardCap--;
                 if ((++sinceTimeCheck & 0xFF) == 0 && System.nanoTime() >= repaintDeadline) break;
@@ -306,15 +367,15 @@ final class MinimapRenderer {
     static void renderMinimap(DrawContext context, float tickDelta) {
         if (MCRiderConfig.INSTANCE.useMinimap == 0) return;
         if (!MCRiderMain.isRidingKart) return;
-        if (FrontierSearch.visitedColumns.isEmpty() || !originSet) return;
+        if (FrontierSearch.visitedColumns.isEmpty() || !front.originSet) return;
         if (!MCRiderMain.isPlayingInGame()) return;
 
         MinecraftClient client = MCRiderMinimap.client;
 
-        ensureTexture();
-        if (textureDirty) {
-            uploadDirtyRegion();
-            textureDirty = false;
+        front.ensure();
+        if (front.textureDirty) {
+            front.uploadDirtyRegion();
+            front.textureDirty = false;
         }
 
         final double sizeFactor = getSizeFactor(client);
@@ -336,8 +397,8 @@ final class MinimapRenderer {
         final double blockToScreen = scaledRadius / maxDist;
         final int texRegion = 2 * (int) Math.ceil(maxDist * SQRT2);
         final int drawSize = (int) Math.round(texRegion * blockToScreen);
-        final float u0 = (float) (p.x - originX - texRegion / 2.0);
-        final float v0 = (float) (p.z - originZ - texRegion / 2.0);
+        final float u0 = (float) (p.x - front.originX - texRegion / 2.0);
+        final float v0 = (float) (p.z - front.originZ - texRegion / 2.0);
 
         // enableScissor/disableScissor는 DrawContext 내부의 진짜 push/pop 스택이라, 그 사이에서
         // 어떤 예외가 나든 disableScissor가 실행되도록 try/finally로 짝을 보장한다. 한 번이라도
@@ -352,7 +413,7 @@ final class MinimapRenderer {
                 matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(180f - yawDeg));
                 matrices.translate(-drawSize / 2f, -drawSize / 2f, 0);
                 context.drawTexture(
-                        RenderLayer::getGuiTextured, MINIMAP_ID,
+                        RenderLayer::getGuiTextured, front.id,
                         0, 0, u0, v0, drawSize, drawSize, texRegion, texRegion, TEX_SIZE, TEX_SIZE);
             } finally {
                 matrices.pop();
@@ -370,22 +431,12 @@ final class MinimapRenderer {
         final float iconSize = (float) (RIDER_ICON_SIZE * sizeFactor);
         final float enemyIconSize = iconSize * ENEMY_ICON_SCALE;
         final float selfIconSize = iconSize;
-        // 자기/상대 아이콘 둘 다 카트 헤딩에 따라 회전해서 그려지므로, 축 정렬 겹침 판정에는
-        // 회전 안 된 절반 크기가 아니라 45도 회전 시의 최악값(대각선 절반 = size/2 * √2)을 써야
-        // 한다. 그렇지 않으면 대각선 방향 헤딩에서 실제로는 겹치는데도 놓칠 수 있다.
-        final float enemyHalfExtent = (float) (enemyIconSize / 2f * SQRT2) + ENEMY_HEAD_OUTLINE_THICKNESS;
-        final float selfHalfExtent = (float) (selfIconSize / 2f * SQRT2);
 
         final double yawRad = Math.toRadians(yawDeg);
         final double fx = -Math.sin(yawRad);
         final double fz = Math.cos(yawRad);
         final double rx = Math.cos(yawRad);
         final double rz = Math.sin(yawRad);
-
-        // 자기 마커에 가려질 상대(자기 마커 영역과 겹치는 상대)는 나중에 반투명 재도색이
-        // 필요하므로 따로 모아둔다. 상대방끼리 겹치는 건 신경 쓰지 않는다.
-        final List<AbstractClientPlayerEntity> overlappingPlayers = new ArrayList<>();
-        final List<float[]> overlappingIcons = new ArrayList<>(); // {dotX, dotY, relativeYaw}
 
         for (AbstractClientPlayerEntity other : Objects.requireNonNull(client.world).getPlayers()) {
             if (other == MCRiderMain.getRidingPlayer()) continue;
@@ -406,41 +457,13 @@ final class MinimapRenderer {
             final float enemyKartYaw = getKartBodyYaw(other);
             final float relativeYaw = (enemyKartYaw - yawDeg) + IMAGE_CORRECTION_TRICK;
             drawEnemyHead(context, other, dotX, dotY, enemyIconSize, relativeYaw);
-
-            if (Math.abs(dotX - centerX) < selfHalfExtent + enemyHalfExtent
-                    && Math.abs(dotY - centerY) < selfHalfExtent + enemyHalfExtent) {
-                overlappingPlayers.add(other);
-                overlappingIcons.add(new float[]{dotX, dotY, relativeYaw});
-            }
         }
 
-        // 자기 마커는 맨 마지막에 그려서, 겹치는 적 마커에 가려지지 않고 항상 위에 보이게 한다.
+        // 자기 마커는 맨 마지막에 반투명으로 그려서, 겹치는 적 마커 위에 항상 보이게 하면서도
+        // 그 밑의 적 마커가 비쳐 보이게 한다.
         final float myKartYaw = getKartBodyYaw(MCRiderMain.getRidingPlayer());
         final float delta = (myKartYaw - yawDeg) + IMAGE_CORRECTION_TRICK;
-        drawSelfMarker(context, centerX, centerY, selfIconSize, delta, 0xFF);
-
-        // 자기 마커가 가린 상대만, 겹친 영역에 한해 상대를 다시 그리고 그 위에 반투명한
-        // 자기 마커를 덧그려 둘 다 보이게 한다.
-        for (int i = 0; i < overlappingPlayers.size(); i++) {
-            final float[] icon = overlappingIcons.get(i);
-            final float dotX = icon[0], dotY = icon[1], relativeYaw = icon[2];
-
-            final int left = (int) Math.floor(Math.max(centerX - selfHalfExtent, dotX - enemyHalfExtent));
-            final int top = (int) Math.floor(Math.max(centerY - selfHalfExtent, dotY - enemyHalfExtent));
-            final int right = (int) Math.ceil(Math.min(centerX + selfHalfExtent, dotX + enemyHalfExtent));
-            final int bottom = (int) Math.ceil(Math.min(centerY + selfHalfExtent, dotY + enemyHalfExtent));
-            if (right <= left || bottom <= top) continue;
-
-            // scissor는 push/pop 스택이라(위 renderMinimap 주석 참고) 반드시 disableScissor로
-            // 짝을 맞춰야 하며, try/finally로 감싸 중간에 예외가 나도 pop이 보장되게 한다.
-            context.enableScissor(left, top, right, bottom);
-            try {
-                drawEnemyHead(context, overlappingPlayers.get(i), dotX, dotY, enemyIconSize, relativeYaw);
-                drawSelfMarker(context, centerX, centerY, selfIconSize, delta, SELF_OVERLAP_ALPHA);
-            } finally {
-                context.disableScissor();
-            }
-        }
+        drawSelfMarker(context, centerX, centerY, selfIconSize, delta, SELF_MARKER_ALPHA);
     }
 
     private static float getKartBodyYaw(PlayerEntity player) {
@@ -518,10 +541,10 @@ final class MinimapRenderer {
     }
 
     static void reset() {
-        if (image != null) {
-            image.fillRect(0, 0, TEX_SIZE, TEX_SIZE, 0);
-            markAllDirty();
-        }
-        originSet = false;
+        front.reset();
+        back.reset();
+        rebuildInProgress = false;
+        rebuildTarget = null;
+        rebuildPixelIndex = 0;
     }
 }
