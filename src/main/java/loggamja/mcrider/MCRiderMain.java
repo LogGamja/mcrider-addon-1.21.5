@@ -5,6 +5,7 @@ import loggamja.mcrider.option.MCRiderConfig;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import loggamja.mcrider.helper.EntityRollManager;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.Perspective;
@@ -39,6 +40,9 @@ public class MCRiderMain implements ClientModInitializer {
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
             EntityRollManager.clear();
             MCRiderSuspension.clearStates();
+        });
+        ClientPlayConnectionEvents.DISCONNECT.register((client, handler) -> {
+            useLegacyKartStopData = false;
         });
 
         MCRiderConfig.INSTANCE.load();
@@ -132,9 +136,6 @@ public class MCRiderMain implements ClientModInitializer {
         if (currentSaddleType.equals("none") == isRidingKart) {
             isRidingKart = !isRidingKart;
 
-            if (!isRidingKart) {
-                useLegacyKartStopData = false;
-            }
             MCRiderMinimap.clearAllMap();
             autoThirdPerson();
         }

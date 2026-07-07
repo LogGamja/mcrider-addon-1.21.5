@@ -5,6 +5,7 @@ import loggamja.mcrider.helper.SpringSimulator;
 import loggamja.mcrider.option.MCRiderConfig;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
@@ -44,11 +45,15 @@ public class MCRiderSuspension implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         ClientTickEvents.END_CLIENT_TICK.register(client -> onClientTick());
+
+        // EntityRollManager는 자체 정리 로직이 없어 여기서 안 비우면 마인크래프트 종료까지 계속 쌓인다
+        ClientPlayConnectionEvents.DISCONNECT.register((client, handler) -> {
+            EntityRollManager.clear();
+            clearStates();
+        });
     }
 
     private void onClientTick() {
-        // 여기선 "나"의 탑승 여부와 무관하게 항상 돌린다 - 각 플레이어 필터링은 아래 루프의
-        // isRidingKart(player)가 개별적으로 담당하므로, 내가 안 타는 중에도 남들 롤은 계속 갱신돼야 한다
         if (!MCRiderMain.isPlayingInGame()) return;
 
         var world = MinecraftClient.getInstance().world;

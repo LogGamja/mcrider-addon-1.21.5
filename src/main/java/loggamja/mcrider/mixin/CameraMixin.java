@@ -55,7 +55,7 @@ public class CameraMixin {
         float dt = (mcrider$lastTime == 0L) ? 0f : (now - mcrider$lastTime) / 1.0e9f;
         mcrider$lastTime = now;
 
-        // 프레임 요동/멈춤 대비: 음수 제거 + 상한 클램프
+        // 프레임 요동 / 멈춤 대비: 음수 제거 + 상한 클램프
         if (dt < 0f) dt = 0f;
         if (dt > mcrider$MAX_DT) dt = mcrider$MAX_DT;
 
