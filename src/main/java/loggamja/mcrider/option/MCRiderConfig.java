@@ -41,6 +41,7 @@ public class MCRiderConfig {
             if (loaded != null) {
                 INSTANCE = loaded;
                 MCRiderOptionTable.clampAllToggles();
+                MCRiderOptionTable.clampAllSliders();
             }
         } catch (IOException e) {
             LOGGER.error("[MCRider] 설정 파일을 불러오는 데 실패했습니다.", e);

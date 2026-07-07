@@ -100,4 +100,11 @@ final class MCRiderOptionTable {
             if (clamped != current) def.setter().accept(clamped);
         }
     }
+    static void clampAllSliders() {
+        for (SliderDef def : SLIDERS) {
+            double current = def.getter().getAsDouble();
+            double clamped = Math.max(def.min(), Math.min(current, def.max()));
+            if (clamped != current) def.setter().accept((float) clamped);
+        }
+    }
 }

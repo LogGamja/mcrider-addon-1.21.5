@@ -10,6 +10,7 @@ import net.minecraft.client.render.entity.state.DisplayEntityRenderState;
 import net.minecraft.util.math.AffineTransformation;
 import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 
@@ -25,9 +26,9 @@ public class DisplayEntityRendererMixin {
 
     // 렌더링은 클라이언트 단일 스레드에서만 도니 재사용 가능. 롤 회전 중인 엔티티마다 매 프레임
     // new Matrix4f를 할당하던 것을 없애 GC 압박을 줄인다.
-    private static final Matrix4f mcrider$scratchOriginal = new Matrix4f();
-    private static final Matrix4f mcrider$scratchInverse = new Matrix4f();
-    private static final Matrix4f mcrider$scratchRoll = new Matrix4f();
+    @Unique private static final Matrix4f mcrider$scratchOriginal = new Matrix4f();
+    @Unique private static final Matrix4f mcrider$scratchInverse = new Matrix4f();
+    @Unique private static final Matrix4f mcrider$scratchRoll = new Matrix4f();
 
     // render() 호출 시 MatrixStack에 roll rotation을 주입합니다.
     // AT 타겟: setupTransforms 이후, 실제 geometry 렌더링 직전

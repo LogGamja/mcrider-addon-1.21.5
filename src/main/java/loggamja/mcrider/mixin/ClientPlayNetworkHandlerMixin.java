@@ -24,6 +24,7 @@ public class ClientPlayNetworkHandlerMixin {
 
     @Inject(method = "onOverlayMessage", at = @At("HEAD"))
     private void mcrider$onHandleGameMessage(OverlayMessageS2CPacket packet, CallbackInfo ci) {
+        if (!MinecraftClient.getInstance().isOnThread()) return;
         if (!MCRiderMain.isRidingKart || !MCRiderMain.isPlayingInGame()) return;
 
         Text message = packet.text();

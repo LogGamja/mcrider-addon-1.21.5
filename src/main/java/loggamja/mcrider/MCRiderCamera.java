@@ -8,6 +8,7 @@ import net.minecraft.client.option.Perspective;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.tick.TickManager;
 
 import java.util.ArrayList;
@@ -156,7 +157,8 @@ public class MCRiderCamera implements ClientModInitializer {
     public static float interpolate(float current, float target, float temporalGradient) {
         float tickInterval = getTickRate();
 
-        float alpha = tickInterval * temporalGradient;
+        // 틱레이트가 극단적으로 느려지면 alpha가 1을 넘어 목표를 지나쳐 진동
+        float alpha = MathHelper.clamp(tickInterval * temporalGradient, 0f, 1f);
         return current + (target - current) * alpha;
     }
     public static float getCameraDistanceOffset(float originalDistance) {

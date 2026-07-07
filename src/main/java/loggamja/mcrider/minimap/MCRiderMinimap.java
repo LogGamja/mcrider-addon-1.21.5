@@ -83,6 +83,8 @@ public class MCRiderMinimap implements ClientModInitializer {
         MinimapRenderer.repaintDirtyColumns(start);
     }
     public static void clearAllMap() {
+        lastWorld = null;
+
         FrontierSearch.reset();
         ColorGraph.reset();
         MinimapRenderer.reset();

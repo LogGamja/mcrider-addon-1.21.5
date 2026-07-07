@@ -209,6 +209,8 @@ public class MCRiderMain implements ClientModInitializer {
     }
     float getOverShootAngle(float deltaAngle) {
         var overShootAngle = deltaAngle;
+
+        // 1.0 엔진은 클램프 구현하지 않음
         if (kartEngine == 7) {
             if (deltaAngle <= -55) overShootAngle = -110f - deltaAngle;
             if (55 <= deltaAngle) overShootAngle = 110f - deltaAngle;

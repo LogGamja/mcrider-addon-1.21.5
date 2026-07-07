@@ -26,6 +26,7 @@ public class MCRiderSettingScreen extends Screen {
         int startY = topGap + 24;
 
         MCRiderOptionTable.clampAllToggles();
+        MCRiderOptionTable.clampAllSliders();
 
         var toggles = MCRiderOptionTable.TOGGLES;
         int buttonsPerRow = 2;
@@ -96,11 +97,7 @@ public class MCRiderSettingScreen extends Screen {
 
         // Exit button
         this.addDrawableChild(
-            ButtonWidget.builder(Text.translatable("mcrider.setting.ok"), button -> {
-                    assert this.client != null;
-                    this.client.setScreen(new GameMenuScreen(true));
-                    MCRiderConfig.INSTANCE.save();
-                })
+            ButtonWidget.builder(Text.translatable("mcrider.setting.ok"), button -> this.close())
                 .position(startX, startY + (toggleRows + sliders.length) * spacing)
                 .size(buttonWidth, buttonHeight)
                 .build()
@@ -111,5 +108,12 @@ public class MCRiderSettingScreen extends Screen {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         context.drawCenteredTextWithShadow(this.textRenderer, Text.translatable("mcrider.setting.title"), this.width / 2, 15, 0xFFFFFF);
         super.render(context, mouseX, mouseY, delta);
+    }
+
+    @Override
+    public void close() {
+        assert this.client != null;
+        this.client.setScreen(new GameMenuScreen(true));
+        MCRiderConfig.INSTANCE.save();
     }
 }
