@@ -30,6 +30,12 @@ public class MCRiderMain implements ClientModInitializer {
 
     public static boolean isRidingKart = false;
 
+    // 미니맵 내 카트 아이콘 회전 보간용
+    private static float prevKartYaw = 0f;
+    private static float currentKartYaw = 0f;
+    private static boolean hasKartYawHistory = false;
+    private static boolean isKartYawUpdatedThisTick = false;
+
     static MinecraftClient client = MinecraftClient.getInstance();
 
     @Override
@@ -47,6 +53,7 @@ public class MCRiderMain implements ClientModInitializer {
         ClientPlayConnectionEvents.DISCONNECT.register((client, handler) -> {
             isRidingKart = false;
             useLegacyKartStopData = false;
+            hasKartYawHistory = false;
         });
 
         MCRiderConfig.INSTANCE.load();
@@ -67,6 +74,8 @@ public class MCRiderMain implements ClientModInitializer {
         }
 
         updateRidingState();
+
+        isKartYawUpdatedThisTick = false;
 
         if (MCRiderConfig.INSTANCE.MCRiderRotationOption > 0) {
             if (isRidingKart && getRidingPlayer() == client.player) {
@@ -185,6 +194,10 @@ public class MCRiderMain implements ClientModInitializer {
         for (var i: passengers) {
             if (hasCertainName(i, "mcrider-direction")) {
                 var kartModelRotation = calculateRotation(i.getYaw());
+                prevKartYaw = hasKartYawHistory ? currentKartYaw : kartModelRotation;
+                currentKartYaw = kartModelRotation;
+                hasKartYawHistory = true;
+                isKartYawUpdatedThisTick = true;
 
                 for (var j : passengers) {
                     if (hasCertainName(j, "mcrider-modelsaddle")) {
@@ -195,6 +208,13 @@ public class MCRiderMain implements ClientModInitializer {
                 break;
             }
         }
+    }
+    public static boolean hasTrackedSelfKartYaw() {
+        return isKartYawUpdatedThisTick;
+    }
+
+    public static float getInterpolatedSelfKartYaw(float tickDelta) {
+        return MathHelper.lerpAngleDegrees(tickDelta, prevKartYaw, currentKartYaw);
     }
     float calculateRotation(float directionYaw) {
         var playerYaw = playerYawBuffer.getFirst();

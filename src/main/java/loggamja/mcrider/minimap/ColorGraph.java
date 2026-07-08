@@ -139,6 +139,8 @@ final class ColorGraph {
             FrontierSearch.activeColor = survivor;
         }
 
+        // 불변식: mergeColors는 항상 rescanCycles(do-while)로 끝나므로 모든 사이클이 완전히 해결됨.
+        // 따라서 FrontierSearch.hasEdge 스킵이 안전한 상태가 됨.
         rescanCycles(survivor);
     }
 
@@ -208,6 +210,7 @@ final class ColorGraph {
 
     static void absorbInto(long loser, long survivor) {
         actualColorCount--; // loser는 호출 시점에 항상 resolve된(자기 자신을 가리키던) 루트였다
+        // 불변식: columnsByRoot 이전 전에 dirty 마킹. 순서 중요 (컬럼 activeSet 상태 전환 감지).
         FrontierSearch.markColumnsDirtyForRoot(loser);
         // loser가 searchActiveSet 소속 survivor로 흡수되면, loser 쪽 색으로 파킹돼 있던 셀들이
         // 이제 resolve()를 거쳐 활성 트리로 편입된다. loser가 자손 없는 색이면 collectColorSubtree

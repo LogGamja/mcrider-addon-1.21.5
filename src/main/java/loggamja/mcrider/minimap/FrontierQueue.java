@@ -14,6 +14,13 @@ import net.minecraft.util.math.ChunkPos;
 final class FrontierQueue {
     private FrontierQueue() {}
 
+    // 셀 보류 사유: 보류 저장소 선택을 명시적으로
+    enum ParkReason {
+        CHUNK_NOT_LOADED,     // 미로딩 청크 → exiledByChunk로
+        OUT_OF_RANGE,         // 범위 밖 → exiledByChunk로
+        COLOR_INACTIVE        // 활성 색 아님 → inactiveColorParked로
+    }
+
     // 활성 프론티어를 청크 단위로 묶어 보관: chunkKey(ChunkPos.toLong)에 대기 셀 목록
     // 청크별로 몰아 처리하면 BlockSearch의 청크 캐시(4슬롯) 히트율이 오른다
     // 모든 셀은 frontierByChunk, exiledByChunk, inactiveColorParked 중 하나에만 존재한다
@@ -24,10 +31,9 @@ final class FrontierQueue {
     static Long2ObjectOpenHashMap<LongArrayList> exiledByChunk = new Long2ObjectOpenHashMap<>();
 
     // 색이 searchActiveSet에 없어(=활성 트리 소속 아님) 보류된 셀 전용 저장소.
-    // 청크는 이미 로드돼 있고 범위 안(플레이어 바로 옆인 경우가 많음 - 예: 벽으로 갈린 옆 차선)이라
-    // exiledByChunk에 같이 넣으면 drainExiledWithinRange가 매 틱 되살렸다가 다시 파킹하는
-    // park/revive 무한 반복이 생겨 실제 탐색 예산을 매 틱 잠식한다. 그래서 별도로 분리해 두고
-    // searchActiveSet이 실제로 재계산될 때만(플레이어 색 전환/색 그래프 병합) 되살린다.
+    // park(CHUNK_NOT_LOADED/OUT_OF_RANGE)와 달리 청크는 이미 로드돼 있고 범위 안이라
+    // exiledByChunk에 넣으면 drainExiledWithinRange가 매 틱 되살렸다가 다시 파킹하는
+    // 무한 반복이 생겨 탐색 예산을 낭비한다. 그래서 별도 저장소로 분리.
     static final LongOpenHashSet inactiveColorParked = new LongOpenHashSet();
 
     // drainExiledWithinRange가 채우는 재사용 리스트(매 틱 new 방지). floodFill은 재진입하지 않는다
@@ -84,17 +90,22 @@ final class FrontierQueue {
         if (taxiDistance2D(cx, cz, sx, sz) <= maxRange) {
             push(cell, cx, cz);
         } else {
-            park(cell, cx, cz);
+            park(cell, cx, cz, ParkReason.OUT_OF_RANGE);
         }
     }
 
-    static void park(long packedPos, int worldX, int worldZ) {
-        long key = ChunkPos.toLong(worldX >> 4, worldZ >> 4);
-        getOrCreateBucket(exiledByChunk, key, 4).add(packedPos);
+    static void park(long packedPos, int worldX, int worldZ, ParkReason reason) {
+        if (reason == ParkReason.COLOR_INACTIVE) {
+            inactiveColorParked.add(packedPos);
+        } else {
+            long key = ChunkPos.toLong(worldX >> 4, worldZ >> 4);
+            getOrCreateBucket(exiledByChunk, key, 4).add(packedPos);
+        }
     }
 
+    // 편의 오버로드: COLOR_INACTIVE 전용 (호출부 간결함)
     static void parkInactiveColor(long packedPos) {
-        inactiveColorParked.add(packedPos);
+        park(packedPos, 0, 0, ParkReason.COLOR_INACTIVE);
     }
 
     // searchActiveSet이 실제로 재계산됐을 때만 호출된다. 지금까지 색이 안 맞아 보류됐던 셀을
@@ -139,7 +150,7 @@ final class FrontierQueue {
     // 로딩됐고 sx,sz 기준 maxRange 안에 든 exile 청크의 셀을 모두 revivedScratch에 모으고 그 청크들을 exile 맵에서 제거한다
     // exile 맵을 순회하며 직접 enqueue/park하면 항목이 누락될 수 있어 후보만 여기서 안전하게 모아 반환한다
     // deadline을 넘기면 그때까지 모은 것만 두고 true(타임아웃)를 돌려준다
-    // 호출부는 타임아웃이면 이미 꺼낸 셀들을 park으로 되돌려 다음 틱 재평가로 미룬다
+    // 못 다 처리한 revivedScratch 잔여분은 호출부(processRevivedExiledCells)가 인덱스를 들고 다음 틱에 이어서 처리한다
     static boolean drainExiledWithinRange(int sx, int sz, int maxRange, long deadline) {
         revivedScratch.clear();
         boolean timedOut = false;

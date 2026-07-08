@@ -74,10 +74,8 @@ public class MCRiderMinimap implements ClientModInitializer {
         int searchRange = (int) ((MinimapRenderer.maxDist + playerMargin * 2) * 2);
         FrontierSearch.floodFillWithVertical(start, searchRange, FrontierSearch.STAGING_BUDGET_PER_TICK);
 
-        // 텍스처 (재)생성 전에 activeColor/activeSet을 먼저 확정한다
-        // 순서가 바뀌면 rebuildTexture가 새 컬럼을 잘못(투명하게) 그릴 수 있다
-        // floodFill이 정상 완주하면 이미 activeColor를 갱신하고 나오므로 그때는 보정을 건너뛴다(하향 스캔 반복 + 히스테리시스 이중 증가 방지)
-        // 초기 리턴한 경우에만 보정
+        // 순서 불변식: floodFill(병합/paint) → rebuildActiveSet → ensureOriginFor → repaintDirtyColumns
+        // ensureOriginFor 호출 시점에 이번 틱 dirty 마킹이 완료됨. 픽셀 복사는 stale이 아님.
         if (!FrontierSearch.activeColorUpdatedThisTick) {
             FrontierSearch.updateActiveColor(start);
         }

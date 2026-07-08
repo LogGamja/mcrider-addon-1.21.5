@@ -162,30 +162,36 @@ final class MinimapRenderer {
     private static boolean rebuildInProgress = false;
 
     // 재앵커 스크롤 재사용: 겹침 영역은 복사, 새 영역은 재계산. 복사도 예산 큐로 여러 틱에 분산.
-    // front는 repaintDirtyColumns가 항상 최신으로 유지하므로 stale 문제 없음.
-    private static final int MAX_REBUILD_RECTS = 3; // 0: 복사(있으면), 1~2: 계산 L자
-    private static final int[] rebuildRectX = new int[MAX_REBUILD_RECTS];
-    private static final int[] rebuildRectZ = new int[MAX_REBUILD_RECTS];
-    private static final int[] rebuildRectW = new int[MAX_REBUILD_RECTS];
-    private static final int[] rebuildRectH = new int[MAX_REBUILD_RECTS];
-    private static final boolean[] rebuildRectIsCopy = new boolean[MAX_REBUILD_RECTS];
+    private static final class RebuildRect {
+        int x, z, w, h;
+        boolean isCopy;
+        int copyDx, copyDz;  // 복사 사각형 전용: dst -> src 오프셋
+    }
+    private static final RebuildRect[] rebuildRects = new RebuildRect[3];
     private static int rebuildRectCount = 0;
     private static int rebuildRectCursor = 0;      // 현재 처리 중인 사각형 인덱스
     private static int rebuildRectLocalIndex = 0;  // 그 사각형 안에서의 진행도(픽셀 단위)
-    private static int rebuildCopyDx = 0;          // 복사 사각형 전용: dst -> src 오프셋
-    private static int rebuildCopyDz = 0;
+
+    static {
+        for (int i = 0; i < rebuildRects.length; i++) {
+            rebuildRects[i] = new RebuildRect();
+        }
+    }
 
     private static void addRebuildRect(int x, int z, int w, int h, boolean isCopy) {
         if (w <= 0 || h <= 0) return;
-        rebuildRectX[rebuildRectCount] = x;
-        rebuildRectZ[rebuildRectCount] = z;
-        rebuildRectW[rebuildRectCount] = w;
-        rebuildRectH[rebuildRectCount] = h;
-        rebuildRectIsCopy[rebuildRectCount] = isCopy;
+        RebuildRect rect = rebuildRects[rebuildRectCount];
+        rect.x = x;
+        rect.z = z;
+        rect.w = w;
+        rect.h = h;
+        rect.isCopy = isCopy;
         rebuildRectCount++;
     }
 
     private static void rebuildTexture(BlockPos center) {
+        // 불변식: onTickStart가 floodFill → rebuildTexture 순서이므로 dirty 마킹 완료.
+        // 픽셀 복사는 stale이 아님.
         // 현재 색이 확정되지 않으면 아무 상태도 바꾸지 않고 미룬다(다음 틱 ensureOriginFor가 재시도).
         // originSet을 커밋한 뒤 리턴하면 재시도가 끊기고 칠 안 된 origin이 확정되므로 반드시 최상단에서 막는다.
         if (!MCRiderMinimap.isDebugColors() && FrontierSearch.activeColor == NO_ID) {
@@ -220,11 +226,10 @@ final class MinimapRenderer {
             int destX0 = Math.max(0, -dx);
             int destZ0 = Math.max(0, -dz);
 
-            // 복사 자체를 예산 큐의 사각형 하나로 등록한다(동기 실행 아님). dst 픽셀 -> src 픽셀은
-            // 항상 +dx,+dz 오프셋이므로 사각형 좌표만으로 나중에 재구성할 수 있다.
-            rebuildCopyDx = dx;
-            rebuildCopyDz = dz;
+            // 복사 사각형 등록 및 오프셋 저장
             addRebuildRect(destX0, destZ0, overlapW, overlapH, true);
+            rebuildRects[rebuildRectCount - 1].copyDx = dx;
+            rebuildRects[rebuildRectCount - 1].copyDz = dz;
 
             // 겹치지 않는 부분만 L자(세로 띠 + 가로 띠)로 정확히, 중복 없이 나눠 계산 대상에 넣는다.
             if (dx > 0) {
@@ -261,23 +266,22 @@ final class MinimapRenderer {
         int sinceTimeCheck = 0;
 
         while (budget > 0 && rebuildRectCursor < rebuildRectCount) {
-            int rx = rebuildRectX[rebuildRectCursor];
-            int rz = rebuildRectZ[rebuildRectCursor];
-            int w = rebuildRectW[rebuildRectCursor];
-            int total = w * rebuildRectH[rebuildRectCursor];
-            boolean isCopy = rebuildRectIsCopy[rebuildRectCursor];
+            RebuildRect rect = rebuildRects[rebuildRectCursor];
+            int w = rect.w;
+            int total = w * rect.h;
 
             while (rebuildRectLocalIndex < total && budget > 0) {
                 int lx = rebuildRectLocalIndex % w;
                 int lz = rebuildRectLocalIndex / w;
-                if (isCopy) {
-                    int tx = rx + lx;
-                    int tz = rz + lz;
-                    // front는 repaintDirtyColumns가 매 틱 최신 유지. 외곽 stale은 표시 범위 밖이라 OK.
-                    int argb = front.image.getColorArgb(tx + rebuildCopyDx, tz + rebuildCopyDz);
+                if (rect.isCopy) {
+                    int tx = rect.x + lx;
+                    int tz = rect.z + lz;
+                    // 안전성: onTickStart 순서가 floodFill(dirty마킹) → rebuildTexture이므로 stale 아님.
+                    // 재빌드 중 dirty는 mirrorToBack으로 cover. repaintDirtyColumns가 범위 필터링.
+                    int argb = front.image.getColorArgb(tx + rect.copyDx, tz + rect.copyDz);
                     rebuildTarget.image.setColorArgb(tx, tz, argb);
                 } else {
-                    rebuildTarget.plotColumn(rebuildTarget.originX + rx + lx, rebuildTarget.originZ + rz + lz);
+                    rebuildTarget.plotColumn(rebuildTarget.originX + rect.x + lx, rebuildTarget.originZ + rect.z + lz);
                 }
                 rebuildRectLocalIndex++;
                 budget--;
@@ -327,9 +331,6 @@ final class MinimapRenderer {
         continueRebuildIfInProgress();
     }
 
-    static void plotColumn(int worldX, int worldZ) {
-        front.plotColumn(worldX, worldZ);
-    }
     private static boolean isInCurrentView(int worldX, int worldZ, int px, int pz) {
         double dx = worldX - px;
         double dz = worldZ - pz;
@@ -514,11 +515,14 @@ final class MinimapRenderer {
         final double rx = Math.cos(yawRad);
         final double rz = Math.sin(yawRad);
 
-        final float myKartYaw = getKartBodyYaw(MCRiderMain.getRidingPlayer());
+        // 내 카트 아이콘 회전 보간용
+        final float myKartYaw = MCRiderMain.hasTrackedSelfKartYaw()
+                ? MCRiderMain.getInterpolatedSelfKartYaw(tickDelta)
+                : getKartBodyYaw(MCRiderMain.getRidingPlayer(), tickDelta);
         final float delta = (myKartYaw - yawDeg) + IMAGE_CORRECTION_TRICK;
 
-        // 렌더 순서: 몸체(흰색) -> 적 -> 윤곽선. 몸체는 적에게 가려질 수 있지만, 윤곽선은
-        // 항상 맨 위라 겹쳐도 테두리는 보인다.
+        // 렌더 순서: 몸체(흰색), 적, 윤곽선. 몸체는 적에게 가려질 수 있지만
+        // 윤곽선은 항상 맨 위라 겹쳐도 테두리는 보인다
         drawSelfMarker(context, centerX, centerY, selfIconSize, delta);
 
         for (AbstractClientPlayerEntity other : Objects.requireNonNull(client.world).getPlayers()) {
@@ -537,7 +541,7 @@ final class MinimapRenderer {
             final float dotX = (float) (centerX - localRight * scale);
             final float dotY = (float) (centerY - localForward * scale);
 
-            final float enemyKartYaw = getKartBodyYaw(other);
+            final float enemyKartYaw = getKartBodyYaw(other, tickDelta);
             final float relativeYaw = (enemyKartYaw - yawDeg) + IMAGE_CORRECTION_TRICK;
             drawEnemyHead(context, other, dotX, dotY, enemyIconSize, relativeYaw);
         }
@@ -545,19 +549,19 @@ final class MinimapRenderer {
         drawSelfMarkerOutlined(context, centerX, centerY, selfIconSize, delta);
     }
 
-    private static float getKartBodyYaw(PlayerEntity player) {
+    private static float getKartBodyYaw(PlayerEntity player, float tickDelta) {
         Entity kart = player.getRootVehicle();
         if (kart != null && kart != player) {
             for (Entity passenger : kart.getPassengerList()) {
                 if (MCRiderMain.hasCertainName(passenger, "mcrider-modelsaddle")) {
-                    return passenger.getYaw();
+                    return passenger.getYaw(tickDelta);
                 }
             }
         }
-        return player.getYaw();
+        return player.getYaw(tickDelta);
     }
     private static void drawSelfMarker(DrawContext context, float cx, float cy, float size, float rotationDeg) {
-        // try/finally로 pop을 보장한다 — 누락되면 이후 HUD 요소들이 잘못된 위치/회전으로 그려진다.
+        // try / finally로 pop을 보장한다 — 누락되면 이후 HUD 요소들이 잘못된 위치/회전으로 그려진다
         MatrixStack matrices = context.getMatrices();
         matrices.push();
         try {
@@ -571,9 +575,7 @@ final class MinimapRenderer {
         }
     }
 
-    // 윤곽선 전용 텍스처: 원본 아이콘을 그대로 확대해 얹으면 안쪽까지 덮여 몸체가 적 위로
-    // 올라오므로, 테두리만 불투명하고 안쪽은 투명한 별도 텍스처가 필요하다. arrow_icon.png의
-    // 알파를 팽창시킨 뒤 원본 영역을 빼서 첫 사용 시 코드로 생성한다.
+    // 윤곽선 전용 텍스쳐
     private static final int SELF_MARKER_RING_PAD = 1;
     private static final int SELF_MARKER_RING_RADIUS = 1;
     private static Identifier selfMarkerRingIcon;

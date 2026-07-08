@@ -1,6 +1,5 @@
 package loggamja.mcrider.helper;
 
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientEntityEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.util.math.MathHelper;

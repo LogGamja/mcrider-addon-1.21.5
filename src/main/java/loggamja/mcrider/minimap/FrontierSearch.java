@@ -154,10 +154,15 @@ final class FrontierSearch {
     private static final class ResumableDrain {
         int index = 0;
         boolean inProgress = false;
+        // 드레인 진행 중에 들어온 trigger를 버리지 않고 래치해 둔다 - 진행 중 새로 파킹된 셀들은
+        // 다음 searchActiveSet 변경이 영영 안 올 수 있어, 트리거를 놓치면 영구적으로 되살아나지 못한다
+        private boolean pendingTrigger = false;
 
-        // trigger가 true이고 진행 중이 아닐 때만 fill로 scratch를 새로 채워 드레인을 시작한다
+        // trigger를 래치했다가 진행 중이 아닐 때 fill로 scratch를 새로 채워 드레인을 시작한다
         void beginIfIdle(boolean trigger, LongArrayList scratch, Runnable fill) {
-            if (trigger && !inProgress) {
+            pendingTrigger |= trigger;
+            if (pendingTrigger && !inProgress) {
+                pendingTrigger = false;
                 fill.run();
                 index = 0;
                 inProgress = !scratch.isEmpty();
@@ -189,6 +194,7 @@ final class FrontierSearch {
         void reset() {
             index = 0;
             inProgress = false;
+            pendingTrigger = false;
         }
     }
 
@@ -418,11 +424,11 @@ final class FrontierSearch {
                     int cz = BlockPos.unpackLongZ(curPacked);
 
                     if (maxRange < FrontierQueue.taxiDistance2D(cx, cz, sx, sz)) {
-                        FrontierQueue.park(curPacked, cx, cz);
+                        FrontierQueue.park(curPacked, cx, cz, FrontierQueue.ParkReason.OUT_OF_RANGE);
                         continue;
                     }
                     if (!BlockSearch.isChunkLoadedAt(cx, cz)) {
-                        FrontierQueue.park(curPacked, cx, cz);
+                        FrontierQueue.park(curPacked, cx, cz, FrontierQueue.ParkReason.CHUNK_NOT_LOADED);
                         continue;
                     }
 
@@ -442,7 +448,7 @@ final class FrontierSearch {
                             // drainExiledWithinRange가 매 틱 즉시 되살렸다가 이웃이 여전히 안 뜬 걸
                             // 보고 다시 park하는 핑퐁이 생긴다(청크 로딩 경계/낮은 렌더 거리에서 흔함)
                             if (!parkedSelf) {
-                                FrontierQueue.park(curPacked, nx, nz);
+                                FrontierQueue.park(curPacked, nx, nz, FrontierQueue.ParkReason.CHUNK_NOT_LOADED);
                                 parkedSelf = true;
                             }
                             continue;
@@ -504,11 +510,8 @@ final class FrontierSearch {
                 long childRoot = ColorGraph.resolve(existing);
                 if (parentRoot != childRoot) {
                     // Cycle prevention: don't add edge if childRoot is already ancestor
-                    // 엣지가 이미 있으면 그건 예전에 추가될 때 이미 이 사이클 검사를 통과했고,
-                    // 그 이후 사이클이 생겼다면 rescanCycles가 두 루트를 병합해 resolve가 같아졌을 것
-                    // (그럼 위 parentRoot != childRoot에서 이미 걸러짐)이므로, 지금 엣지가 남아 있다는 건
-                    // childRoot가 여전히 parentRoot의 자손(=조상 아님)이라는 뜻이다. 따라서 조상 BFS를
-                    // 생략해도 결과가 같다. 단방향 긴 트랙에서 이 BFS가 O(색 수)까지 커지는 걸 막는다.
+                    // hasEdge(true) → 조상 BFS 스킵 안전. mergeColors는 항상 rescanCycles(do-while)로
+                    // 모든 새 사이클을 완전히 해결하므로, 엣지 존재 = 사이클 없음.
                     boolean isCycleMergeRequired;
                     if (ColorGraph.hasEdge(parentRoot, childRoot)) {
                         isCycleMergeRequired = false;
@@ -544,11 +547,9 @@ final class FrontierSearch {
         ys.add(y);
         long root = ColorGraph.resolve(color);
         columnsByRoot.computeIfAbsent(root, k -> new LongOpenHashSet()).add(colKey);
-        if (MCRiderMinimap.isDebugColors()) {
-            MinimapRenderer.plotColumn(x, z);
-        } else {
-            dirtyColumns.add(colKey);
-        }
+        // 디버그 모드도 dirtyColumns 경로를 탄다 - front에 직접 그리면 여러 틱에 걸친 back 리빌드 중
+        // 커서가 이미 지나간 영역에 칠해진 픽셀이 mirrorToBack을 못 받아 스왑 후 사라진다
+        dirtyColumns.add(colKey);
     }
 
     static long packColumn(int x, int z) {
