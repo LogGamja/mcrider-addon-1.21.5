@@ -11,10 +11,8 @@ import net.minecraft.util.math.BlockPos;
 
 import static loggamja.mcrider.minimap.ColorGraph.NO_ID;
 
-// 플로드필 탐색 엔진 + 방문 셀/컬럼 저장소
-// 지금까지 어디를 탐색했고 어떤 색인지(cellColor/visitedColumns/columnsByRoot/dirtyColumns)와
-// 지금 뭘 화면에 보여줄지(activeColor/activeSet/searchActiveSet)가 전부 여기 있다
-// ColorGraph와 MinimapRenderer 양쪽이 참조하는 미니맵의 핵심 엔진
+// 플로드필 탐색 엔진이자 방문 셀과 컬럼의 저장소. 무엇을 화면에 보여줄지 담은 activeColor와
+// activeSet. ColorGraph와 MinimapRenderer가 참조하는 미니맵 핵심.
 final class FrontierSearch {
     private FrontierSearch() {}
 
@@ -42,11 +40,8 @@ final class FrontierSearch {
 
     // 표시/탐색용 activeSet
 
-    // root 하나 + colorGraphVersion을 키로 하는 메모이즈드 서브트리 재계산 상태.
-    // activeSet/searchActiveSet 둘 다 이 패턴(스냅샷 루트/버전이 그대로면 재계산 스킵, 아니면
-    // collectColorSubtree로 다시 채우고 직전 값과의 diff용 버퍼를 남김)이라 값 타입으로 뽑았다.
-    // 실제 집합(out)은 Renderer 등 외부에서 activeSet/searchActiveSet을 직접 참조하는 코드가
-    // 많아 그대로 static 필드로 유지하고, 이 클래스는 그 집합을 채우는 캐시 로직만 담당한다.
+    // root와 colorGraphVersion을 키로 하는 메모이즈드 재계산 상태. activeSet과 searchActiveSet이
+    // 같은 패턴을 쓰므로 값 타입으로 뽑았다. 실제 집합은 static 필드 유지하고 캐시 로직만 담당.
     private static final class SubtreeCache {
         long snapshotRoot = NO_ID;
         long version = -1;
@@ -78,16 +73,12 @@ final class FrontierSearch {
 
     // 탐색 필터용 activeSet. 표시용 히스테리시스와 분리해 deadlock 방지
     static final LongOpenHashSet searchActiveSet = new LongOpenHashSet();
-    // colorGraphVersion은 liveRoot와 무관한 곳의 엣지/병합에도 오르는 전역 카운터라,
-    // 버전만 보고 재검사 여부를 판단하면 서브트리와 무관한 변경에도 매번 반응하게 된다.
-    // 재계산된 집합의 실제 내용이 바뀌었을 때만 true를 돌려줘야 inactiveColorParked 전수
-    // 재검사가 진짜로 필요한 경우로 좁혀진다.
+    // colorGraphVersion은 무관한 곳의 변경에도 오르므로 버전만 보고 판단하면 무관한 변경에도
+    // 반응한다. 재계산 결과의 내용이 실제로 바뀌었을 때만 true 반환. inactiveColorParked 재검사는 필요할 때만.
     private static final SubtreeCache searchActiveSetCache = new SubtreeCache();
 
-    // ColorGraph.absorbInto가 searchActiveSet 소속 survivor로 병합을 수행했을 때 켜진다.
-    // 자손 없는 loser가 흡수되면 collectColorSubtree 결과 "내용"은 병합 전후로 동일해
-    // diff가 변경을 못 잡아내지만, loser 색으로 파킹된 셀들은 resolve()를 거쳐 이제 활성
-    // 트리에 속하므로 revive가 필요하다 - 그 갭을 diff와 별도로 메우는 신호
+    // 자손 없는 loser 흡수 후 collectColorSubtree 결과 내용은 같아 diff로 못 잡힌다.
+    // loser 색 파킹 셀들은 이제 활성 트리에 속하므로 revive 필요. 그 빈틈을 diff와 별도로 메우는 신호.
     private static boolean searchActiveSetTouchedByMerge = false;
 
     // ColorGraph.absorbInto 전용 훅: survivor가 지금 searchActiveSet 소속이면 흡수된 loser
@@ -130,13 +121,9 @@ final class FrontierSearch {
         return true;
     }
 
-    // 반환값: searchActiveSet의 실제 내용이 바뀌었는지, 또는 그와 무관하게 revive가 필요한 병합이
-    // 있었는지. colorGraphVersion은 liveRoot와 무관한 곳의 변경에도 오르므로, 재계산 자체가 아니라
-    // 재계산 결과가 이전과 달라졌을 때만 true를 돌려준다 - inactiveColorParked 전수 재검사는
-    // 그럴 가치가 있을 때만 트리거되어야 한다.
-    //
-    // diff만으로는 못 잡는 경우(자식 없는 loser가 이미 활성 서브트리인 survivor에 흡수되는 경우)는
-    // ColorGraph.absorbInto가 noteMergeSurvivor로 세워둔 searchActiveSetTouchedByMerge로 보완한다.
+    // 반환값은 searchActiveSet의 실제 내용이 바뀌었는지 또는 revive가 필요한 병합이 있었는지.
+    // diff만으로는 못 잡는 경우는 ColorGraph.absorbInto가 noteMergeSurvivor로 세워둔
+    // searchActiveSetTouchedByMerge로 보완한다.
     private static boolean rebuildSearchActiveSet(long liveRoot) {
         if (!searchActiveSetCache.recompute(liveRoot, searchActiveSet, true)) return false;
 
@@ -146,11 +133,9 @@ final class FrontierSearch {
         return contentChanged || mergeTouchedActive;
     }
 
-    // "예산 초과 시 인덱스를 들고 다음 틱에 이어간다"는 재개형 드레인 패턴 하나를 캡슐화한 값 타입.
-    // reviveInactiveColorParked/processRevivedExiledCells 둘 다 이 형태라 로직을 한 곳으로 모았다.
-    // scratch 리스트 자체는 호출부가 소유한 것을 그대로 넘겨받는다(복사 없음, 소유권 이전 없음) -
-    // FrontierSearch 소유 리스트(inactiveRevivalScratch)와 FrontierQueue 소유 리스트(revivedScratch)를
-    // 똑같은 방식으로 다루기 위함이다.
+    // 예산 초과 시 인덱스를 들고 다음 틱에 이어가는 재개형 드레인 패턴을 캡슐화한 값 타입.
+    // reviveInactiveColorParked와 processRevivedExiledCells가 같은 형태라 로직을 한 곳으로 모았다.
+    // scratch 리스트는 복사 없이 소유권 이전 없이 그대로 받아 써야 두 저장소를 똑같이 다룬다.
     private static final class ResumableDrain {
         int index = 0;
         boolean inProgress = false;
@@ -204,10 +189,9 @@ final class FrontierSearch {
     private static final LongArrayList inactiveRevivalScratch = new LongArrayList();
     private static final ResumableDrain inactiveRevivalDrain = new ResumableDrain();
 
-    // searchActiveSet이 바뀐 틱에 새로 드레인을 시작하거나(진행 중이 아닐 때만), 이미 진행 중인 드레인을
-    // 이어간다. 색이 안 맞아 보류됐던 셀들을 activeColorOrPark로 재검사해, 이제 활성 트리에 속하면
-    // 프론티어로, 아니면 다시 보류(inactiveColorParked)로 되돌린다. 다른 단계와 같은 deadline을 공유해
-    // 이 단계가 이번 틱의 시간 예산을 독점하지 않게 한다.
+    // searchActiveSet이 바뀐 틱에 새로 드레인을 시작하거나 진행 중인 드레인을 이어간다.
+    // 색이 안 맞아 보류됐던 셀들을 재검사해 활성이면 프론티어로 보내고 아니면 다시 보류.
+    // 다른 단계와 deadline 공유해 이 단계가 시간 예산을 독점하지 않게 한다.
     private static void reviveInactiveColorParked(int sx, int sz, int maxRange, boolean containToActive,
                                                    boolean searchActiveSetChanged, long deadline) {
         inactiveRevivalDrain.beginIfIdle(searchActiveSetChanged, inactiveRevivalScratch, () -> {
@@ -217,11 +201,9 @@ final class FrontierSearch {
         inactiveRevivalDrain.drain(inactiveRevivalScratch, sx, sz, maxRange, containToActive, deadline);
     }
 
-    // FrontierQueue.revivedScratch 처리 재개 상태(매 틱 새로 드레인하지 않고 이어간다).
-    // 타임아웃으로 못 다 처리한 셀은 이미 "청크 로딩됨 + 범위 안"이 확인된 상태이므로
-    // exiledByChunk로 되돌리지 않는다 - 되돌리면 다음 틱 drainExiledWithinRange가 같은 조건을
-    // 또 확인해서 꺼냈다가 또 시간이 없어 못 처리하는 왕복이 생긴다. 대신 인덱스만 들고 있다가
-    // 다음 틱에 바로 이어서 처리한다(reviveInactiveColorParked와 동일 패턴 - ResumableDrain 공유).
+    // FrontierQueue.revivedScratch 처리를 매 틱 새로 드레인하지 않고 이어가는 재개 상태.
+    // 타임아웃한 셀은 이미 로딩 확인돼 있으므로 exile로 되돌리지 않는다. 되돌리면 다음 틱에 같은
+    // 조건을 또 확인하는 왕복 발생. 대신 인덱스만 들고 다음 틱에 이어가서 처리한다.
     private static final ResumableDrain revivedProcessDrain = new ResumableDrain();
 
     private static void processRevivedExiledCells(int sx, int sz, int maxRange, boolean containToActive, long deadline) {
@@ -443,10 +425,9 @@ final class FrontierSearch {
                         int nz = cz + d[1];
 
                         if (!BlockSearch.isChunkLoadedAt(nx, nz)) {
-                            // 실제로 안 뜬 건 이웃(nx,nz)이므로 그 청크 키로 park해야 revive 조건이
-                            // "그 이웃이 로딩됨"이 된다. cx,cz(자기 청크)로 걸면 이미 로딩된 상태라
-                            // drainExiledWithinRange가 매 틱 즉시 되살렸다가 이웃이 여전히 안 뜬 걸
-                            // 보고 다시 park하는 핑퐁이 생긴다(청크 로딩 경계/낮은 렌더 거리에서 흔함)
+                            // 로딩되지 않은 것은 이웃 청크라 그 청크 키로 park해야 그 이웃이 로딩되는 게 revive 조건.
+                            // 자기 청크로 걸면 이미 로딩된 상태라 매 틱 즉시 되살렸다가 다시 park하는 핑퐁.
+                            // 청크 로딩 경계나 낮은 렌더 거리에서 흔히 발생.
                             if (!parkedSelf) {
                                 FrontierQueue.park(curPacked, nx, nz, FrontierQueue.ParkReason.CHUNK_NOT_LOADED);
                                 parkedSelf = true;

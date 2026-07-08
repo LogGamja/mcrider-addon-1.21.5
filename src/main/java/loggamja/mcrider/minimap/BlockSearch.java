@@ -11,6 +11,7 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.chunk.Chunk;
+import net.minecraft.world.chunk.EmptyChunk;
 
 import java.util.function.Predicate;
 
@@ -67,6 +68,11 @@ final class BlockSearch {
             }
         }
         Chunk chunk = MCRiderMinimap.client.world.getChunk(x >> 4, z >> 4);
+        if (chunk instanceof EmptyChunk) {
+            // 미로딩 청크의 EmptyChunk는 캐시하지 않는다 - 캐시 무효화가 언로드 이벤트에만 걸려 있어,
+            // 여기서 캐시하면 그 청크가 나중에 로드돼도 계속 빈 청크를 읽는다
+            return chunk.getBlockState(MUTABLE.set(x, y, z));
+        }
         System.arraycopy(cacheKeys, 0, cacheKeys, 1, CHUNK_CACHE_SLOTS - 1);
         System.arraycopy(cacheChunks, 0, cacheChunks, 1, CHUNK_CACHE_SLOTS - 1);
         cacheKeys[0] = key;
@@ -93,6 +99,11 @@ final class BlockSearch {
     }
     static boolean isChunkLoadedAt(int x, int z) {
         if (MCRiderMinimap.client.world == null) return false;
+        // 4슬롯 캐시에 있는 청크는 반드시 로딩된 청크다(EmptyChunk는 캐시에 안 들어가고, 언로드 시 즉시 제거됨)
+        long key = ChunkPos.toLong(x >> 4, z >> 4);
+        for (int i = 0; i < CHUNK_CACHE_SLOTS; i++) {
+            if (cacheKeys[i] == key && cacheChunks[i] != null) return true;
+        }
         return MCRiderMinimap.client.world.getChunkManager().isChunkLoaded(x >> 4, z >> 4);
     }
     static boolean isStandable(int x, int y, int z, boolean headAlreadyChecked) {

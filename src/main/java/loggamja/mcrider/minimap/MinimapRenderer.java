@@ -190,10 +190,9 @@ final class MinimapRenderer {
     }
 
     private static void rebuildTexture(BlockPos center) {
-        // 불변식: onTickStart가 floodFill → rebuildTexture 순서이므로 dirty 마킹 완료.
-        // 픽셀 복사는 stale이 아님.
-        // 현재 색이 확정되지 않으면 아무 상태도 바꾸지 않고 미룬다(다음 틱 ensureOriginFor가 재시도).
-        // originSet을 커밋한 뒤 리턴하면 재시도가 끊기고 칠 안 된 origin이 확정되므로 반드시 최상단에서 막는다.
+        // onTickStart가 floodFill 다음 rebuildTexture를 호출하므로 dirty 마킹 완료.
+        // 현재 색이 안 정해지면 상태를 바꾸지 않고 미룬다. originSet 커밋 후 리턴하면 재시도가
+        // 끊겨 칠이 안 된 origin이 확정되므로 최상단에서 막아야 한다.
         if (!MCRiderMinimap.isDebugColors() && FrontierSearch.activeColor == NO_ID) {
             return;
         }

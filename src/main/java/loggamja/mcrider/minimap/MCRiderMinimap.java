@@ -50,6 +50,7 @@ public class MCRiderMinimap implements ClientModInitializer {
                 BlockSearch.invalidateChunkCacheAt(chunk.getPos().x, chunk.getPos().z));
     }
     private static World lastWorld = null;
+    private static boolean lastDebugColors = false;
 
     private static void onTickStart() {
         if (MCRiderConfig.INSTANCE.useMinimap == 0) return;
@@ -66,6 +67,14 @@ public class MCRiderMinimap implements ClientModInitializer {
             LOGGER.warn("[MCRider] Minimap color limit exceeded ({}), resetting map.", ColorGraph.actualColorCount);
             clearAllMap();
             return;
+        }
+
+        // 디버그<->일반 전환 시 computeColumnColor의 의미가 통째로 바뀌므로 전체 재도색을 예약한다.
+        // 안 하면 다음 재앵커까지 두 렌더 방식이 섞인 텍스처가 남는다
+        boolean debugColors = isDebugColors();
+        if (debugColors != lastDebugColors) {
+            lastDebugColors = debugColors;
+            FrontierSearch.markAllColumnsDirty();
         }
 
         final int playerMargin = 5;

@@ -30,10 +30,8 @@ final class FrontierQueue {
     // 미로딩/범위 밖 청크에 보류된 프론티어: ChunkPos.toLong에 셀 목록
     static Long2ObjectOpenHashMap<LongArrayList> exiledByChunk = new Long2ObjectOpenHashMap<>();
 
-    // 색이 searchActiveSet에 없어(=활성 트리 소속 아님) 보류된 셀 전용 저장소.
-    // park(CHUNK_NOT_LOADED/OUT_OF_RANGE)와 달리 청크는 이미 로드돼 있고 범위 안이라
-    // exiledByChunk에 넣으면 drainExiledWithinRange가 매 틱 되살렸다가 다시 파킹하는
-    // 무한 반복이 생겨 탐색 예산을 낭비한다. 그래서 별도 저장소로 분리.
+    // 색이 없어 보류된 셀 전용 저장소. 청크는 이미 로드돼 있고 범위 안이라 exiledByChunk에
+    // 넣으면 매 틱 되살렸다가 다시 파킹하는 무한 반복이 생긴다. 그래서 별도 저장소로 분리.
     static final LongOpenHashSet inactiveColorParked = new LongOpenHashSet();
 
     // drainExiledWithinRange가 채우는 재사용 리스트(매 틱 new 방지). floodFill은 재진입하지 않는다
@@ -117,10 +115,8 @@ final class FrontierQueue {
         inactiveColorParked.clear();
     }
 
-    // 대기 중인 프론티어 청크 키를 sx,sz 기준 거리순으로 정렬해 sortSnap/sortPacked에 채운다
-    // 둘 다 재사용 배열이라 다음 호출 전까지만(같은 틱 안에서 바로 소비) 유효하다
-    // 지난 정렬 이후 청크 집합도 기준 좌표도 안 바뀌었으면 재정렬 없이 지난 결과를 그대로 쓴다
-    // 거대 트랙에서 메인 루프가 매 라운드 O(n log n) 정렬을 반복하던 낭비를 없앤다
+    // 청크 키를 거리순으로 정렬해 sortSnap과 sortPacked에 채운다. 청크 집합과 기준 좌표가
+    // 안 바뀌었으면 재정렬 없이 지난 결과 사용. 거대 트랙에서 매 라운드 O(n log n) 정렬을 없앤다.
     static int sortChunkKeysByDistance(int sx, int sz) {
         if (chunkKeysVersion == lastSortVersion && sx == lastSortSx && sz == lastSortSz) {
             return lastSortN;
@@ -147,10 +143,8 @@ final class FrontierQueue {
         return n;
     }
 
-    // 로딩됐고 sx,sz 기준 maxRange 안에 든 exile 청크의 셀을 모두 revivedScratch에 모으고 그 청크들을 exile 맵에서 제거한다
-    // exile 맵을 순회하며 직접 enqueue/park하면 항목이 누락될 수 있어 후보만 여기서 안전하게 모아 반환한다
-    // deadline을 넘기면 그때까지 모은 것만 두고 true(타임아웃)를 돌려준다
-    // 못 다 처리한 revivedScratch 잔여분은 호출부(processRevivedExiledCells)가 인덱스를 들고 다음 틱에 이어서 처리한다
+    // 로딩되고 범위 안의 exile 청크 셀을 revivedScratch에 모으고 제거. 직접 enqueue하면
+    // 누락되므로 후보만 모아 반환. deadline 초과 시 타임아웃 반환. 못 다 처리한 잔여분은 다음 틱에.
     static boolean drainExiledWithinRange(int sx, int sz, int maxRange, long deadline) {
         revivedScratch.clear();
         boolean timedOut = false;

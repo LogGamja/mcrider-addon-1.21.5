@@ -7,11 +7,11 @@ import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
 import it.unimi.dsi.fastutil.longs.LongIterator;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 
-// 색(트랙 조각) 간 부모/자식 관계 그래프 + union-find(경로 압축)
-// 규칙0: 양방향 이동은 색 유지
-// 규칙1: 고아 진입(TP/리스폰 포함)은 새 루트 색
-// 규칙2: 단방향 이동은 새 색(직전 색의 자식)
-// 규칙3: 양방향 인접 시, 혹은 자식이 조상에게 단방향 인접 시 병합
+// 규칙1: 고아 진입(TP)은 새 루트 색
+// 규칙2: 양방향 이동은 색 유지
+// 규칙3: 단방향 이동은 새 색을 만들고 직전 색의 자식으로 둠
+// 규칙4: 양방향 인접 시 혹은 자식이 조상에게 단방향 인접 시 병합
+
 final class ColorGraph {
     private ColorGraph() {}
 
@@ -80,10 +80,8 @@ final class ColorGraph {
         if (isNew) bumpColorGraphVersion();
     }
 
-    // parent -> child 엣지가 이미 존재하는지(둘 다 resolve된 루트라고 가정).
-    // 주의: parentToChildren 버킷의 자식 id는 병합 후에도 자동 정규화되지 않으므로(resolve 필요),
-    // 여기서 true면 확실히 엣지가 있는 것이지만 false는 "정규화 안 된 채 저장된 동일 엣지"를
-    // 놓칠 수 있다(false negative). 호출부는 그 경우 느린 정식 경로로 폴백하면 되므로 안전하다.
+    // true는 확실하지만 false는 미정규화로 인한 false negative일 수 있다.
+    // 호출부가 느린 경로로 폴백하면 안전하다.
     static boolean hasEdge(long parent, long child) {
         LongOpenHashSet kids = parentToChildren.get(parent);
         return kids != null && kids.contains(child);
@@ -212,10 +210,7 @@ final class ColorGraph {
         actualColorCount--; // loser는 호출 시점에 항상 resolve된(자기 자신을 가리키던) 루트였다
         // 불변식: columnsByRoot 이전 전에 dirty 마킹. 순서 중요 (컬럼 activeSet 상태 전환 감지).
         FrontierSearch.markColumnsDirtyForRoot(loser);
-        // loser가 searchActiveSet 소속 survivor로 흡수되면, loser 쪽 색으로 파킹돼 있던 셀들이
-        // 이제 resolve()를 거쳐 활성 트리로 편입된다. loser가 자손 없는 색이면 collectColorSubtree
-        // 결과 집합의 "내용"은 병합 전후로 동일해 보여 diff 기반 변경 감지를 통과하지 못하므로,
-        // 그 경우를 놓치지 않도록 여기서 직접 신호를 준다(rebuildSearchActiveSet 참고)
+        // 자손 없는 loser 흡수는 subtree 내용이 안 바뀌어 diff로 못 잡힌다. 여기서 직접 revive 신호를 준다.
         FrontierSearch.noteMergeSurvivor(survivor);
         LongOpenHashSet cols = FrontierSearch.columnsByRoot.remove(loser);
         if (cols != null) {
