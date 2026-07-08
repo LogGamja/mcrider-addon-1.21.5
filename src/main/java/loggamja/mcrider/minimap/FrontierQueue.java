@@ -8,45 +8,35 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectIterator;
 import net.minecraft.util.math.ChunkPos;
 
-// 활성 프론티어(청크별 대기 셀 목록)와 exile(범위 밖/미로딩 청크에 보류된 셀) 큐 관리 전담.
-// 어떤 셀이 지금 확장 대상인지 판단(활성 트리 소속 여부 등)은 FrontierSearch가 하고 이 클래스는 그 판단 결과를 어느 버킷에 넣고 뺄지만 담당한다.
+// 활성 프론티어(청크별 대기 셀)과 exile(보류된 셀) 관리
+// FrontierSearch가 판단한 셀을 어느 저장소에 넣고 뺄지 담당
 
 final class FrontierQueue {
     private FrontierQueue() {}
 
-    // 셀 보류 사유: 보류 저장소 선택을 명시적으로
+    // 셀 보류 사유: 저장소 선택을 명시적으로
     enum ParkReason {
         CHUNK_NOT_LOADED,     // 미로딩 청크 → exiledByChunk로
         OUT_OF_RANGE,         // 범위 밖 → exiledByChunk로
         COLOR_INACTIVE        // 활성 색 아님 → inactiveColorParked로
     }
 
-    // 활성 프론티어를 청크 단위로 묶어 보관: chunkKey(ChunkPos.toLong)에 대기 셀 목록
-    // 청크별로 몰아 처리하면 BlockSearch의 청크 캐시(4슬롯) 히트율이 오른다
-    // 모든 셀은 frontierByChunk, exiledByChunk, inactiveColorParked 중 하나에만 존재한다
+    // 청크별 활성 프론티어 (청크 캐시 효율 향상)
     static Long2ObjectOpenHashMap<LongArrayList> frontierByChunk = new Long2ObjectOpenHashMap<>();
-    // 미로딩/범위 밖 청크에 보류된 프론티어: ChunkPos.toLong에 셀 목록
+    // 미로딩/범위 밖 청크의 보류 셀
     static Long2ObjectOpenHashMap<LongArrayList> exiledByChunk = new Long2ObjectOpenHashMap<>();
-
-    // 색이 searchActiveSet 소속이 아니어서(=활성 트리 밖) 보류된 셀 전용 저장소. 청크는 이미
-    // 로드돼 있고 범위 안이라 exiledByChunk에 넣으면 매 틱 되살렸다가 다시 파킹하는 무한 반복이
-    // 생긴다. 그래서 별도 저장소로 분리.
+    // 비활성 색 셀 (별도 저장소: ping-pong 방지, 매 틱 재처리 회피)
     static final LongOpenHashSet inactiveColorParked = new LongOpenHashSet();
 
-    // drainExiledWithinRange가 채우는 재사용 리스트(매 틱 new 방지). floodFill은 재진입하지 않는다
     static final LongArrayList revivedScratch = new LongArrayList();
 
-    // 청크 거리순 정렬용 재사용 스크래치
-    // sortPacked[i] = (거리<<32 | sortSnap 안의 인덱스)로 패킹해 Arrays.sort로 O(n log n) 정렬한다
-    // 호출부는 정렬 후 sortSnap[(int)(sortPacked[i] & 0xFFFFFFFFL)] 형태로 i번째로 가까운 청크 키를 읽는다
+    // 거리순 정렬용 (거리<<32 | 인덱스로 패킹)
     static long[] sortSnap = new long[0];
     static long[] sortPacked = new long[0];
 
-    // frontierByChunk에 청크 키가 추가/제거될 때마다 증가하는 카운터
-    // sortChunkKeysByDistance가 "지난 정렬 이후 집합이 그대로면 재정렬을 건너뛴다"를 판단하는 데 쓴다
-    // add/remove가 상쇄되는 경우까지 잡으려고 size 대신 카운터를 쓴다
+    // 청크 집합 변경 감지 (정렬 캐시 무효화)
     private static long chunkKeysVersion = 0;
-    // 마지막 정렬 시점의 (버전, 플레이어 월드 좌표)와 n. 셋이 다 같으면 정렬 결과를 재사용한다
+    // 정렬 결과 캐싱 (지난 정렬 재사용)
     private static long lastSortVersion = -1;
     private static int lastSortSx = Integer.MIN_VALUE, lastSortSz = Integer.MIN_VALUE;
     private static int lastSortN = 0;
@@ -118,8 +108,7 @@ final class FrontierQueue {
         inactiveColorParked.clear();
     }
 
-    // 청크 키를 거리순으로 정렬해 sortSnap과 sortPacked에 채운다. 청크 집합과 기준 좌표가
-    // 안 바뀌었으면 재정렬 없이 지난 결과 사용. 거대 트랙에서 매 라운드 O(n log n) 정렬을 없앤다.
+    // 청크를 거리순으로 정렬 (캐싱으로 O(n log n) 정렬 회피)
     static int sortChunkKeysByDistance(int sx, int sz) {
         if (chunkKeysVersion == lastSortVersion && sx == lastSortSx && sz == lastSortSz) {
             return lastSortN;
@@ -146,8 +135,7 @@ final class FrontierQueue {
         return n;
     }
 
-    // 로딩되고 범위 안의 exile 청크 셀을 revivedScratch에 모으고 제거. 직접 enqueue하면
-    // 누락되므로 후보만 모아 반환. deadline 초과 시 타임아웃 반환. 못 다 처리한 잔여분은 다음 틱에.
+    // 범위 내 exile 셀을 revivedScratch에 모아 복구 (deadline 예산으로 분산 처리)
     static boolean drainExiledWithinRange(int sx, int sz, int maxRange, long deadline) {
         revivedScratch.clear();
         boolean timedOut = false;
