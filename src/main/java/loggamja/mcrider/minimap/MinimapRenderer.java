@@ -45,14 +45,16 @@ final class MinimapRenderer {
 
     private static final int TEX_SIZE = 512;
     private static final double SQRT2 = Math.sqrt(2.0);
-    static final int REANCHOR_MARGIN = (int) Math.ceil(maxDist * SQRT2) + 8;
+
+    // 마진 16: 재빌드가 사실상 1틱에 끝나므로(활성 컬럼만 순회) 그 사이 이동거리는 몇 블록 수준이다
+    static final int REANCHOR_MARGIN = (int) Math.ceil(maxDist * SQRT2) + 16;
     private static final int VISITED_COLOR = 0xBBCCCCCC;
 
     private static final float IMAGE_CORRECTION_TRICK = 0.001f;
     private static final double RIDER_ICON_SIZE = 6 * LEGACY_GUI_SCALE_BASIS;
     private static final Identifier SELF_ARROW_ICON = Identifier.of("mcrider-official", "textures/hud/arrow_icon.png");
     private static final int SELF_ARROW_TEX_SIZE = 16;
-    private static final float ENEMY_ICON_SCALE = 0.5f;
+    private static final float ENEMY_ICON_SCALE = 0.75f;
 
     private static final float ENEMY_HEAD_OUTLINE_THICKNESS = 0.4f;
     private static final int ENEMY_HEAD_OUTLINE_COLOR = 0xFF000000;
@@ -154,12 +156,28 @@ final class MinimapRenderer {
     private static int rebuildPixelIndex = 0;
     private static boolean rebuildInProgress = false;
 
+    // 비디버그 재빌드: 전체 래스터(262144칸) 대신 활성 서브트리가 실제로 칠한 컬럼만 순회한다.
+    private static final it.unimi.dsi.fastutil.longs.LongArrayList rebuildColumnSnapshot =
+            new it.unimi.dsi.fastutil.longs.LongArrayList();
+    
+    // 컬럼 하나가 여러 활성 루트(색 경계)에 동시에 속할 수 있어 스냅샷에 중복 없이 담기 위한 dedup용
+    private static final it.unimi.dsi.fastutil.longs.LongOpenHashSet rebuildColumnSeen =
+            new it.unimi.dsi.fastutil.longs.LongOpenHashSet();
+    private static boolean rebuildIsSnapshotMode = false;
+
     private static void rebuildTexture(BlockPos center) {
+        // 현재 색이 확정되지 않으면 아무 상태도 바꾸지 않고 미룬다(다음 틱 ensureOriginFor가 재시도).
+        // originSet을 커밋한 뒤 리턴하면 재시도가 끊기고 칠 안 된 origin이 확정되므로 반드시 최상단에서 막는다.
+        if (!MCRiderMinimap.isDebugColors() && FrontierSearch.activeColor == NO_ID) {
+            return;
+        }
+
         TextureBuffer target = front.originSet ? back : front;
         target.ensure();
         target.originX = center.getX() - TEX_SIZE / 2;
         target.originZ = center.getZ() - TEX_SIZE / 2;
         target.originSet = true;
+
         target.image.fillRect(0, 0, TEX_SIZE, TEX_SIZE, 0);
 
         if (target == front) {
@@ -170,6 +188,30 @@ final class MinimapRenderer {
         rebuildTarget = target;
         rebuildPixelIndex = 0;
         rebuildInProgress = true;
+
+        // 먼저 size() 합산(활성 루트 개수에만 비례, 컬럼 전체를 순회하지 않음)으로 저렴하게 상한을 확인한다.
+        // 합이 전체 픽셀수(262144)를 넘으면 컬럼을 하나도 순회하지 않고 곧장 풀그리드로 폴백한다.
+        // 이 사전 판정이 없으면 공터처럼 컬럼 수백만 개짜리 활성 색에서 수집 루프가 한 틱에 동기로 폭주한다.
+        rebuildIsSnapshotMode = !MCRiderMinimap.isDebugColors();
+        if (rebuildIsSnapshotMode) {
+            long candidateCount = 0;
+            LongIterator sizeIt = FrontierSearch.activeSet.iterator();
+            while (sizeIt.hasNext()) {
+                it.unimi.dsi.fastutil.longs.LongOpenHashSet cols =
+                        FrontierSearch.columnsByRoot.get(sizeIt.nextLong());
+                if (cols != null) candidateCount += cols.size();
+            }
+            rebuildIsSnapshotMode = candidateCount <= (long) TEX_SIZE * TEX_SIZE;
+        }
+        if (rebuildIsSnapshotMode) {
+            // 여기 도달 시 후보 컬럼 총수 ≤ 262144이 보장되어 수집 순회가 유한하다.
+            // 윈도우 밖 컬럼은 스냅샷에서 제외해 continueRebuildIfInProgress의 예산 낭비를 막는다.
+            rebuildColumnSnapshot.clear();
+            rebuildColumnSeen.clear();
+            FrontierSearch.collectActiveColumnsInBounds(
+                    target.originX, target.originZ, TEX_SIZE,
+                    rebuildColumnSeen, rebuildColumnSnapshot);
+        }
     }
 
     private static void continueRebuildIfInProgress() {
@@ -177,16 +219,32 @@ final class MinimapRenderer {
         final long deadline = System.nanoTime() + REPAINT_TIME_BUDGET_NANOS;
         int budget = REPAINT_HARD_CAP_PER_TICK;
         int sinceTimeCheck = 0;
-        final int total = TEX_SIZE * TEX_SIZE;
-        while (rebuildPixelIndex < total && budget > 0) {
-            int px = rebuildPixelIndex % TEX_SIZE;
-            int pz = rebuildPixelIndex / TEX_SIZE;
-            rebuildTarget.plotColumn(rebuildTarget.originX + px, rebuildTarget.originZ + pz);
-            rebuildPixelIndex++;
-            budget--;
-            if ((++sinceTimeCheck & 0xFF) == 0 && System.nanoTime() >= deadline) break;
+
+        boolean done;
+        if (rebuildIsSnapshotMode) {
+            final int total = rebuildColumnSnapshot.size();
+            while (rebuildPixelIndex < total && budget > 0) {
+                long key = rebuildColumnSnapshot.getLong(rebuildPixelIndex);
+                rebuildTarget.plotColumn(FrontierSearch.unpackColumnX(key), FrontierSearch.unpackColumnZ(key));
+                rebuildPixelIndex++;
+                budget--;
+                if ((++sinceTimeCheck & 0xFF) == 0 && System.nanoTime() >= deadline) break;
+            }
+            done = rebuildPixelIndex >= total;
+        } else {
+            final int total = TEX_SIZE * TEX_SIZE;
+            while (rebuildPixelIndex < total && budget > 0) {
+                int px = rebuildPixelIndex % TEX_SIZE;
+                int pz = rebuildPixelIndex / TEX_SIZE;
+                rebuildTarget.plotColumn(rebuildTarget.originX + px, rebuildTarget.originZ + pz);
+                rebuildPixelIndex++;
+                budget--;
+                if ((++sinceTimeCheck & 0xFF) == 0 && System.nanoTime() >= deadline) break;
+            }
+            done = rebuildPixelIndex >= total;
         }
-        if (rebuildPixelIndex >= total) {
+
+        if (done) {
             rebuildInProgress = false;
             rebuildTarget.markAllDirty();
             if (rebuildTarget == back) {
@@ -194,6 +252,8 @@ final class MinimapRenderer {
             }
             rebuildTarget = null;
             rebuildPixelIndex = 0;
+            rebuildColumnSnapshot.clear();
+            rebuildColumnSeen.clear();
         }
     }
 
@@ -609,5 +669,8 @@ final class MinimapRenderer {
         rebuildInProgress = false;
         rebuildTarget = null;
         rebuildPixelIndex = 0;
+        rebuildColumnSnapshot.clear();
+        rebuildColumnSeen.clear();
+        rebuildIsSnapshotMode = false;
     }
 }

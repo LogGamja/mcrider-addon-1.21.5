@@ -73,9 +73,11 @@ final class ColorGraph {
 
     static void addEdge(long parent, long child) {
         if (parent == child) return;
-        parentToChildren.computeIfAbsent(parent, k -> new LongOpenHashSet()).add(child);
+
+        // 엣지가 새로 추가된 경우에만 버전을 올린다
+        boolean isNew = parentToChildren.computeIfAbsent(parent, k -> new LongOpenHashSet()).add(child);
         childToParents.computeIfAbsent(child, k -> new LongOpenHashSet()).add(parent);
-        bumpColorGraphVersion();
+        if (isNew) bumpColorGraphVersion();
     }
 
     // -- 병합 --
