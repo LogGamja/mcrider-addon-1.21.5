@@ -16,11 +16,12 @@ import loggamja.mcrider.option.MCRiderConfig;
 import loggamja.mcrider.MCRiderMain;
 import net.minecraft.world.World;
 
-// 플로드필 기반 트랙 미니맵("색깔 관계 그래프" 방식)의 진입점
-// 규칙0: 양방향 이동은 색 유지. 규칙1: 고아 진입(TP/리스폰 포함)은 새 루트 색
-// 규칙2: 단방향 이동은 새 색(직전 색의 자식)
-// 규칙3: 양방향 인접 시, 혹은 자식이 조상에게 단방향 인접 시 병합
-// 규칙4: 플레이어 위치 색(resolve) + 그 자손만 표시. 디버그 설정이면 색상별 구분 표시
+// 플로드필 기반 트랙 미니맵("색깔 관계 그래프" 방식)의 진입점 (규칙 번호는 ColorGraph.java와 동일하게 맞춤)
+// 규칙1: 고아 진입(TP/리스폰 포함)은 새 루트 색
+// 규칙2: 양방향 이동은 색 유지
+// 규칙3: 단방향 이동은 새 색(직전 색의 자식)
+// 규칙4: 양방향 인접 시, 혹은 자식이 조상에게 단방향 인접 시 병합
+// 규칙5: 플레이어 위치 색(resolve) + 그 자손만 표시. 디버그 설정이면 색상별 구분 표시
 public class MCRiderMinimap implements ClientModInitializer {
     private static final Logger LOGGER = LoggerFactory.getLogger("mcrider");
 

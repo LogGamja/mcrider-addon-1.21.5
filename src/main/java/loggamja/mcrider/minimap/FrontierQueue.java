@@ -30,8 +30,9 @@ final class FrontierQueue {
     // 미로딩/범위 밖 청크에 보류된 프론티어: ChunkPos.toLong에 셀 목록
     static Long2ObjectOpenHashMap<LongArrayList> exiledByChunk = new Long2ObjectOpenHashMap<>();
 
-    // 색이 없어 보류된 셀 전용 저장소. 청크는 이미 로드돼 있고 범위 안이라 exiledByChunk에
-    // 넣으면 매 틱 되살렸다가 다시 파킹하는 무한 반복이 생긴다. 그래서 별도 저장소로 분리.
+    // 색이 searchActiveSet 소속이 아니어서(=활성 트리 밖) 보류된 셀 전용 저장소. 청크는 이미
+    // 로드돼 있고 범위 안이라 exiledByChunk에 넣으면 매 틱 되살렸다가 다시 파킹하는 무한 반복이
+    // 생긴다. 그래서 별도 저장소로 분리.
     static final LongOpenHashSet inactiveColorParked = new LongOpenHashSet();
 
     // drainExiledWithinRange가 채우는 재사용 리스트(매 틱 new 방지). floodFill은 재진입하지 않는다

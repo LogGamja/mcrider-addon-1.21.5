@@ -11,8 +11,9 @@ import net.minecraft.util.math.BlockPos;
 
 import static loggamja.mcrider.minimap.ColorGraph.NO_ID;
 
-// 플로드필 탐색 엔진이자 방문 셀과 컬럼의 저장소. 무엇을 화면에 보여줄지 담은 activeColor와
-// activeSet. ColorGraph와 MinimapRenderer가 참조하는 미니맵 핵심.
+// 플로드필 탐색 엔진이자 방문 셀/컬럼의 저장소. 어디를 탐색했고 어떤 색인지(cellColor/visitedColumns/
+// columnsByRoot/dirtyColumns)와 지금 뭘 보여줄지(activeColor/activeSet/searchActiveSet)가 여기 있다.
+// ColorGraph와 MinimapRenderer가 참조하는 미니맵 핵심.
 final class FrontierSearch {
     private FrontierSearch() {}
 
