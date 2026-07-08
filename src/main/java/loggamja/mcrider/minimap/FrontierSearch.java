@@ -66,6 +66,19 @@ final class FrontierSearch {
             version = -1;
             prevForDiff.clear();
         }
+
+        // 다른 캐시가 같은 (root, colorGraphVersion)으로 이미 계산해 둔 집합이 있으면
+        // BFS를 다시 돌지 않고 복사한다. diff 버퍼 관리는 recompute(keepDiff=true)와 동일
+        boolean recomputeFrom(long root, LongOpenHashSet out, LongOpenHashSet precomputed) {
+            if (snapshotRoot == root && version == ColorGraph.colorGraphVersion) return false;
+            prevForDiff.clear();
+            prevForDiff.addAll(out);
+            out.clear();
+            out.addAll(precomputed);
+            snapshotRoot = root;
+            version = ColorGraph.colorGraphVersion;
+            return true;
+        }
     }
 
     // "활성 색 + 그 자손"의 resolve된 집합(표시용, 비디버그 모드). 틱당 1회 계산해 캐시
@@ -126,7 +139,15 @@ final class FrontierSearch {
     // diff만으로는 못 잡는 경우는 ColorGraph.absorbInto가 noteMergeSurvivor로 세워둔
     // searchActiveSetTouchedByMerge로 보완한다.
     private static boolean rebuildSearchActiveSet(long liveRoot) {
-        if (!searchActiveSetCache.recompute(liveRoot, searchActiveSet, true)) return false;
+        // 정상 상태에선 liveRoot == activeColor여서 rebuildActiveSet이 방금 같은 서브트리를 계산해 뒀다.
+        // 그 결과를 복사해 동일한 BFS를 두 번 도는 것을 피한다. (propagateActiveMembership의 직접
+        // add는 항상 버전 bump가 선행되거나 기존 엣지에 대한 no-op이므로, 버전이 같으면 activeSet은
+        // 정확히 subtree(activeColor)와 일치한다)
+        boolean recomputed = (activeSetCache.snapshotRoot == liveRoot
+                && activeSetCache.version == ColorGraph.colorGraphVersion)
+                ? searchActiveSetCache.recomputeFrom(liveRoot, searchActiveSet, activeSet)
+                : searchActiveSetCache.recompute(liveRoot, searchActiveSet, true);
+        if (!recomputed) return false;
 
         boolean contentChanged = !longSetsEqual(searchActiveSet, searchActiveSetCache.prevForDiff);
         boolean mergeTouchedActive = searchActiveSetTouchedByMerge;
@@ -238,6 +259,12 @@ final class FrontierSearch {
     static void markColumnsDirtyForRoot(long root) {
         LongOpenHashSet cols = columnsByRoot.get(root);
         if (cols != null) dirtyColumns.addAll(cols);
+    }
+
+    // 컬럼 색의 의미가 통째로 바뀔 때(디버그 모드 전환 등) 방문한 모든 컬럼의 재도색을 예약한다.
+    // 실제 재도색은 repaintDirtyColumns의 기존 예산이 여러 틱에 나눠 처리한다
+    static void markAllColumnsDirty() {
+        dirtyColumns.addAll(visitedColumns.keySet());
     }
 
     // parentRoot가 activeSet/searchActiveSet 소속이면 새로 연결된 childRoot도 같은 집합에 편입시킨다.
@@ -373,9 +400,13 @@ final class FrontierSearch {
         activeColorUpdatedThisTick = true;
         rebuildActiveSet();
 
-        long liveRoot = (playerCell != NO_ID) ? ColorGraph.resolve(cellColor.get(playerCell)) : NO_ID;
-        boolean searchActiveSetChanged = rebuildSearchActiveSet(liveRoot);
+        // 앵커가 잠깐 풀린 틱(점프/추락 등)에는 searchActiveSet을 재계산하지 않고 이전 필터를 유지한다.
+        // NO_ID로 재계산하면 집합이 통째로 비었다 차는 왕복이 생겨, 파킹 셀 전체가 프론티어로
+        // 쏟아졌다가 도로 파킹되는 낭비가 생긴다. 이런 틱은 containToActive=false라
+        // activeColorOrPark가 searchActiveSet을 읽지 않으므로 stale 상태여도 안전하다
         final boolean containToActive = playerCell != NO_ID;
+        boolean searchActiveSetChanged = containToActive
+                && rebuildSearchActiveSet(ColorGraph.resolve(cellColor.get(playerCell)));
 
         final long deadline = System.nanoTime() + STAGING_TIME_BUDGET_NANOS;
 
@@ -387,7 +418,7 @@ final class FrontierSearch {
         processRevivedExiledCells(sx, sz, maxRange, containToActive, deadline);
 
         boolean stop = false;
-        while (!stop && !FrontierQueue.frontierChunkKeys.isEmpty()) {
+        while (!stop && !FrontierQueue.frontierByChunk.isEmpty()) {
             int n = FrontierQueue.sortChunkKeysByDistance(sx, sz);
 
             for (int ci = 0; ci < n; ci++) {

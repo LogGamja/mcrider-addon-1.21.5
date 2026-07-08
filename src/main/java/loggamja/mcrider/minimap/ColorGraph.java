@@ -208,6 +208,7 @@ final class ColorGraph {
 
     static void absorbInto(long loser, long survivor) {
         actualColorCount--; // loser는 호출 시점에 항상 resolve된(자기 자신을 가리키던) 루트였다
+        colorBirth.remove(loser); // birth는 루트끼리의 survivor 선정에만 쓰이고, loser는 다시 루트가 될 수 없다
         // 불변식: columnsByRoot 이전 전에 dirty 마킹. 순서 중요 (컬럼 activeSet 상태 전환 감지).
         FrontierSearch.markColumnsDirtyForRoot(loser);
         // 자손 없는 loser 흡수는 subtree 내용이 안 바뀌어 diff로 못 잡힌다. 여기서 직접 revive 신호를 준다.

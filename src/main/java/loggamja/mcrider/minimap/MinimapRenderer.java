@@ -50,6 +50,8 @@ final class MinimapRenderer {
     // 마진 16: 재앵커 ~150블록마다, 복사도 예산 큐로 분산되므로 충분함.
     static final int REANCHOR_MARGIN = (int) Math.ceil(maxDist * SQRT2) + 16;
     private static final int VISITED_COLOR = 0xBBCCCCCC;
+    // 한 컬럼에 Y가 다른 활성 경로가 2개 이상 겹치면(교차로/고가 구간 등) 구분되도록 진한 흰색으로 강조
+    private static final int OVERLAP_COLOR = 0xFFFFFFFF;
 
     private static final float IMAGE_CORRECTION_TRICK = 0.001f;
     private static final double RIDER_ICON_SIZE = 6 * LEGACY_GUI_SCALE_BASIS;
@@ -384,6 +386,7 @@ final class MinimapRenderer {
 
         int repY = Integer.MIN_VALUE;
         long repRoot = NO_ID;
+        int activeCount = 0;
         IntIterator yi = ys.iterator();
         while (yi.hasNext()) {
             int y = yi.nextInt();
@@ -391,10 +394,13 @@ final class MinimapRenderer {
             if (root == NO_ID) continue;
             if (!debug && !FrontierSearch.activeSet.contains(root)) continue;
 
+            activeCount++;
             if (y >= repY) { repY = y; repRoot = root; }
         }
         if (debug) return colorForRoot(repRoot);
-        return (repRoot != NO_ID) ? VISITED_COLOR : 0;
+        if (repRoot == NO_ID) return 0;
+        // Y가 다른 활성 경로가 한 컬럼에 2개 이상 겹치면(교차로/고가 구간 등) 진한 흰색으로 강조
+        return (activeCount >= 2) ? OVERLAP_COLOR : VISITED_COLOR;
     }
 
     private static int colorForRoot(long root) {

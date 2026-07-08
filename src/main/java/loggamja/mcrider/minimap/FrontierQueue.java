@@ -25,8 +25,6 @@ final class FrontierQueue {
     // 청크별로 몰아 처리하면 BlockSearch의 청크 캐시(4슬롯) 히트율이 오른다
     // 모든 셀은 frontierByChunk, exiledByChunk, inactiveColorParked 중 하나에만 존재한다
     static Long2ObjectOpenHashMap<LongArrayList> frontierByChunk = new Long2ObjectOpenHashMap<>();
-    // frontierByChunk에 대기 셀이 있는 청크 키 집합(거리순 정렬 스냅샷용)
-    static LongOpenHashSet frontierChunkKeys = new LongOpenHashSet();
     // 미로딩/범위 밖 청크에 보류된 프론티어: ChunkPos.toLong에 셀 목록
     static Long2ObjectOpenHashMap<LongArrayList> exiledByChunk = new Long2ObjectOpenHashMap<>();
 
@@ -44,7 +42,7 @@ final class FrontierQueue {
     static long[] sortSnap = new long[0];
     static long[] sortPacked = new long[0];
 
-    // frontierChunkKeys에 청크가 추가/제거될 때마다 증가하는 카운터
+    // frontierByChunk에 청크 키가 추가/제거될 때마다 증가하는 카운터
     // sortChunkKeysByDistance가 "지난 정렬 이후 집합이 그대로면 재정렬을 건너뛴다"를 판단하는 데 쓴다
     // add/remove가 상쇄되는 경우까지 잡으려고 size 대신 카운터를 쓴다
     private static long chunkKeysVersion = 0;
@@ -76,13 +74,17 @@ final class FrontierQueue {
 
     static void push(long cell, int cx, int cz) {
         long chunkKey = ChunkPos.toLong(cx >> 4, cz >> 4);
-        getOrCreateBucket(frontierByChunk, chunkKey, 8).add(cell);
-        if (frontierChunkKeys.add(chunkKey)) chunkKeysVersion++; // 실제로 새 청크가 들어왔을 때만
+        LongArrayList bucket = frontierByChunk.get(chunkKey);
+        if (bucket == null) {
+            bucket = new LongArrayList(8);
+            frontierByChunk.put(chunkKey, bucket);
+            chunkKeysVersion++; // 실제로 새 청크가 들어왔을 때만
+        }
+        bucket.add(cell);
     }
 
     static void removeChunk(long chunkKey) {
-        frontierByChunk.remove(chunkKey);
-        if (frontierChunkKeys.remove(chunkKey)) chunkKeysVersion++;
+        if (frontierByChunk.remove(chunkKey) != null) chunkKeysVersion++;
     }
 
     static void enqueue(long cell, int cx, int cz, int sx, int sz, int maxRange) {
@@ -122,13 +124,13 @@ final class FrontierQueue {
         if (chunkKeysVersion == lastSortVersion && sx == lastSortSx && sz == lastSortSz) {
             return lastSortN;
         }
-        int n = frontierChunkKeys.size();
+        int n = frontierByChunk.size();
         if (sortSnap.length < n) {
             sortSnap = new long[n];
             sortPacked = new long[n];
         }
         int idx = 0;
-        LongIterator keyIt = frontierChunkKeys.iterator();
+        LongIterator keyIt = frontierByChunk.keySet().iterator();
         while (keyIt.hasNext()) {
             long k = keyIt.nextLong();
             sortSnap[idx] = k;
@@ -173,7 +175,6 @@ final class FrontierQueue {
 
     static void reset() {
         frontierByChunk.clear();
-        frontierChunkKeys.clear();
         exiledByChunk.clear();
         inactiveColorParked.clear();
         revivedScratch.clear();
