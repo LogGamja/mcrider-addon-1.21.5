@@ -50,7 +50,7 @@ final class MinimapRenderer {
     // 마진 16: 재앵커 ~150블록마다, 복사도 예산 큐로 분산되므로 충분함.
     static final int REANCHOR_MARGIN = (int) Math.ceil(maxDist * SQRT2) + 16;
     private static final int VISITED_COLOR = 0xBBCCCCCC;
-    // 한 컬럼에 Y가 다른 활성 경로가 2개 이상 겹치면(교차로/고가 구간 등) 구분되도록 진한 흰색으로 강조
+    // 길이 겹치면 강조할 색
     private static final int OVERLAP_COLOR = 0xFFFFFFFF;
 
     private static final float IMAGE_CORRECTION_TRICK = 0.001f;
@@ -399,7 +399,7 @@ final class MinimapRenderer {
         }
         if (debug) return colorForRoot(repRoot);
         if (repRoot == NO_ID) return 0;
-        // Y가 다른 활성 경로가 한 컬럼에 2개 이상 겹치면(교차로/고가 구간 등) 진한 흰색으로 강조
+        // 길이 겹치면 강조
         return (activeCount >= 2) ? OVERLAP_COLOR : VISITED_COLOR;
     }
 

@@ -67,8 +67,8 @@ final class FrontierSearch {
             prevForDiff.clear();
         }
 
-        // 다른 캐시가 같은 (root, colorGraphVersion)으로 이미 계산해 둔 집합이 있으면
-        // BFS를 다시 돌지 않고 복사한다. diff 버퍼 관리는 recompute(keepDiff=true)와 동일
+        // 다른 캐시가 같은 (root, colorGraphVersion)으로 이미 계산해 둔 집합이 있으면 BFS를 다시 돌지 않고 복사한다.
+        // diff 버퍼 관리는 recompute(keepDiff=true)와 동일
         boolean recomputeFrom(long root, LongOpenHashSet out, LongOpenHashSet precomputed) {
             if (snapshotRoot == root && version == ColorGraph.colorGraphVersion) return false;
             prevForDiff.clear();
