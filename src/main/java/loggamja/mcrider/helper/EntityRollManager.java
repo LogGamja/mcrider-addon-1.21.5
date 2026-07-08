@@ -3,6 +3,7 @@ package loggamja.mcrider.helper;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientEntityEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.tick.TickManager;
 
 import java.util.HashMap;
@@ -41,7 +42,7 @@ public class EntityRollManager {
             return state.targetRoll;
         }
 
-        float t = (float) elapsed / state.duration;
+        float t = MathHelper.clamp((float) elapsed / state.duration, 0f, 1f);
         // smoothstep interpolation
         t = t * t * (3f - 2f * t);
         return state.startRoll + (state.targetRoll - state.startRoll) * t;

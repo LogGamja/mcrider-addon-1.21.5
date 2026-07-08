@@ -7,9 +7,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
 import java.io.IOException;
+import java.io.Reader;
+import java.io.Writer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 
 public class MCRiderConfig {
     private static final Logger LOGGER = LoggerFactory.getLogger("mcrider");
@@ -36,7 +38,7 @@ public class MCRiderConfig {
 
     public void load() {
         if (!CONFIG_FILE.exists()) return;
-        try (FileReader reader = new FileReader(CONFIG_FILE)) {
+        try (Reader reader = Files.newBufferedReader(CONFIG_FILE.toPath(), StandardCharsets.UTF_8)) {
             MCRiderConfig loaded = GSON.fromJson(reader, MCRiderConfig.class);
             if (loaded != null) {
                 INSTANCE = loaded;
@@ -51,7 +53,7 @@ public class MCRiderConfig {
     }
 
     public void save() {
-        try (FileWriter writer = new FileWriter(CONFIG_FILE)) {
+        try (Writer writer = Files.newBufferedWriter(CONFIG_FILE.toPath(), StandardCharsets.UTF_8)) {
             GSON.toJson(this, writer);
         } catch (IOException e) {
             LOGGER.error("[MCRider] 설정 파일을 저장하는 데 실패했습니다.", e);

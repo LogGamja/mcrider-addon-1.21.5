@@ -37,6 +37,19 @@ final class BlockSearch {
         java.util.Arrays.fill(cacheChunks, null);
     }
 
+    // 청크가 언로드될 때 그 청크만 캐시에서 뽑아낸다. 이게 없으면 언로드된 뒤 재로드된 청크를
+    // 여전히 옛 Chunk 객체로 읽어 stale 블록 상태를 반환할 수 있다(ClientChunkEvents.CHUNK_UNLOAD에서 호출).
+    static void invalidateChunkCacheAt(int chunkX, int chunkZ) {
+        long key = ChunkPos.toLong(chunkX, chunkZ);
+        for (int i = 0; i < CHUNK_CACHE_SLOTS; i++) {
+            if (cacheKeys[i] == key) {
+                cacheKeys[i] = Long.MIN_VALUE;
+                cacheChunks[i] = null;
+                return;
+            }
+        }
+    }
+
 
     private static BlockState stateAt(int x, int y, int z) {
         long key = ChunkPos.toLong(x >> 4, z >> 4);

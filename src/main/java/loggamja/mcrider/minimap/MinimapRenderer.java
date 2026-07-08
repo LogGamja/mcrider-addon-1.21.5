@@ -1,6 +1,7 @@
 package loggamja.mcrider.minimap;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import it.unimi.dsi.fastutil.ints.IntIterator;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongIterator;
 import net.minecraft.client.MinecraftClient;
@@ -46,7 +47,7 @@ final class MinimapRenderer {
     private static final int TEX_SIZE = 512;
     private static final double SQRT2 = Math.sqrt(2.0);
 
-    // 마진 16: 재빌드가 사실상 1틱에 끝나므로(활성 컬럼만 순회) 그 사이 이동거리는 몇 블록 수준이다
+    // 마진 16: 재앵커 ~150블록마다, 복사도 예산 큐로 분산되므로 충분함.
     static final int REANCHOR_MARGIN = (int) Math.ceil(maxDist * SQRT2) + 16;
     private static final int VISITED_COLOR = 0xBBCCCCCC;
 
@@ -105,7 +106,7 @@ final class MinimapRenderer {
                 clearUploadState();
                 return;
             }
-            it.unimi.dsi.fastutil.ints.IntIterator it = dirtyTiles.iterator();
+            IntIterator it = dirtyTiles.iterator();
             while (it.hasNext()) {
                 int key = it.nextInt();
                 int tileX = key / TILES_PER_ROW;
@@ -135,6 +136,19 @@ final class MinimapRenderer {
             }
             originSet = false;
         }
+
+        void close() {
+            if (image != null) {
+                image.close();
+                image = null;
+            }
+            if (texture != null) {
+                texture.close();
+                texture = null;
+            }
+            dirtyTiles.clear();
+            originSet = false;
+        }
     }
 
     private static final Identifier MINIMAP_ID_A = Identifier.of("mcrider-official", "minimap_a");
@@ -153,17 +167,31 @@ final class MinimapRenderer {
     private static final int REPAINT_HARD_CAP_PER_TICK = 262_144;
 
     private static TextureBuffer rebuildTarget = null;
-    private static int rebuildPixelIndex = 0;
     private static boolean rebuildInProgress = false;
 
-    // 비디버그 재빌드: 전체 래스터(262144칸) 대신 활성 서브트리가 실제로 칠한 컬럼만 순회한다.
-    private static final it.unimi.dsi.fastutil.longs.LongArrayList rebuildColumnSnapshot =
-            new it.unimi.dsi.fastutil.longs.LongArrayList();
-    
-    // 컬럼 하나가 여러 활성 루트(색 경계)에 동시에 속할 수 있어 스냅샷에 중복 없이 담기 위한 dedup용
-    private static final it.unimi.dsi.fastutil.longs.LongOpenHashSet rebuildColumnSeen =
-            new it.unimi.dsi.fastutil.longs.LongOpenHashSet();
-    private static boolean rebuildIsSnapshotMode = false;
+    // 재앵커 스크롤 재사용: 겹침 영역은 복사, 새 영역은 재계산. 복사도 예산 큐로 여러 틱에 분산.
+    // front는 repaintDirtyColumns가 항상 최신으로 유지하므로 stale 문제 없음.
+    private static final int MAX_REBUILD_RECTS = 3; // 0: 복사(있으면), 1~2: 계산 L자
+    private static final int[] rebuildRectX = new int[MAX_REBUILD_RECTS];
+    private static final int[] rebuildRectZ = new int[MAX_REBUILD_RECTS];
+    private static final int[] rebuildRectW = new int[MAX_REBUILD_RECTS];
+    private static final int[] rebuildRectH = new int[MAX_REBUILD_RECTS];
+    private static final boolean[] rebuildRectIsCopy = new boolean[MAX_REBUILD_RECTS];
+    private static int rebuildRectCount = 0;
+    private static int rebuildRectCursor = 0;      // 현재 처리 중인 사각형 인덱스
+    private static int rebuildRectLocalIndex = 0;  // 그 사각형 안에서의 진행도(픽셀 단위)
+    private static int rebuildCopyDx = 0;          // 복사 사각형 전용: dst -> src 오프셋
+    private static int rebuildCopyDz = 0;
+
+    private static void addRebuildRect(int x, int z, int w, int h, boolean isCopy) {
+        if (w <= 0 || h <= 0) return;
+        rebuildRectX[rebuildRectCount] = x;
+        rebuildRectZ[rebuildRectCount] = z;
+        rebuildRectW[rebuildRectCount] = w;
+        rebuildRectH[rebuildRectCount] = h;
+        rebuildRectIsCopy[rebuildRectCount] = isCopy;
+        rebuildRectCount++;
+    }
 
     private static void rebuildTexture(BlockPos center) {
         // 현재 색이 확정되지 않으면 아무 상태도 바꾸지 않고 미룬다(다음 틱 ensureOriginFor가 재시도).
@@ -174,11 +202,54 @@ final class MinimapRenderer {
 
         TextureBuffer target = front.originSet ? back : front;
         target.ensure();
-        target.originX = center.getX() - TEX_SIZE / 2;
-        target.originZ = center.getZ() - TEX_SIZE / 2;
+
+        int newOriginX = center.getX() - TEX_SIZE / 2;
+        int newOriginZ = center.getZ() - TEX_SIZE / 2;
+
+        // 스크롤 재사용 조건: 소스는 front(최신), 겹침 영역 존재, 디버그 모드 아님.
+        // 주의! dirty 마킹 불변식: paintCell/addEdge/absorbInto/activeColor 변경이 모두 거쳐야 함.
+        boolean canScroll = !MCRiderMinimap.isDebugColors()
+                && target != front
+                && front.originSet
+                && Math.abs(newOriginX - front.originX) < TEX_SIZE
+                && Math.abs(newOriginZ - front.originZ) < TEX_SIZE;
+
+        target.originX = newOriginX;
+        target.originZ = newOriginZ;
         target.originSet = true;
 
-        target.image.fillRect(0, 0, TEX_SIZE, TEX_SIZE, 0);
+        rebuildRectCount = 0;
+
+        if (canScroll) {
+            int dx = newOriginX - front.originX;
+            int dz = newOriginZ - front.originZ;
+            int overlapW = TEX_SIZE - Math.abs(dx);
+            int overlapH = TEX_SIZE - Math.abs(dz);
+            int destX0 = Math.max(0, -dx);
+            int destZ0 = Math.max(0, -dz);
+
+            // 복사 자체를 예산 큐의 사각형 하나로 등록한다(동기 실행 아님). dst 픽셀 -> src 픽셀은
+            // 항상 +dx,+dz 오프셋이므로 사각형 좌표만으로 나중에 재구성할 수 있다.
+            rebuildCopyDx = dx;
+            rebuildCopyDz = dz;
+            addRebuildRect(destX0, destZ0, overlapW, overlapH, true);
+
+            // 겹치지 않는 부분만 L자(세로 띠 + 가로 띠)로 정확히, 중복 없이 나눠 계산 대상에 넣는다.
+            if (dx > 0) {
+                addRebuildRect(TEX_SIZE - dx, 0, dx, TEX_SIZE, false);   // +x로 이동 -> 오른쪽에 새 컬럼 노출
+            } else if (dx < 0) {
+                addRebuildRect(0, 0, -dx, TEX_SIZE, false);              // -x로 이동 -> 왼쪽에 새 컬럼 노출
+            }
+            if (dz > 0) {
+                addRebuildRect(destX0, TEX_SIZE - dz, overlapW, dz, false);
+            } else if (dz < 0) {
+                addRebuildRect(destX0, 0, overlapW, -dz, false);
+            }
+        } else {
+            // 겹침이 전혀 없는 경우(순간이동 등)만 여기로 온다 — 어쩔 수 없이 전체를 새로 계산한다.
+            target.image.fillRect(0, 0, TEX_SIZE, TEX_SIZE, 0);
+            addRebuildRect(0, 0, TEX_SIZE, TEX_SIZE, false);
+        }
 
         if (target == front) {
             target.markAllDirty();
@@ -186,32 +257,9 @@ final class MinimapRenderer {
         }
 
         rebuildTarget = target;
-        rebuildPixelIndex = 0;
+        rebuildRectCursor = 0;
+        rebuildRectLocalIndex = 0;
         rebuildInProgress = true;
-
-        // 먼저 size() 합산(활성 루트 개수에만 비례, 컬럼 전체를 순회하지 않음)으로 저렴하게 상한을 확인한다.
-        // 합이 전체 픽셀수(262144)를 넘으면 컬럼을 하나도 순회하지 않고 곧장 풀그리드로 폴백한다.
-        // 이 사전 판정이 없으면 공터처럼 컬럼 수백만 개짜리 활성 색에서 수집 루프가 한 틱에 동기로 폭주한다.
-        rebuildIsSnapshotMode = !MCRiderMinimap.isDebugColors();
-        if (rebuildIsSnapshotMode) {
-            long candidateCount = 0;
-            LongIterator sizeIt = FrontierSearch.activeSet.iterator();
-            while (sizeIt.hasNext()) {
-                it.unimi.dsi.fastutil.longs.LongOpenHashSet cols =
-                        FrontierSearch.columnsByRoot.get(sizeIt.nextLong());
-                if (cols != null) candidateCount += cols.size();
-            }
-            rebuildIsSnapshotMode = candidateCount <= (long) TEX_SIZE * TEX_SIZE;
-        }
-        if (rebuildIsSnapshotMode) {
-            // 여기 도달 시 후보 컬럼 총수 ≤ 262144이 보장되어 수집 순회가 유한하다.
-            // 윈도우 밖 컬럼은 스냅샷에서 제외해 continueRebuildIfInProgress의 예산 낭비를 막는다.
-            rebuildColumnSnapshot.clear();
-            rebuildColumnSeen.clear();
-            FrontierSearch.collectActiveColumnsInBounds(
-                    target.originX, target.originZ, TEX_SIZE,
-                    rebuildColumnSeen, rebuildColumnSnapshot);
-        }
     }
 
     private static void continueRebuildIfInProgress() {
@@ -220,40 +268,45 @@ final class MinimapRenderer {
         int budget = REPAINT_HARD_CAP_PER_TICK;
         int sinceTimeCheck = 0;
 
-        boolean done;
-        if (rebuildIsSnapshotMode) {
-            final int total = rebuildColumnSnapshot.size();
-            while (rebuildPixelIndex < total && budget > 0) {
-                long key = rebuildColumnSnapshot.getLong(rebuildPixelIndex);
-                rebuildTarget.plotColumn(FrontierSearch.unpackColumnX(key), FrontierSearch.unpackColumnZ(key));
-                rebuildPixelIndex++;
+        while (budget > 0 && rebuildRectCursor < rebuildRectCount) {
+            int rx = rebuildRectX[rebuildRectCursor];
+            int rz = rebuildRectZ[rebuildRectCursor];
+            int w = rebuildRectW[rebuildRectCursor];
+            int total = w * rebuildRectH[rebuildRectCursor];
+            boolean isCopy = rebuildRectIsCopy[rebuildRectCursor];
+
+            while (rebuildRectLocalIndex < total && budget > 0) {
+                int lx = rebuildRectLocalIndex % w;
+                int lz = rebuildRectLocalIndex / w;
+                if (isCopy) {
+                    int tx = rx + lx;
+                    int tz = rz + lz;
+                    // front는 repaintDirtyColumns가 매 틱 최신 유지. 외곽 stale은 표시 범위 밖이라 OK.
+                    int argb = front.image.getColorArgb(tx + rebuildCopyDx, tz + rebuildCopyDz);
+                    rebuildTarget.image.setColorArgb(tx, tz, argb);
+                } else {
+                    rebuildTarget.plotColumn(rebuildTarget.originX + rx + lx, rebuildTarget.originZ + rz + lz);
+                }
+                rebuildRectLocalIndex++;
                 budget--;
-                if ((++sinceTimeCheck & 0xFF) == 0 && System.nanoTime() >= deadline) break;
+                if ((++sinceTimeCheck & 0xFF) == 0 && System.nanoTime() >= deadline) return; // 다음 틱에 이어서
             }
-            done = rebuildPixelIndex >= total;
-        } else {
-            final int total = TEX_SIZE * TEX_SIZE;
-            while (rebuildPixelIndex < total && budget > 0) {
-                int px = rebuildPixelIndex % TEX_SIZE;
-                int pz = rebuildPixelIndex / TEX_SIZE;
-                rebuildTarget.plotColumn(rebuildTarget.originX + px, rebuildTarget.originZ + pz);
-                rebuildPixelIndex++;
-                budget--;
-                if ((++sinceTimeCheck & 0xFF) == 0 && System.nanoTime() >= deadline) break;
+            if (rebuildRectLocalIndex >= total) {
+                rebuildRectCursor++;
+                rebuildRectLocalIndex = 0;
             }
-            done = rebuildPixelIndex >= total;
         }
 
-        if (done) {
+        if (rebuildRectCursor >= rebuildRectCount) {
             rebuildInProgress = false;
             rebuildTarget.markAllDirty();
             if (rebuildTarget == back) {
                 swapBuffers();
             }
             rebuildTarget = null;
-            rebuildPixelIndex = 0;
-            rebuildColumnSnapshot.clear();
-            rebuildColumnSeen.clear();
+            rebuildRectCount = 0;
+            rebuildRectCursor = 0;
+            rebuildRectLocalIndex = 0;
         }
     }
 
@@ -339,7 +392,7 @@ final class MinimapRenderer {
 
         int repY = Integer.MIN_VALUE;
         long repRoot = NO_ID;
-        it.unimi.dsi.fastutil.ints.IntIterator yi = ys.iterator();
+        IntIterator yi = ys.iterator();
         while (yi.hasNext()) {
             int y = yi.nextInt();
             long root = FrontierSearch.resolvedRootAt(x, y, z);
@@ -456,7 +509,7 @@ final class MinimapRenderer {
         }
     }
     private static void drawRiderIcons(DrawContext context, float tickDelta, int centerX, int centerY,
-                                        float yawDeg, Vec3d p, double scale, double sizeFactor) {
+                                       float yawDeg, Vec3d p, double scale, double sizeFactor) {
         MinecraftClient client = MCRiderMinimap.client;
 
         final float iconSize = (float) (RIDER_ICON_SIZE * sizeFactor);
@@ -628,7 +681,7 @@ final class MinimapRenderer {
         );
     }
     private static void drawEnemyHead(DrawContext context, AbstractClientPlayerEntity player,
-                                       float cx, float cy, float size, float rotationDeg) {
+                                      float cx, float cy, float size, float rotationDeg) {
         int isize = Math.round(size);
 
         MatrixStack matrices = context.getMatrices();
@@ -664,13 +717,12 @@ final class MinimapRenderer {
     }
 
     static void reset() {
-        front.reset();
-        back.reset();
+        front.close();
+        back.close();
         rebuildInProgress = false;
         rebuildTarget = null;
-        rebuildPixelIndex = 0;
-        rebuildColumnSnapshot.clear();
-        rebuildColumnSeen.clear();
-        rebuildIsSnapshotMode = false;
+        rebuildRectCount = 0;
+        rebuildRectCursor = 0;
+        rebuildRectLocalIndex = 0;
     }
 }

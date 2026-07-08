@@ -120,31 +120,6 @@ final class FrontierSearch {
         if (cols != null) dirtyColumns.addAll(cols);
     }
 
-    // 활성 색 루트들의 컬럼을 모은다. 윈도우 범위 필터링을 적용해 out-of-window 컬럼을 제외한다.
-    // 고유 개수를 반환하므로 스냅샷 모드 판정에 사용할 수 있다.
-    static long collectActiveColumnsInBounds(int originX, int originZ, int size,
-            LongOpenHashSet seen, it.unimi.dsi.fastutil.longs.LongArrayList out) {
-        long count = 0;
-        LongIterator rootIt = activeSet.iterator();
-        while (rootIt.hasNext()) {
-            LongOpenHashSet cols = columnsByRoot.get(rootIt.nextLong());
-            if (cols == null) continue;
-            LongIterator colIt = cols.iterator();
-            while (colIt.hasNext()) {
-                long col = colIt.nextLong();
-                int x = unpackColumnX(col);
-                int z = unpackColumnZ(col);
-                if (x >= originX && x < originX + size && z >= originZ && z < originZ + size) {
-                    if (seen.add(col)) {
-                        out.add(col);
-                        count++;
-                    }
-                }
-            }
-        }
-        return count;
-    }
-
     static long resolvedRootAt(int x, int y, int z) {
         long id = cellColor.get(BlockPos.asLong(x, y, z));
         return id == NO_ID ? NO_ID : ColorGraph.resolve(id);

@@ -30,7 +30,6 @@ public class MCRiderMain implements ClientModInitializer {
 
     public static boolean isRidingKart = false;
 
-    static MCRiderConfig cfg;
     static MinecraftClient client = MinecraftClient.getInstance();
 
     @Override
@@ -51,7 +50,6 @@ public class MCRiderMain implements ClientModInitializer {
         });
 
         MCRiderConfig.INSTANCE.load();
-        cfg = MCRiderConfig.INSTANCE;
     }
     //MinecraftClient mc = MinecraftClient.getInstance();
     //mc.getWindow().setWindowedSize(1024, 768);
@@ -70,7 +68,7 @@ public class MCRiderMain implements ClientModInitializer {
 
         updateRidingState();
 
-        if (cfg.MCRiderRotationOption > 0) {
+        if (MCRiderConfig.INSTANCE.MCRiderRotationOption > 0) {
             if (isRidingKart && getRidingPlayer() == client.player) {
                 Entity kartMobil = getRidingPlayer().getRootVehicle();
 
@@ -147,7 +145,7 @@ public class MCRiderMain implements ClientModInitializer {
         }
     }
     void autoThirdPerson() {
-        if (cfg.useAutoThirdPerson) {
+        if (MCRiderConfig.INSTANCE.useAutoThirdPerson) {
             if (isRidingKart) {
                 client.options.setPerspective(Perspective.THIRD_PERSON_BACK);
             }
@@ -242,7 +240,7 @@ public class MCRiderMain implements ClientModInitializer {
         playerYawBuffer.add(playerYaw);
 
         long delay = getNearestFrame(25);
-        if (cfg.MCRiderRotationOption == 2) {
+        if (MCRiderConfig.INSTANCE.MCRiderRotationOption == 2) {
             delay = 1;
         }
 

@@ -1,6 +1,7 @@
 package loggamja.mcrider.minimap;
 
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudLayerRegistrationCallback;
@@ -42,6 +43,11 @@ public class MCRiderMinimap implements ClientModInitializer {
         ClientPlayConnectionEvents.DISCONNECT.register((client, handler) -> {
             clearAllMap();
         });
+
+        // BlockSearch의 4슬롯 청크 캐시가 언로드된 뒤에도 옛 Chunk 객체를 들고 있지 않도록,
+        // 언로드되는 청크만 캐시에서 뽑아낸다(전체 초기화는 월드 전환/리셋 때만 일어남).
+        ClientChunkEvents.CHUNK_UNLOAD.register((world, chunk) ->
+                BlockSearch.invalidateChunkCacheAt(chunk.getPos().x, chunk.getPos().z));
     }
     private static World lastWorld = null;
 
