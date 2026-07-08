@@ -170,6 +170,41 @@ final class FrontierSearch {
         inactiveRevivalInProgress = false;
     }
 
+    // FrontierQueue.revivedScratch 처리 재개 상태(매 틱 새로 드레인하지 않고 이어간다).
+    // 타임아웃으로 못 다 처리한 셀은 이미 "청크 로딩됨 + 범위 안"이 확인된 상태이므로
+    // exiledByChunk로 되돌리지 않는다 - 되돌리면 다음 틱 drainExiledWithinRange가 같은 조건을
+    // 또 확인해서 꺼냈다가 또 시간이 없어 못 처리하는 왕복이 생긴다. 대신 인덱스만 들고 있다가
+    // 다음 틱에 바로 이어서 처리한다(reviveInactiveColorParked와 동일 패턴).
+    private static int revivedProcessIndex = 0;
+    private static boolean revivedProcessInProgress = false;
+
+    private static void processRevivedExiledCells(int sx, int sz, int maxRange, boolean containToActive, long deadline) {
+        if (!revivedProcessInProgress) {
+            FrontierQueue.drainExiledWithinRange(sx, sz, maxRange, deadline);
+            revivedProcessIndex = 0;
+            revivedProcessInProgress = !FrontierQueue.revivedScratch.isEmpty();
+        }
+        if (!revivedProcessInProgress) return;
+
+        var revivedCells = FrontierQueue.revivedScratch;
+        int sinceTimeCheck = 0;
+        int n = revivedCells.size();
+        while (revivedProcessIndex < n) {
+            long cell = revivedCells.getLong(revivedProcessIndex);
+            revivedProcessIndex++;
+            long curColor = activeColorOrPark(cell, containToActive);
+            if (curColor != NO_ID) {
+                int cellX = BlockPos.unpackLongX(cell);
+                int cellZ = BlockPos.unpackLongZ(cell);
+                FrontierQueue.enqueue(cell, cellX, cellZ, sx, sz, maxRange);
+            }
+            if ((++sinceTimeCheck & 0xFF) == 0 && System.nanoTime() >= deadline) return; // 다음 틱에 이어서
+        }
+        revivedCells.clear();
+        revivedProcessIndex = 0;
+        revivedProcessInProgress = false;
+    }
+
     static void rebuildActiveSet() {
         if (activeSetSnapshotColor == activeColor && activeSetVersion == ColorGraph.colorGraphVersion) {
             return; // 캐시 유효: activeColor도 그래프도 안 바뀜
@@ -327,21 +362,9 @@ final class FrontierSearch {
         // searchActiveSet이 바뀐 틱에 새로 시작하거나, 이미 진행 중인 재검사를 이어간다(예산 초과 시 다음 틱)
         reviveInactiveColorParked(sx, sz, maxRange, containToActive, searchActiveSetChanged, deadline);
 
-        boolean revivalTimedOut = FrontierQueue.drainExiledWithinRange(sx, sz, maxRange, deadline);
-        var revivedCells = FrontierQueue.revivedScratch;
-        for (int i = 0, n = revivedCells.size(); i < n; i++) {
-            long cell = revivedCells.getLong(i);
-            int cellX = BlockPos.unpackLongX(cell);
-            int cellZ = BlockPos.unpackLongZ(cell);
-            if (!revivalTimedOut && System.nanoTime() >= deadline) revivalTimedOut = true;
-            if (revivalTimedOut) {
-                FrontierQueue.park(cell, cellX, cellZ);
-                continue;
-            }
-            long curColor = activeColorOrPark(cell, containToActive);
-            if (curColor == NO_ID) continue;
-            FrontierQueue.enqueue(cell, cellX, cellZ, sx, sz, maxRange);
-        }
+        // exile에서 되살아난 셀 처리도 같은 재개형 패턴: 못 다 처리한 나머지는 exiledByChunk로
+        // 되돌리지 않고 인덱스만 들고 다음 틱에 이어간다(processRevivedExiledCells 참고)
+        processRevivedExiledCells(sx, sz, maxRange, containToActive, deadline);
 
         boolean stop = false;
         while (!stop && !FrontierQueue.frontierChunkKeys.isEmpty()) {
@@ -530,6 +553,8 @@ final class FrontierSearch {
         inactiveRevivalScratch.clear();
         inactiveRevivalIndex = 0;
         inactiveRevivalInProgress = false;
+        revivedProcessIndex = 0;
+        revivedProcessInProgress = false;
         BlockSearch.invalidateChunkCache();
     }
 }
