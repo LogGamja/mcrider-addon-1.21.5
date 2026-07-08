@@ -369,7 +369,6 @@ final class FrontierSearch {
 
     // 플러드필 탐색
     static void floodFillWithVertical(BlockPos start, int maxRange, int updatePixel) {
-        activeColorUpdatedThisTick = false;
         var world = MCRiderMinimap.client.world;
         if (world == null) return;
 
@@ -598,7 +597,6 @@ final class FrontierSearch {
         searchActiveSetTouchedByMerge = false;
         pendingActiveColorCandidate = NO_ID;
         pendingActiveColorStreak = 0;
-        activeColorUpdatedThisTick = false;
         inactiveRevivalScratch.clear();
         inactiveRevivalDrain.reset();
         revivedProcessDrain.reset();

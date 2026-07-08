@@ -80,8 +80,7 @@ final class ColorGraph {
         if (isNew) bumpColorGraphVersion();
     }
 
-    // true는 확실하지만 false는 미정규화로 인한 false negative일 수 있다.
-    // 호출부가 느린 경로로 폴백하면 안전하다.
+    // parent에서 child로 가는 엣지가 있는지 확인한다. true면 확실히 있다.
     static boolean hasEdge(long parent, long child) {
         LongOpenHashSet kids = parentToChildren.get(parent);
         return kids != null && kids.contains(child);

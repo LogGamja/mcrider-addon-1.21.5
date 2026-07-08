@@ -46,7 +46,7 @@ final class FrontierQueue {
     // sortChunkKeysByDistance가 "지난 정렬 이후 집합이 그대로면 재정렬을 건너뛴다"를 판단하는 데 쓴다
     // add/remove가 상쇄되는 경우까지 잡으려고 size 대신 카운터를 쓴다
     private static long chunkKeysVersion = 0;
-    // 마지막 정렬 시점의 (버전, 기준 좌표)와 그때의 n. 셋이 다 같으면 정렬 결과를 재사용한다
+    // 마지막 정렬 시점의 (버전, 플레이어 월드 좌표)와 n. 셋이 다 같으면 정렬 결과를 재사용한다
     private static long lastSortVersion = -1;
     private static int lastSortSx = Integer.MIN_VALUE, lastSortSz = Integer.MIN_VALUE;
     private static int lastSortN = 0;
