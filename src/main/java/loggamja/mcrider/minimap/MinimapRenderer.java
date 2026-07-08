@@ -245,7 +245,7 @@ final class MinimapRenderer {
 
         if (target == front) {
             target.markAllDirty();
-            FrontierSearch.dirtyColumns.clear();
+            FrontierSearch.clearDirtyColumns();
         }
 
         rebuildTarget = target;
