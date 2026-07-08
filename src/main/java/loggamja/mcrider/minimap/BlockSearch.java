@@ -136,33 +136,80 @@ final class BlockSearch {
         }
     }
 
+    // 로딩되지 않은 청크를 위한 3상태
+    static final int PASSAGE_OPEN = 0;
+    static final int PASSAGE_NARROW = 1;
+    static final int PASSAGE_UNKNOWN = 2;
+
+    // PASSAGE_UNKNOWN을 반환했을 때 판정 불가 사유가 된 미로딩 청크의 월드 좌표.
+    // 호출부(FrontierSearch)가 여기로 FrontierQueue.park(CHUNK_NOT_LOADED)를 걸고 로딩될 때까지 현재 셀 탐색을 보류한다.
+    static int lastUnknownChunkX;
+    static int lastUnknownChunkZ;
+
+    private static final int LATERAL_OPEN = 0;
+    private static final int LATERAL_BLOCKED = 1;
+    private static final int LATERAL_UNKNOWN = 2;
+
     // 폭 판정 전용
-    private static boolean isLaterallyOpen(int x, int y, int z) {
-        if (!isChunkLoadedAt(x, z)) return false;
-        return isAirAt(x, y, z);
+    private static int lateralState(int x, int y, int z) {
+        if (!isChunkLoadedAt(x, z)) return LATERAL_UNKNOWN;
+        return isAirAt(x, y, z) ? LATERAL_OPEN : LATERAL_BLOCKED;
     }
-    static boolean isNarrowPassage(int nx, int ny, int nz, int dx, int dz) {
+
+    static int isNarrowPassage(int nx, int ny, int nz, int dx, int dz) {
+        int x1, z1, x2, z2;
         if (dx != 0) {
-            return !isLaterallyOpen(nx, ny, nz - 1) && !isLaterallyOpen(nx, ny, nz + 1);
+            x1 = nx; z1 = nz - 1;
+            x2 = nx; z2 = nz + 1;
         } else {
-            return !isLaterallyOpen(nx - 1, ny, nz) && !isLaterallyOpen(nx + 1, ny, nz);
+            x1 = nx - 1; z1 = nz;
+            x2 = nx + 1; z2 = nz;
         }
+        int s1 = lateralState(x1, ny, z1);
+        // 한쪽이 열려 있으면 나머지가 미로딩이어도 결론(안 좁음)은 안 바뀐다. 굳이 확인 안 해도 됨
+        if (s1 == LATERAL_OPEN) return PASSAGE_OPEN;
+        int s2 = lateralState(x2, ny, z2);
+        if (s2 == LATERAL_OPEN) return PASSAGE_OPEN;
+        if (s1 == LATERAL_UNKNOWN) { lastUnknownChunkX = x1; lastUnknownChunkZ = z1; return PASSAGE_UNKNOWN; }
+        if (s2 == LATERAL_UNKNOWN) { lastUnknownChunkX = x2; lastUnknownChunkZ = z2; return PASSAGE_UNKNOWN; }
+        return PASSAGE_NARROW;
     }
-    static boolean isNarrowPassageInRange(int nx, int cy, int ty, int nz, int dx, int dz) {
+
+    static int isNarrowPassageInRange(int nx, int cy, int ty, int nz, int dx, int dz) {
         if (ty >= cy) {
             return isNarrowPassage(nx, ty, nz, dx, dz);
         }
+        boolean sawUnknown = false;
+        int unknownX = 0, unknownZ = 0;
         for (int y = cy; y >= ty; y--) {
-            // 낙하 중엔 동서남북 다봐야함
-            if (isNarrowPassage(nx, y, nz, 1, 0) || isNarrowPassage(nx, y, nz, 0, 1)) return true;
+            // 낙하 중엔 동서남북 다봐야함. 확정적 NARROW를 찾으면 즉시 반환하되
+            // 그 전까지 만난 UNKNOWN은 기억해뒀다가 NARROW를 못 찾고 끝나면 UNKNOWN으로 반환한다.
+            int r1 = isNarrowPassage(nx, y, nz, 1, 0);
+            if (r1 == PASSAGE_NARROW) return PASSAGE_NARROW;
+            if (r1 == PASSAGE_UNKNOWN && !sawUnknown) {
+                sawUnknown = true;
+                unknownX = lastUnknownChunkX;
+                unknownZ = lastUnknownChunkZ;
+            }
+            int r2 = isNarrowPassage(nx, y, nz, 0, 1);
+            if (r2 == PASSAGE_NARROW) return PASSAGE_NARROW;
+            if (r2 == PASSAGE_UNKNOWN && !sawUnknown) {
+                sawUnknown = true;
+                unknownX = lastUnknownChunkX;
+                unknownZ = lastUnknownChunkZ;
+            }
         }
-        return false;
+        if (sawUnknown) {
+            lastUnknownChunkX = unknownX;
+            lastUnknownChunkZ = unknownZ;
+            return PASSAGE_UNKNOWN;
+        }
+        return PASSAGE_OPEN;
     }
-
     static boolean canMoveBetween(int tx, int ty, int tz, int fx, int fy, int fz, int bottomY) {
-        boolean baseIsWall = isWallAt(fx, ty, fz); // 역방향 못 감
-        if (baseIsWall) return false;
         boolean baseIsAir = isAirAt(fx, ty, fz);
+        boolean baseIsWall = !baseIsAir && isWallAt(fx, ty, fz); // 역방향 못 감
+        if (baseIsWall) return false;
         boolean tHasBlockAt2 = !isAirAt(tx, ty + 2, tz);
         int back = resolveTargetY(fx, ty, fz, baseIsAir, baseIsWall, tHasBlockAt2, bottomY);
         return back == fy;

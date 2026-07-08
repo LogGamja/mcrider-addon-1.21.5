@@ -86,9 +86,11 @@ public class MCRiderMinimap implements ClientModInitializer {
 
         // 순서 불변식: floodFill(병합/paint) → rebuildActiveSet → ensureOriginFor → repaintDirtyColumns
         // ensureOriginFor 호출 시점에 이번 틱 dirty 마킹이 완료됨. 픽셀 복사는 stale이 아님.
-        if (!FrontierSearch.activeColorUpdatedThisTick) {
-            FrontierSearch.updateActiveColor(start);
-        }
+
+        // activeColorUpdatedThisTick이 false인 건 floodFillWithVertical이 world/청크미로딩/anchor
+        // 못 찾음으로 초기 return한 경우뿐인데, 그 셋 다 이 틱의 client.world/start가 그대로인 한
+        // 다시 계산해도 반드시 같은 이유로 또 실패한다. 여기서 재시도하는 건 findAnchorCell의
+        // 낙하 탐색 루프까지 포함해 방금 실패한 걸 그대로 반복하는 것뿐이라 별도 fallback을 두지 않는다.
         FrontierSearch.rebuildActiveSet();
 
         MinimapRenderer.ensureOriginFor(start);

@@ -153,7 +153,7 @@ final class FrontierQueue {
         boolean timedOut = false;
         ObjectIterator<Long2ObjectMap.Entry<LongArrayList>> exiledIt = exiledByChunk.long2ObjectEntrySet().iterator();
         while (exiledIt.hasNext()) {
-            if (System.nanoTime() >= deadline) {
+            if (System.nanoTime() - deadline >= 0) {
                 timedOut = true;
                 break;
             }

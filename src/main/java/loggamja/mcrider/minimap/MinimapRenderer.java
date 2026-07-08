@@ -277,7 +277,7 @@ final class MinimapRenderer {
                 if (rect.isCopy) {
                     int tx = rect.x + lx;
                     int tz = rect.z + lz;
-                    // 안전성: onTickStart 순서가 floodFill(dirty마킹) → rebuildTexture이므로 stale 아님.
+                    // 안전성: onTickStart 순서가 floodFill(dirty마킹) -> rebuildTexture이므로 stale 아님.
                     // 재빌드 중 dirty는 mirrorToBack으로 cover. repaintDirtyColumns가 범위 필터링.
                     int argb = front.image.getColorArgb(tx + rect.copyDx, tz + rect.copyDz);
                     rebuildTarget.image.setColorArgb(tx, tz, argb);
@@ -286,7 +286,7 @@ final class MinimapRenderer {
                 }
                 rebuildRectLocalIndex++;
                 budget--;
-                if ((++sinceTimeCheck & 0xFF) == 0 && System.nanoTime() >= deadline) return; // 다음 틱에 이어서
+                if ((++sinceTimeCheck & 0xFF) == 0 && System.nanoTime() - deadline >= 0) return; // 다음 틱에 이어서
             }
             if (rebuildRectLocalIndex >= total) {
                 rebuildRectCursor++;
@@ -358,7 +358,7 @@ final class MinimapRenderer {
                 dirtyIt.remove();
                 hardCap--;
             }
-            if ((++sinceTimeCheck & 0xFF) == 0 && System.nanoTime() >= repaintDeadline) {
+            if ((++sinceTimeCheck & 0xFF) == 0 && System.nanoTime() - repaintDeadline >= 0) {
                 timedOut = true;
             }
         }
@@ -372,7 +372,7 @@ final class MinimapRenderer {
                 if (mirrorToBack) back.plotColumn(wx, wz);
                 dirtyIt.remove();
                 hardCap--;
-                if ((++sinceTimeCheck & 0xFF) == 0 && System.nanoTime() >= repaintDeadline) break;
+                if ((++sinceTimeCheck & 0xFF) == 0 && System.nanoTime() - repaintDeadline >= 0) break;
             }
         }
     }

@@ -208,7 +208,7 @@ final class ColorGraph {
 
     static void absorbInto(long loser, long survivor) {
         actualColorCount--; // loser는 호출 시점에 항상 resolve된(자기 자신을 가리키던) 루트였다
-        colorBirth.remove(loser); // birth는 루트끼리의 survivor 선정에만 쓰이고, loser는 다시 루트가 될 수 없다
+        colorBirth.remove(loser); // birth는 루트끼리의 survivor 선정에만 쓰이고 loser는 다시 루트가 될 수 없다
         // 불변식: columnsByRoot 이전 전에 dirty 마킹. 순서 중요 (컬럼 activeSet 상태 전환 감지).
         FrontierSearch.markColumnsDirtyForRoot(loser);
         // 자손 없는 loser 흡수는 subtree 내용이 안 바뀌어 diff로 못 잡힌다. 여기서 직접 revive 신호를 준다.
@@ -217,7 +217,10 @@ final class ColorGraph {
         if (cols != null) {
             FrontierSearch.columnsByRoot.computeIfAbsent(survivor, k -> new LongOpenHashSet()).addAll(cols);
         }
-        // parentToChildren/childToParents의 loser 키 버킷은 resolve()로 자동 정규화되지 않으므로 survivor 키로 직접 옮긴다
+        // parentToChildren / childToParents의 loser 키 버킷은 resolve()로 자동 정규화되지 않으므로 survivor 키로 직접 옮긴다.
+        // 그 전에 stale loser id의 메모리 누수 방지 차우너에서 loser를 참조하는 반대편 항목들도 survivor로 치환해야 한다.
+        replaceValueInReverseMap(parentToChildren, childToParents, loser, survivor);
+        replaceValueInReverseMap(childToParents, parentToChildren, loser, survivor);
         migrateAdjacency(parentToChildren, loser, survivor);
         migrateAdjacency(childToParents, loser, survivor);
         colorParentPtr.put(loser, survivor);
@@ -231,6 +234,24 @@ final class ColorGraph {
         while (it.hasNext()) {
             long v = it.nextLong();
             if (v != survivor) target.add(v);
+        }
+    }
+
+    // ownAdj[loser](마이그레이션 전 loser 자신의 버킷)의 각 원소 v에 대해, v가 반대 방향으로 loser를
+    // 가리키고 있는 otherAdj[v]에서 loser를 survivor로 치환한다. v == survivor인 경우(둘 사이에 직접
+    // 엣지가 있던 경우)는 병합 후 자기 자신을 향한 엣지가 되므로 survivor를 다시 추가하지 않고 제거만 한다.
+    private static void replaceValueInReverseMap(Long2ObjectOpenHashMap<LongOpenHashSet> ownAdj,
+                                                  Long2ObjectOpenHashMap<LongOpenHashSet> otherAdj,
+                                                  long loser, long survivor) {
+        LongOpenHashSet own = ownAdj.get(loser);
+        if (own == null || own.isEmpty()) return;
+        LongIterator it = own.iterator();
+        while (it.hasNext()) {
+            long v = it.nextLong();
+            LongOpenHashSet other = otherAdj.get(v);
+            if (other != null && other.remove(loser) && v != survivor) {
+                other.add(survivor);
+            }
         }
     }
 
