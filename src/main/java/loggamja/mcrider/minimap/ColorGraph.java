@@ -80,6 +80,15 @@ final class ColorGraph {
         if (isNew) bumpColorGraphVersion();
     }
 
+    // parent -> child 엣지가 이미 존재하는지(둘 다 resolve된 루트라고 가정).
+    // 주의: parentToChildren 버킷의 자식 id는 병합 후에도 자동 정규화되지 않으므로(resolve 필요),
+    // 여기서 true면 확실히 엣지가 있는 것이지만 false는 "정규화 안 된 채 저장된 동일 엣지"를
+    // 놓칠 수 있다(false negative). 호출부는 그 경우 느린 정식 경로로 폴백하면 되므로 안전하다.
+    static boolean hasEdge(long parent, long child) {
+        LongOpenHashSet kids = parentToChildren.get(parent);
+        return kids != null && kids.contains(child);
+    }
+
     // -- 병합 --
 
     // 병합 / 사이클 재검사용 스크래치. 역할별로 하나씩만 두고, 각 함수는 호출 시작 시 자기 몫을 clear() 후 쓴다
@@ -200,6 +209,11 @@ final class ColorGraph {
     static void absorbInto(long loser, long survivor) {
         actualColorCount--; // loser는 호출 시점에 항상 resolve된(자기 자신을 가리키던) 루트였다
         FrontierSearch.markColumnsDirtyForRoot(loser);
+        // loser가 searchActiveSet 소속 survivor로 흡수되면, loser 쪽 색으로 파킹돼 있던 셀들이
+        // 이제 resolve()를 거쳐 활성 트리로 편입된다. loser가 자손 없는 색이면 collectColorSubtree
+        // 결과 집합의 "내용"은 병합 전후로 동일해 보여 diff 기반 변경 감지를 통과하지 못하므로,
+        // 그 경우를 놓치지 않도록 여기서 직접 신호를 준다(rebuildSearchActiveSet 참고)
+        FrontierSearch.noteMergeSurvivor(survivor);
         LongOpenHashSet cols = FrontierSearch.columnsByRoot.remove(loser);
         if (cols != null) {
             FrontierSearch.columnsByRoot.computeIfAbsent(survivor, k -> new LongOpenHashSet()).addAll(cols);
@@ -221,7 +235,7 @@ final class ColorGraph {
         }
     }
 
-    // 루프 사용: 재귀 깊이 제한 없음
+    // 루프 사용: 재귀 깊이 제한 없음. deadline 검사 없이 동기 실행되므로 극단적 사이클 케이스에서 프레임 스파이크 가능
     static void rescanCycles(long survivor) {
         survivor = resolve(survivor);
         boolean merged;

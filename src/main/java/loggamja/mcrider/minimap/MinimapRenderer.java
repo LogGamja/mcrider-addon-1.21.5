@@ -129,14 +129,6 @@ final class MinimapRenderer {
             markPixelDirty(tx, tz);
         }
 
-        void reset() {
-            if (image != null) {
-                image.fillRect(0, 0, TEX_SIZE, TEX_SIZE, 0);
-                markAllDirty();
-            }
-            originSet = false;
-        }
-
         void close() {
             if (image != null) {
                 image.close();

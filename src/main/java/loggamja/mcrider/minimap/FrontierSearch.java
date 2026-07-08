@@ -4,6 +4,7 @@ import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
+import it.unimi.dsi.fastutil.longs.LongArrayList;
 import it.unimi.dsi.fastutil.longs.LongIterator;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.util.math.BlockPos;
@@ -52,6 +53,26 @@ final class FrontierSearch {
     static final LongOpenHashSet searchActiveSet = new LongOpenHashSet();
     private static long searchActiveSetSnapshotRoot = NO_ID;
     private static long searchActiveSetVersion = -1;
+    // rebuildSearchActiveSet 재계산 시 "직전 searchActiveSet"과 diff하기 위한 버퍼.
+    // colorGraphVersion은 liveRoot와 무관한 곳의 엣지/병합에도 오르는 전역 카운터라,
+    // 버전만 보고 재검사 여부를 판단하면 서브트리와 무관한 변경에도 매번 반응하게 된다.
+    // 재계산된 집합의 실제 내용이 바뀌었을 때만 true를 돌려줘야 inactiveColorParked 전수
+    // 재검사가 진짜로 필요한 경우로 좁혀진다.
+    private static final LongOpenHashSet prevSearchActiveSetForDiff = new LongOpenHashSet();
+
+    // ColorGraph.absorbInto가 searchActiveSet 소속 survivor로 병합을 수행했을 때 켜진다.
+    // 자손 없는 loser가 흡수되면 collectColorSubtree 결과 "내용"은 병합 전후로 동일해
+    // diff가 변경을 못 잡아내지만, loser 색으로 파킹된 셀들은 resolve()를 거쳐 이제 활성
+    // 트리에 속하므로 revive가 필요하다 - 그 갭을 diff와 별도로 메우는 신호
+    private static boolean searchActiveSetTouchedByMerge = false;
+
+    // ColorGraph.absorbInto 전용 훅: survivor가 지금 searchActiveSet 소속이면 흡수된 loser
+    // 쪽으로 파킹돼 있던 셀들도 재검사 대상이 되어야 하므로 플래그를 세운다
+    static void noteMergeSurvivor(long survivor) {
+        if (searchActiveSet.contains(survivor)) {
+            searchActiveSetTouchedByMerge = true;
+        }
+    }
 
     // rebuildActiveSet/rebuildSearchActiveSet이 공유하는 BFS 큐(매 틱 new 방지, 재진입 없어 안전)
     private static final LongArrayFIFOQueue subtreeQueue = new LongArrayFIFOQueue();
@@ -75,14 +96,78 @@ final class FrontierSearch {
         }
     }
 
-    private static void rebuildSearchActiveSet(long liveRoot) {
-        if (searchActiveSetSnapshotRoot == liveRoot && searchActiveSetVersion == ColorGraph.colorGraphVersion) {
-            return;
+    // 두 LongOpenHashSet의 내용이 같은지 박싱 없이 비교
+    private static boolean longSetsEqual(LongOpenHashSet a, LongOpenHashSet b) {
+        if (a.size() != b.size()) return false;
+        LongIterator it = a.iterator();
+        while (it.hasNext()) {
+            if (!b.contains(it.nextLong())) return false;
         }
+        return true;
+    }
+
+    // 반환값: searchActiveSet의 실제 내용이 바뀌었는지, 또는 그와 무관하게 revive가 필요한 병합이
+    // 있었는지. colorGraphVersion은 liveRoot와 무관한 곳의 변경에도 오르므로, 재계산 자체가 아니라
+    // 재계산 결과가 이전과 달라졌을 때만 true를 돌려준다 - inactiveColorParked 전수 재검사는
+    // 그럴 가치가 있을 때만 트리거되어야 한다.
+    //
+    // diff만으로는 못 잡는 경우(자식 없는 loser가 이미 활성 서브트리인 survivor에 흡수되는 경우)는
+    // ColorGraph.absorbInto가 noteMergeSurvivor로 세워둔 searchActiveSetTouchedByMerge로 보완한다.
+    private static boolean rebuildSearchActiveSet(long liveRoot) {
+        if (searchActiveSetSnapshotRoot == liveRoot && searchActiveSetVersion == ColorGraph.colorGraphVersion) {
+            return false;
+        }
+        prevSearchActiveSetForDiff.clear();
+        prevSearchActiveSetForDiff.addAll(searchActiveSet);
+
         searchActiveSet.clear();
         collectColorSubtree(liveRoot, searchActiveSet);
         searchActiveSetSnapshotRoot = liveRoot;
         searchActiveSetVersion = ColorGraph.colorGraphVersion;
+
+        boolean contentChanged = !longSetsEqual(searchActiveSet, prevSearchActiveSetForDiff);
+        boolean mergeTouchedActive = searchActiveSetTouchedByMerge;
+        searchActiveSetTouchedByMerge = false;
+        return contentChanged || mergeTouchedActive;
+    }
+
+    // inactiveColorParked 되살리기 전용 스크래치(매 틱 new 방지). 세션 내내 누적될 수 있는 크기라
+    // 한 틱에 몰아서 처리하면 안 된다 — inactiveRevivalIndex/InProgress로 진행 상태를 들고 있다가
+    // 예산이 부족하면 다음 틱에 이어서 처리한다.
+    private static final LongArrayList inactiveRevivalScratch = new LongArrayList();
+    private static int inactiveRevivalIndex = 0;
+    private static boolean inactiveRevivalInProgress = false;
+
+    // searchActiveSet이 바뀐 틱에 새로 드레인을 시작하거나(진행 중이 아닐 때만), 이미 진행 중인 드레인을
+    // 이어간다. 색이 안 맞아 보류됐던 셀들을 activeColorOrPark로 재검사해, 이제 활성 트리에 속하면
+    // 프론티어로, 아니면 다시 보류(inactiveColorParked)로 되돌린다. 다른 단계와 같은 deadline을 공유해
+    // 이 단계가 이번 틱의 시간 예산을 독점하지 않게 한다.
+    private static void reviveInactiveColorParked(int sx, int sz, int maxRange, boolean containToActive,
+                                                   boolean searchActiveSetChanged, long deadline) {
+        if (searchActiveSetChanged && !inactiveRevivalInProgress) {
+            inactiveRevivalScratch.clear();
+            FrontierQueue.reviveInactiveColorParked(inactiveRevivalScratch);
+            inactiveRevivalIndex = 0;
+            inactiveRevivalInProgress = !inactiveRevivalScratch.isEmpty();
+        }
+        if (!inactiveRevivalInProgress) return;
+
+        int sinceTimeCheck = 0;
+        int n = inactiveRevivalScratch.size();
+        while (inactiveRevivalIndex < n) {
+            long cell = inactiveRevivalScratch.getLong(inactiveRevivalIndex);
+            inactiveRevivalIndex++;
+            long curColor = activeColorOrPark(cell, containToActive);
+            if (curColor != NO_ID) {
+                int cx = BlockPos.unpackLongX(cell);
+                int cz = BlockPos.unpackLongZ(cell);
+                FrontierQueue.enqueue(cell, cx, cz, sx, sz, maxRange);
+            }
+            if ((++sinceTimeCheck & 0xFF) == 0 && System.nanoTime() >= deadline) return; // 다음 틱에 이어서
+        }
+        inactiveRevivalScratch.clear();
+        inactiveRevivalIndex = 0;
+        inactiveRevivalInProgress = false;
     }
 
     static void rebuildActiveSet() {
@@ -193,11 +278,13 @@ final class FrontierSearch {
         return BlockPos.asLong(x, y, z);
     }
 
-    private static long activeColorOrPark(long cell, int cx, int cz, boolean containToActive) {
+    private static long activeColorOrPark(long cell, boolean containToActive) {
         long curColor = cellColor.get(cell);
         if (curColor == NO_ID) return NO_ID;
         if (containToActive && !searchActiveSet.contains(ColorGraph.resolve(curColor))) {
-            FrontierQueue.park(cell, cx, cz);
+            // 청크 미로딩/범위 밖이 아니라 "색이 활성 트리 소속이 아님"이 사유이므로
+            // exiledByChunk가 아닌 별도 저장소로 보내 매 틱 park/revive 반복을 피한다
+            FrontierQueue.parkInactiveColor(cell);
             return NO_ID;
         }
         return curColor;
@@ -232,10 +319,13 @@ final class FrontierSearch {
         rebuildActiveSet();
 
         long liveRoot = (playerCell != NO_ID) ? ColorGraph.resolve(cellColor.get(playerCell)) : NO_ID;
-        rebuildSearchActiveSet(liveRoot);
+        boolean searchActiveSetChanged = rebuildSearchActiveSet(liveRoot);
         final boolean containToActive = playerCell != NO_ID;
 
         final long deadline = System.nanoTime() + STAGING_TIME_BUDGET_NANOS;
+
+        // searchActiveSet이 바뀐 틱에 새로 시작하거나, 이미 진행 중인 재검사를 이어간다(예산 초과 시 다음 틱)
+        reviveInactiveColorParked(sx, sz, maxRange, containToActive, searchActiveSetChanged, deadline);
 
         boolean revivalTimedOut = FrontierQueue.drainExiledWithinRange(sx, sz, maxRange, deadline);
         var revivedCells = FrontierQueue.revivedScratch;
@@ -248,7 +338,7 @@ final class FrontierSearch {
                 FrontierQueue.park(cell, cellX, cellZ);
                 continue;
             }
-            long curColor = activeColorOrPark(cell, cellX, cellZ, containToActive);
+            long curColor = activeColorOrPark(cell, containToActive);
             if (curColor == NO_ID) continue;
             FrontierQueue.enqueue(cell, cellX, cellZ, sx, sz, maxRange);
         }
@@ -282,7 +372,7 @@ final class FrontierSearch {
                         continue;
                     }
 
-                    long curColor = activeColorOrPark(curPacked, cx, cz, containToActive);
+                    long curColor = activeColorOrPark(curPacked, containToActive);
                     if (curColor == NO_ID) continue;
 
                     boolean hasBlockAt2Meter = !BlockSearch.isAirAt(cx, cy + 2, cz);
@@ -293,9 +383,12 @@ final class FrontierSearch {
                         int nz = cz + d[1];
 
                         if (!BlockSearch.isChunkLoadedAt(nx, nz)) {
-                            // park parent to re-check all 4 directions when chunk loads
+                            // 실제로 안 뜬 건 이웃(nx,nz)이므로 그 청크 키로 park해야 revive 조건이
+                            // "그 이웃이 로딩됨"이 된다. cx,cz(자기 청크)로 걸면 이미 로딩된 상태라
+                            // drainExiledWithinRange가 매 틱 즉시 되살렸다가 이웃이 여전히 안 뜬 걸
+                            // 보고 다시 park하는 핑퐁이 생긴다(청크 로딩 경계/낮은 렌더 거리에서 흔함)
                             if (!parkedSelf) {
-                                FrontierQueue.park(curPacked, cx, cz);
+                                FrontierQueue.park(curPacked, nx, nz);
                                 parkedSelf = true;
                             }
                             continue;
@@ -358,10 +451,20 @@ final class FrontierSearch {
                 long childRoot = ColorGraph.resolve(existing);
                 if (parentRoot != childRoot) {
                     // Cycle prevention: don't add edge if childRoot is already ancestor
-                    LongOpenHashSet parentAncestors = ColorGraph.scratchParentAncestors;
-                    parentAncestors.clear();
-                    ColorGraph.collectAncestors(parentRoot, parentAncestors);
-                    boolean isCycleMergeRequired = parentAncestors.contains(childRoot);
+                    // 엣지가 이미 있으면 그건 예전에 추가될 때 이미 이 사이클 검사를 통과했고,
+                    // 그 이후 사이클이 생겼다면 rescanCycles가 두 루트를 병합해 resolve가 같아졌을 것
+                    // (그럼 위 parentRoot != childRoot에서 이미 걸러짐)이므로, 지금 엣지가 남아 있다는 건
+                    // childRoot가 여전히 parentRoot의 자손(=조상 아님)이라는 뜻이다. 따라서 조상 BFS를
+                    // 생략해도 결과가 같다. 단방향 긴 트랙에서 이 BFS가 O(색 수)까지 커지는 걸 막는다.
+                    boolean isCycleMergeRequired;
+                    if (ColorGraph.hasEdge(parentRoot, childRoot)) {
+                        isCycleMergeRequired = false;
+                    } else {
+                        LongOpenHashSet parentAncestors = ColorGraph.scratchParentAncestors;
+                        parentAncestors.clear();
+                        ColorGraph.collectAncestors(parentRoot, parentAncestors);
+                        isCycleMergeRequired = parentAncestors.contains(childRoot);
+                    }
                     if (isCycleMergeRequired) {
                         ColorGraph.mergeColors(parentRoot, childRoot);
                     }
@@ -420,9 +523,13 @@ final class FrontierSearch {
         searchActiveSet.clear();
         searchActiveSetVersion = -1;
         searchActiveSetSnapshotRoot = NO_ID;
+        searchActiveSetTouchedByMerge = false;
         pendingActiveColorCandidate = NO_ID;
         pendingActiveColorStreak = 0;
         activeColorUpdatedThisTick = false;
+        inactiveRevivalScratch.clear();
+        inactiveRevivalIndex = 0;
+        inactiveRevivalInProgress = false;
         BlockSearch.invalidateChunkCache();
     }
 }
