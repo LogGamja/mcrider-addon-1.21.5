@@ -19,8 +19,7 @@ public final class SpringSimulator {
 
     private SpringSimulator() {}
 
-    // 감쇠 조화 진동 시뮬레이션 (x/v: 각도/각속도, a: 각가속도)
-    // dt: 시간 간격(s, 기본 0.05), f: 공진주파수(Hz), Q: 공진 팩터
+    // 감쇠 조화 진동 시뮬레이션
     public static SpringState step(double dt, double f, double Q,
                                    double a, double v, double x) {
 
@@ -64,7 +63,6 @@ public final class SpringSimulator {
         return new SpringState(x, v);
     }
 
-    // State 를 제자리로 갱신하는 헬퍼 메서드
     public static void step(SpringState s, double dt, double f, double Q, double a) {
         final SpringState r = step(dt, f, Q, a, s.v, s.x);
         s.x = r.x;

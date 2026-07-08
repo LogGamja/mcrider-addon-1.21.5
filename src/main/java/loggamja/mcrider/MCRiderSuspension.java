@@ -46,7 +46,6 @@ public class MCRiderSuspension implements ClientModInitializer {
     public void onInitializeClient() {
         ClientTickEvents.END_CLIENT_TICK.register(client -> onClientTick());
 
-        // EntityRollManager는 자체 정리 로직이 없어 여기서 안 비우면 마인크래프트 종료까지 계속 쌓인다
         ClientPlayConnectionEvents.DISCONNECT.register((client, handler) -> {
             EntityRollManager.clear();
             clearStates();
@@ -162,11 +161,9 @@ public class MCRiderSuspension implements ClientModInitializer {
 
         if (isPlayingSwingAnimation || !isModelRotateAllowed) clampedDriftAngle = 0;
 
-        // 스프링 물리 통과
         SpringSimulator.step(st.spring, DT, FREQ, Q, -(clampedDriftAngle / 2f));
         double modelRollValue = Math.toDegrees(st.spring.x);
 
-        // 바이크 옵션
         if (isBike == 1) {
             if (MCRiderConfig.INSTANCE.bikeSuspension == 0) {
                 modelRollValue = 0;
@@ -179,7 +176,6 @@ public class MCRiderSuspension implements ClientModInitializer {
             }
         }
 
-        // 실제 카트바디에 적용
         for (var i : passengers) {
             if (MCRiderMain.hasCertainName(i, "mcrider-modelsaddle")) {
                 for (var j : i.getPassengerList()) {

@@ -15,7 +15,6 @@ import net.minecraft.world.chunk.EmptyChunk;
 
 import java.util.function.Predicate;
 
-// 월드 블록 조회 등
 final class BlockSearch {
     private BlockSearch() {}
 
@@ -38,8 +37,7 @@ final class BlockSearch {
         java.util.Arrays.fill(cacheChunks, null);
     }
 
-    // 청크가 언로드될 때 그 청크만 캐시에서 뽑아낸다. 이게 없으면 언로드된 뒤 재로드된 청크를
-    // 여전히 옛 Chunk 객체로 읽어 stale 블록 상태를 반환할 수 있다(ClientChunkEvents.CHUNK_UNLOAD에서 호출)
+    // 언로드된 청크 캐시 제거 (stale 상태 방지)
     static void invalidateChunkCacheAt(int chunkX, int chunkZ) {
         long key = ChunkPos.toLong(chunkX, chunkZ);
         for (int i = 0; i < CHUNK_CACHE_SLOTS; i++) {

@@ -65,7 +65,6 @@ public class MCRiderSettingScreen extends Screen {
 
         int toggleRows = (toggles.length + buttonsPerRow - 1) / buttonsPerRow;
 
-        // Sliders
         var sliders = MCRiderOptionTable.SLIDERS;
         for (int i = 0; i < sliders.length; i++) {
             var def = sliders[i];
@@ -95,7 +94,6 @@ public class MCRiderSettingScreen extends Screen {
             this.addDrawableChild(slider);
         }
 
-        // Exit button
         this.addDrawableChild(
             ButtonWidget.builder(Text.translatable("mcrider.setting.ok"), button -> this.close())
                 .position(startX, startY + (toggleRows + sliders.length) * spacing)

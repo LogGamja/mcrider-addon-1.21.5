@@ -50,7 +50,6 @@ final class MinimapRenderer {
     // 마진 16: 재앵커 ~150블록마다, 복사도 예산 큐로 분산되므로 충분함.
     static final int REANCHOR_MARGIN = (int) Math.ceil(maxDist * SQRT2) + 16;
     private static final int VISITED_COLOR = 0xBBCCCCCC;
-    // 길이 겹치면 강조할 색
     private static final int OVERLAP_COLOR = 0xFFFFFFFF;
 
     private static final float IMAGE_CORRECTION_TRICK = 0.001f;

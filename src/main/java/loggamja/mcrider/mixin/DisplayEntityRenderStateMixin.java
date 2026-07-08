@@ -8,9 +8,7 @@ import org.spongepowered.asm.mixin.Unique;
 
 import java.util.UUID;
 
-// BlockDisplayEntityRenderState/ItemDisplayEntityRenderState/TextDisplayEntityRenderState가
-// 모두 이 클래스를 상속하므로 여기 하나에만 믹스인하면 셋 다 자동으로 커버되고,
-// 새 디스플레이 타입이 추가돼도 별도 대응이 필요 없다.
+// 부모 클래스 믹스인으로 모든 디스플레이 타입 커버
 @Mixin(DisplayEntityRenderState.class)
 public class DisplayEntityRenderStateMixin implements DisplayEntityRenderStateAccessor {
     @Unique

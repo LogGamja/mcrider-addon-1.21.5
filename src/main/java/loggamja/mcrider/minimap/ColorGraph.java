@@ -25,7 +25,7 @@ final class ColorGraph {
     static long nextColorId = 0;
     static int birthCounter = 0;
 
-    // 그래프 구조가 바뀔 때(엣지 추가 / 병합) 증가. FrontierSearch의 activeSet 캐시 무효화 판단용
+    // 그래프 변경 감지 (캐시 무효화)
     static long colorGraphVersion = 0;
     static int actualColorCount = 0;
 
@@ -80,15 +80,12 @@ final class ColorGraph {
         if (isNew) bumpColorGraphVersion();
     }
 
-    // parent에서 child로 가는 엣지가 있는지 확인한다. true면 확실히 있다.
     static boolean hasEdge(long parent, long child) {
         LongOpenHashSet kids = parentToChildren.get(parent);
         return kids != null && kids.contains(child);
     }
 
-    // -- 병합 --
-
-    // 병합 / 사이클 재검사용 스크래치. 역할별로 하나씩만 두고, 각 함수는 호출 시작 시 자기 몫을 clear() 후 쓴다
+    // 병합/사이클 재검사용 스크래치
     private static final LongOpenHashSet scratchGroup = new LongOpenHashSet();
     private static final LongOpenHashSet scratchReachable = new LongOpenHashSet();
     private static final LongArrayFIFOQueue scratchReachQueue = new LongArrayFIFOQueue();

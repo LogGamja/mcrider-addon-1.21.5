@@ -89,26 +89,20 @@ public class MCRiderDraft implements ClientModInitializer {
         int screenWidth = client.getWindow().getScaledWidth();
         int screenHeight = client.getWindow().getScaledHeight();
 
-        // 게이지 위치: 화면 중앙보다 약간 왼쪽, 머리 높이 근처
         int gaugeWidth = 4;
         int gaugeHeight = 35;
         int gaugeX = screenWidth / 2 - 35;
         int gaugeY = screenHeight / 2 - gaugeHeight / 2;
 
-        // 배경 색상 (반투명 검은색)
         int backgroundColor = 0x88000000;
 
-        // 배경 그리기
         context.fill(gaugeX, gaugeY, gaugeX + gaugeWidth, gaugeY + gaugeHeight, backgroundColor);
 
-        // 채워진 부분 계산
         int filledHeight = (int)(gaugeHeight * Math.max(0, Math.min(1, fillRatio)));
         int fillTop = gaugeY + gaugeHeight - filledHeight;
 
-        // 채움 그리기
         context.fill(gaugeX, fillTop, gaugeX + gaugeWidth, gaugeY + gaugeHeight, color);
 
-        // 텍스트 출력 (문자열이 비어있지 않을 때만)
         if (text != null && !text.isEmpty()) {
             TextRenderer renderer = client.textRenderer;
             int textWidth = renderer.getWidth(text);

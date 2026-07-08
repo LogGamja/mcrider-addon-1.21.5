@@ -119,13 +119,11 @@ public abstract class GameRendererMixin {
         if (player == MCRiderMain.getRidingPlayer()) {
             PlayerInput input = mcrider$getPlayerInput(player);
 
-            // 키엔진 키 입력이 감지되면 패킷 발사
             if (!this.mcrider$lastPlayerInput.equals(input)) {
                 player.networkHandler.sendPacket(new PlayerInputC2SPacket(input));
                 this.mcrider$lastPlayerInput = input;
             }
 
-            // 카메라의 가로 방향이 회전하면 패킷 발사
             if (this.mcrider$lastYaw != player.getYaw()) {
                 player.networkHandler.sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(player.getYaw(), player.getPitch(), player.isOnGround(), player.horizontalCollision));
                 this.mcrider$lastYaw = player.getYaw();

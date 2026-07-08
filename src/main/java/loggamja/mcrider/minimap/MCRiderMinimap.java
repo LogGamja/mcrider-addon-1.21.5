@@ -45,8 +45,6 @@ public class MCRiderMinimap implements ClientModInitializer {
             clearAllMap();
         });
 
-        // BlockSearch의 4슬롯 청크 캐시가 언로드된 뒤에도 옛 Chunk 객체를 들고 있지 않도록,
-        // 언로드되는 청크만 캐시에서 뽑아낸다(전체 초기화는 월드 전환/리셋 때만 일어남).
         ClientChunkEvents.CHUNK_UNLOAD.register((world, chunk) ->
                 BlockSearch.invalidateChunkCacheAt(chunk.getPos().x, chunk.getPos().z));
     }
@@ -70,8 +68,7 @@ public class MCRiderMinimap implements ClientModInitializer {
             return;
         }
 
-        // 디버그<->일반 전환 시 computeColumnColor의 의미가 통째로 바뀌므로 전체 재도색을 예약한다.
-        // 안 하면 다음 재앵커까지 두 렌더 방식이 섞인 텍스처가 남는다
+        // 디버그 모드 전환 시 전체 재도색 (렌더 방식 변경)
         boolean debugColors = isDebugColors();
         if (debugColors != lastDebugColors) {
             lastDebugColors = debugColors;
