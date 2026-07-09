@@ -207,27 +207,24 @@ final class ColorGraph {
         if (cols != null) {
             FrontierSearch.columnsByRoot.computeIfAbsent(survivor, k -> new LongOpenHashSet()).addAll(cols);
         }
-        // 엣지 맵의 loser 키 버킷을 survivor로 옮김 (양방향)
-        migrateDirection(parentToChildren, childToParents, loser, survivor);
-        migrateDirection(childToParents, parentToChildren, loser, survivor);
+        // 엣지 맵의 loser 키 버킷만 survivor로 옮긴다. 반대편 맵에 남는 loser 역참조는
+        // 정리하지 않는다 - collectReachableBFS 등 소비 측이 이웃을 읽을 때 항상 resolve()로
+        // 정규화하므로(예: line ~280 `resolve(it.nextLong())`) stale 참조가 있어도 survivor로
+        // 환원되어 정합성엔 문제가 없다. 대신 병합마다 인접 노드 수(degree)에 비례해 반대편 맵까지
+        // remove+add하는 비용을 없애 mergeColors 핫패스(플러드필 루프에서 매우 자주 호출됨) 비용을 낮춘다.
+        migrateAdjacency(parentToChildren, loser, survivor);
+        migrateAdjacency(childToParents, loser, survivor);
         colorParentPtr.put(loser, survivor);
     }
 
-    // ownAdj[loser]를 survivor로 옮기면서 양방향 참조도 함께 치환 (한 번의 순회)
-    private static void migrateDirection(Long2ObjectOpenHashMap<LongOpenHashSet> ownAdj,
-                                         Long2ObjectOpenHashMap<LongOpenHashSet> otherAdj,
-                                         long loser, long survivor) {
-        LongOpenHashSet own = ownAdj.remove(loser);
-        if (own == null || own.isEmpty()) return;
-        LongOpenHashSet target = ownAdj.computeIfAbsent(survivor, k -> new LongOpenHashSet());
-        LongIterator it = own.iterator();
+    private static void migrateAdjacency(Long2ObjectOpenHashMap<LongOpenHashSet> adj, long loser, long survivor) {
+        LongOpenHashSet moved = adj.remove(loser);
+        if (moved == null || moved.isEmpty()) return;
+        LongOpenHashSet target = adj.computeIfAbsent(survivor, k -> new LongOpenHashSet());
+        LongIterator it = moved.iterator();
         while (it.hasNext()) {
             long v = it.nextLong();
             if (v != survivor) target.add(v);
-            LongOpenHashSet other = otherAdj.get(v);
-            if (other != null && other.remove(loser) && v != survivor) {
-                other.add(survivor);
-            }
         }
     }
 
