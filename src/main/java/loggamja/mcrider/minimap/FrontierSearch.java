@@ -447,6 +447,46 @@ final class FrontierSearch {
                         int ty = BlockSearch.resolveTargetY(nx, cy, nz, baseIsAir, baseIsWall, hasBlockAt2Meter, world.getBottomY());
                         if (ty == Integer.MIN_VALUE) continue;
 
+                        // 가짜 블록은 narrow 경로를 걸러내는 설정이 켜져 있을 때만 동작한다 — 꺼져있으면
+                        // narrow 체크가 안전망 역할을 못 해서, 실제로 이어지는 좁은 통로를 가짜 블록으로
+                        // 덮어써 지워버릴 수 있다.
+                        if (MCRiderMinimap.EXCLUDE_NARROW_PATHS && cy - ty == 1) {
+                            // 측면 칸이 미로딩이면 EmptyChunk의 void_air를 "막힘"으로 오인해 가짜 블록을
+                            // 잘못 놓을 수 있다(한번 놓이면 영구). narrow 체크와 동일하게 그 청크가 로딩될
+                            // 때까지 이 셀을 보류하고, 로딩된 뒤 확정된 상태로 재판정한다.
+                            boolean lateralUnloaded = false;
+                            for (int[] pd : BlockSearch.DIRECTIONS) {
+                                if (!BlockSearch.isChunkLoadedAt(nx + pd[0], nz + pd[1])) {
+                                    if (!parkedSelf) {
+                                        FrontierQueue.park(curPacked, nx + pd[0], nz + pd[1], FrontierQueue.ParkReason.CHUNK_NOT_LOADED);
+                                        parkedSelf = true;
+                                    }
+                                    lateralUnloaded = true;
+                                    break;
+                                }
+                            }
+                            if (lateralUnloaded) continue;
+
+                            boolean frontBlocked = false, backBlocked = false;
+                            int blockedSides = 0;
+                            for (int[] pd : BlockSearch.DIRECTIONS) {
+                                if (!BlockSearch.isAirAt(nx + pd[0], ty, nz + pd[1])) {
+                                    blockedSides++;
+                                    if (pd[0] == d[0] && pd[1] == d[1]) frontBlocked = true;
+                                    else if (pd[0] == -d[0] && pd[1] == -d[1]) backBlocked = true;
+                                }
+                            }
+                            // 주변 상하좌우 3면 이상이 (오르든 아니든) 막혀있거나, 진행 방향 앞뒤만 막히고
+                            // 좌우는 열려있으면(진행축과 수직인 좁은 도랑) 실수로 판 듯한 1칸 구덩이로 보고
+                            // 가상 블록으로 메운다. 밟고 지나가는 평평한 바닥으로 재계산된다.
+                            boolean frontBackOnly = frontBlocked && backBlocked && blockedSides == 2;
+                            if (blockedSides >= 3 || frontBackOnly) {
+                                BlockSearch.addFakeBlock(nx, ty, nz);
+                                ty = BlockSearch.resolveTargetY(nx, cy, nz, baseIsAir, baseIsWall, hasBlockAt2Meter, world.getBottomY());
+                                if (ty == Integer.MIN_VALUE) continue;
+                            }
+                        }
+
                         if (MCRiderMinimap.EXCLUDE_NARROW_PATHS) {
                             long narrow = BlockSearch.isNarrowPassageInRange(nx, cy, ty, nz, d[0], d[1]);
                             if (narrow != BlockSearch.PASSAGE_OPEN && narrow != BlockSearch.PASSAGE_NARROW) {
@@ -554,6 +594,7 @@ final class FrontierSearch {
         visitedColumns.clear();
         dirtyColumns.clear();
         columnsByRoot.clear();
+        BlockSearch.clearFakeBlocks();
         FrontierQueue.reset();
         activeColor = NO_ID;
         activeSet.clear();

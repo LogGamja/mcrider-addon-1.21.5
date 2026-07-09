@@ -48,8 +48,8 @@ final class MinimapRenderer {
     private static final double SQRT2 = Math.sqrt(2.0);
 
     static final int REANCHOR_MARGIN = (int) Math.ceil(maxDist * SQRT2) + 16;
-    private static final int VISITED_COLOR = 0xBBCCCCCC;
-    private static final int OVERLAP_COLOR = 0xCCDDDDDD;
+    private static final int VISITED_COLOR = 0xB0F0F0F0;
+    private static final int OVERLAP_COLOR = 0xE3F0F0F0;
 
     private static final float IMAGE_CORRECTION_TRICK = 0.001f;
     private static final double RIDER_ICON_SIZE = 6 * LEGACY_GUI_SCALE_BASIS;
@@ -130,14 +130,16 @@ final class MinimapRenderer {
         }
 
         void close() {
-            if (image != null) {
-                image.close();
-                image = null;
-            }
             if (texture != null) {
                 texture.close();
                 texture = null;
+            } 
+            else if (image != null) {
+                // 이중 close 방지
+                image.close();
             }
+            image = null;
+
             dirtyTiles.clear();
             uploadWholeTexture = false;
             textureDirty = false;
