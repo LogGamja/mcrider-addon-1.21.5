@@ -37,7 +37,6 @@ final class BlockSearch {
         java.util.Arrays.fill(cacheChunks, null);
     }
 
-    // 언로드된 청크 캐시 제거 (stale 상태 방지)
     static void invalidateChunkCacheAt(int chunkX, int chunkZ) {
         long key = ChunkPos.toLong(chunkX, chunkZ);
         for (int i = 0; i < CHUNK_CACHE_SLOTS; i++) {
@@ -67,8 +66,7 @@ final class BlockSearch {
         }
         Chunk chunk = MCRiderMinimap.client.world.getChunk(x >> 4, z >> 4);
         if (chunk instanceof EmptyChunk) {
-            // 미로딩 청크의 EmptyChunk는 캐시하지 않는다 - 캐시 무효화가 언로드 이벤트에만 걸려 있어,
-            // 여기서 캐시하면 그 청크가 나중에 로드돼도 계속 빈 청크를 읽는다
+            // EmptyChunk는 캐시하지 않음 (로드 후 stale 방지)
             return chunk.getBlockState(MUTABLE.set(x, y, z));
         }
         System.arraycopy(cacheKeys, 0, cacheKeys, 1, CHUNK_CACHE_SLOTS - 1);
@@ -97,7 +95,6 @@ final class BlockSearch {
     }
     static boolean isChunkLoadedAt(int x, int z) {
         if (MCRiderMinimap.client.world == null) return false;
-        // 4슬롯 캐시에 있는 청크는 반드시 로딩된 청크다(EmptyChunk는 캐시에 안 들어가고, 언로드 시 즉시 제거됨)
         long key = ChunkPos.toLong(x >> 4, z >> 4);
         for (int i = 0; i < CHUNK_CACHE_SLOTS; i++) {
             if (cacheKeys[i] == key && cacheChunks[i] != null) return true;
@@ -111,7 +108,7 @@ final class BlockSearch {
         return true;
     }
 
-    // (nx, cy, nz)의 air/wall 판정을 호출부에서 미리 구해 넘겨받아 중복 조회를 피한다
+    // 호출부에서 미리 구한 air/wall 판정 재사용
     static int resolveTargetY(int nx, int cy, int nz, boolean baseIsAir, boolean baseIsWall,
                               boolean fromHasBlockAt2Meter, int bottomY) {
         if (!isAirAt(nx, cy + 1, nz)) return Integer.MIN_VALUE;
@@ -134,14 +131,7 @@ final class BlockSearch {
         }
     }
 
-    // 폭 판정 결과: OPEN/NARROW는 sentinel 값이고, 그 외 값은 판정 불가 사유가 된 미로딩 청크의
-    // 월드 좌표(packWorldXZ로 패킹)다. 호출부(FrontierSearch)가 이 좌표로 FrontierQueue.park를
-    // 걸어 그 청크가 로딩될 때까지 현재 셀 탐색을 보류한다. 반환값 자체에 좌표를 실어 static
-    // 필드로 넘기지 않으므로, 호출 사이 순서에 의존하는 숨은 계약이 없다.
-    //
-    // sentinel은 packWorldXZ(0, Integer.MIN_VALUE) 계열을 쓴다. nx/nz는 항상 이미 로딩된 청크
-    // 안의 좌표(플레이어 주변, 기본 월드 보더 ±30,000,000 이내)에서 유래하므로 z가
-    // Integer.MIN_VALUE에 도달할 수 없어 실제 좌표와 절대 충돌하지 않는다.
+    // OPEN/NARROW는 sentinel. 그 외 값은 미로딩 청크 좌표 (패킹됨)
     private static long packWorldXZ(int x, int z) {
         return ((long) x << 32) | (z & 0xFFFFFFFFL);
     }
@@ -152,17 +142,16 @@ final class BlockSearch {
     private static final int LATERAL_BLOCKED = 1;
     private static final int LATERAL_UNKNOWN = 2;
 
-    // 폭 판정 전용. loaded를 호출부가 이미 알고 있을 때(루프에서 y-불변인 로딩 여부를 미리 구해둔 경우) 재확인을 피한다
+    // 호출부에서 미리 구한 로딩 여부 활용
     private static int lateralStateKnownLoaded(boolean loaded, int x, int y, int z) {
         if (!loaded) return LATERAL_UNKNOWN;
         return isAirAt(x, y, z) ? LATERAL_OPEN : LATERAL_BLOCKED;
     }
 
-    // 한 축(양쪽 측면 x1,z1 / x2,z2)의 폭 판정. 로딩 여부는 호출부가 넘겨준 값을 그대로 쓴다
+    // 한 축의 폭 판정 (양쪽 측면)
     private static long axisResult(boolean loaded1, int x1, int z1, boolean loaded2, int x2, int z2, int y) {
         int s1 = lateralStateKnownLoaded(loaded1, x1, y, z1);
-        // 한쪽이 열려 있으면 나머지가 미로딩이어도 결론(안 좁음)은 안 바뀐다. 굳이 확인 안 해도 됨
-        if (s1 == LATERAL_OPEN) return PASSAGE_OPEN;
+        if (s1 == LATERAL_OPEN) return PASSAGE_OPEN; // 한쪽 열려있으면 결론 정함
         int s2 = lateralStateKnownLoaded(loaded2, x2, y, z2);
         if (s2 == LATERAL_OPEN) return PASSAGE_OPEN;
         if (s1 == LATERAL_UNKNOWN) return packWorldXZ(x1, z1);
@@ -182,12 +171,11 @@ final class BlockSearch {
         return axisResult(isChunkLoadedAt(x1, z1), x1, z1, isChunkLoadedAt(x2, z2), x2, z2, ny);
     }
 
+    // 플레이어가 1칸은 못 들어간다고 가정
     static long isNarrowPassageInRange(int nx, int cy, int ty, int nz, int dx, int dz) {
-        if (ty >= cy) {
-            return isNarrowPassage(nx, ty, nz, dx, dz);
-        }
+        if (ty >= cy) return isNarrowPassage(nx, ty, nz, dx, dz);
+
         // 청크 로딩 여부는 y와 무관하므로 루프 밖에서 축당 한 번만 판정한다
-        // (예전엔 y 레벨마다 매번 재조회해 미로딩 경계에서 낙하 깊이만큼 헛조회가 반복됐다)
         boolean zMinusLoaded = isChunkLoadedAt(nx, nz - 1);
         boolean zPlusLoaded = isChunkLoadedAt(nx, nz + 1);
         boolean xMinusLoaded = isChunkLoadedAt(nx - 1, nz);
@@ -196,8 +184,7 @@ final class BlockSearch {
         boolean sawUnknown = false;
         long unknownResult = 0;
         for (int y = cy; y >= ty; y--) {
-            // 낙하 중엔 동서남북 다봐야함. 확정적 NARROW를 찾으면 즉시 반환하되
-            // 그 전까지 만난 UNKNOWN은 기억해뒀다가 NARROW를 못 찾고 끝나면 UNKNOWN으로 반환한다.
+            // 낙하 중 NARROW 발견 시 즉시 반환. 그 전까지 UNKNOWN 기억했다가 반환
             long r1 = axisResult(zMinusLoaded, nx, nz - 1, zPlusLoaded, nx, nz + 1, y);
             if (r1 == PASSAGE_NARROW) return PASSAGE_NARROW;
             if (r1 != PASSAGE_OPEN && !sawUnknown) { sawUnknown = true; unknownResult = r1; }
@@ -209,8 +196,7 @@ final class BlockSearch {
         return sawUnknown ? unknownResult : PASSAGE_OPEN;
     }
 
-    // air 여부를 먼저 보고, air가 아닐 때만 wall을 본다(순서를 한 곳에 고정해 호출부 간 비대칭을 방지).
-    // 순서가 반대면 한 블록이 air/wall 태그를 동시에 갖는 경우(설정 오류 등) 호출부마다 다른 결론이 날 수 있다.
+    // air 먼저 검사 (tag 중복 시 일관성 유지)
     static boolean isWallGivenAir(boolean isAir, int x, int y, int z) {
         return !isAir && isWallAt(x, y, z);
     }

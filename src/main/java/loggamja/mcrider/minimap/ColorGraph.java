@@ -73,11 +73,9 @@ final class ColorGraph {
 
     static void addEdge(long parent, long child) {
         if (parent == child) return;
-
-        // 엣지가 새로 추가된 경우에만 버전을 올린다
         boolean isNew = parentToChildren.computeIfAbsent(parent, k -> new LongOpenHashSet()).add(child);
         childToParents.computeIfAbsent(child, k -> new LongOpenHashSet()).add(parent);
-        if (isNew) bumpColorGraphVersion();
+        if (isNew) bumpColorGraphVersion(); // 새 엣지만 버전 증가
     }
 
     static boolean hasEdge(long parent, long child) {
@@ -85,7 +83,6 @@ final class ColorGraph {
         return kids != null && kids.contains(child);
     }
 
-    // 병합/사이클 재검사용 스크래치
     private static final LongOpenHashSet scratchGroup = new LongOpenHashSet();
     private static final LongOpenHashSet scratchReachable = new LongOpenHashSet();
     private static final LongArrayFIFOQueue scratchReachQueue = new LongArrayFIFOQueue();
@@ -95,8 +92,6 @@ final class ColorGraph {
     private static final LongArrayFIFOQueue scratchSeenQueue = new LongArrayFIFOQueue();
     private static final LongOpenHashSet scratchDescendants = new LongOpenHashSet();
     private static final LongOpenHashSet scratchAncestors = new LongOpenHashSet();
-
-    // FrontierSearch.handleReach 단방향-재조우 분기(사이클 방지 조상 검사) 전용 스크래치
     static final LongOpenHashSet scratchParentAncestors = new LongOpenHashSet();
 
     static void mergeColors(long aId, long bId) {
@@ -123,9 +118,7 @@ final class ColorGraph {
         git = group.iterator();
         while (git.hasNext()) {
             long c = git.nextLong();
-            if (c != survivor) {
-                absorbInto(c, survivor); // c의 컬럼을 dirty 표시 후 survivor로 이전
-            }
+            if (c != survivor) absorbInto(c, survivor);
         }
         bumpColorGraphVersion();
 
@@ -138,8 +131,7 @@ final class ColorGraph {
         rescanCycles(survivor);
     }
 
-    // 양방향 BFS로 무관계 증명 비용을 양쪽 중 작은 쪽으로 제한한다.
-    // from에서 도달 가능한 노드 또는 to의 조상 중 먼저 소진되는 쪽이 끝나면 관계 판정 가능.
+    // 양방향 BFS로 무관계 증명 비용 최소화
     static void collectChainIfAncestorBFS(long from, long to, LongOpenHashSet out) {
         from = resolve(from);
         to = resolve(to);
@@ -203,27 +195,21 @@ final class ColorGraph {
     }
 
     static void absorbInto(long loser, long survivor) {
-        actualColorCount--; // loser는 호출 시점에 항상 resolve된(자기 자신을 가리키던) 루트였다
-        colorBirth.remove(loser); // birth는 루트끼리의 survivor 선정에만 쓰이고 loser는 다시 루트가 될 수 없다
-        // 불변식: columnsByRoot 이전 전에 dirty 마킹. 순서 중요 (컬럼 activeSet 상태 전환 감지).
-        FrontierSearch.markColumnsDirtyForRoot(loser);
-        // 자손 없는 loser 흡수는 subtree 내용이 안 바뀌어 diff로 못 잡힌다. 여기서 직접 revive 신호를 준다.
-        FrontierSearch.noteMergeSurvivor(survivor);
+        actualColorCount--;
+        colorBirth.remove(loser);
+        FrontierSearch.markColumnsDirtyForRoot(loser); // columnsByRoot 이전 전에 dirty 마킹
+        FrontierSearch.noteMergeSurvivor(survivor); // 자손 없는 색 흡수 신호
         LongOpenHashSet cols = FrontierSearch.columnsByRoot.remove(loser);
         if (cols != null) {
             FrontierSearch.columnsByRoot.computeIfAbsent(survivor, k -> new LongOpenHashSet()).addAll(cols);
         }
-        // parentToChildren / childToParents의 loser 키 버킷은 resolve()로 자동 정규화되지 않으므로 survivor 키로 직접 옮긴다.
-        // 그 전에 stale loser id의 메모리 누수 방지 차원에서 loser를 참조하는 반대편 항목들도 survivor로 치환해야 한다.
+        // 엣지 맵의 loser 키 버킷을 survivor로 옮김 (양방향)
         migrateDirection(parentToChildren, childToParents, loser, survivor);
         migrateDirection(childToParents, parentToChildren, loser, survivor);
         colorParentPtr.put(loser, survivor);
     }
 
-    // ownAdj[loser] 버킷을 survivor 버킷으로 옮기면서, 그 과정에서 만나는 각 원소 v에 대해 반대
-    // 방향으로 loser를 가리키고 있는 otherAdj[v]도 함께 survivor로 치환한다(한 번의 순회로 두 일을
-    // 처리해 버킷을 두 번 훑지 않는다). v == survivor인 경우(둘 사이에 직접 엣지가 있던 경우)는
-    // 병합 후 자기 자신을 향한 엣지가 되므로 survivor를 다시 추가하지 않고 제거만 한다.
+    // ownAdj[loser]를 survivor로 옮기면서 양방향 참조도 함께 치환 (한 번의 순회)
     private static void migrateDirection(Long2ObjectOpenHashMap<LongOpenHashSet> ownAdj,
                                           Long2ObjectOpenHashMap<LongOpenHashSet> otherAdj,
                                           long loser, long survivor) {
@@ -241,7 +227,7 @@ final class ColorGraph {
         }
     }
 
-    // 루프 사용: 재귀 깊이 제한 없음. deadline 검사 없이 동기 실행되므로 극단적 사이클 케이스에서 프레임 스파이크 가능
+    // 무한 루프로 모든 사이클 해결 (deadline 없음 주의)
     static void rescanCycles(long survivor) {
         survivor = resolve(survivor);
         boolean merged;
@@ -267,8 +253,7 @@ final class ColorGraph {
         } while (merged);
     }
 
-    // start에서 adj 방향으로 도달 가능한 (resolve된) 노드를 out에 모은다(start 자신 제외)
-    // collectDescendants / collectAncestors가 인접 맵만 달리해 공유하는 공용 BFS
+    // 방향별 도달 가능 노드 수집 BFS
     static void collectReachableBFS(long start, Long2ObjectOpenHashMap<LongOpenHashSet> adj, LongOpenHashSet out) {
         start = resolve(start);
         LongArrayFIFOQueue q = scratchSeenQueue;

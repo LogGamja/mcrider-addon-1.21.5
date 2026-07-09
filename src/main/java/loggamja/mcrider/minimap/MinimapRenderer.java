@@ -47,7 +47,6 @@ final class MinimapRenderer {
     private static final int TEX_SIZE = 512;
     private static final double SQRT2 = Math.sqrt(2.0);
 
-    // 마진 16: 재앵커 ~150블록마다, 복사도 예산 큐로 분산되므로 충분함.
     static final int REANCHOR_MARGIN = (int) Math.ceil(maxDist * SQRT2) + 16;
     private static final int VISITED_COLOR = 0xBBCCCCCC;
     private static final int OVERLAP_COLOR = 0xFFFFFFFF;
@@ -83,7 +82,6 @@ final class MinimapRenderer {
 
         void markPixelDirty(int tx, int tz) {
             if (tx < 0 || tx >= TEX_SIZE || tz < 0 || tz >= TEX_SIZE) return;
-            // 이미 전체 업로드가 예약돼 있으면 타일 단위 추적은 버려질 뿐이라 누적할 필요가 없다.
             if (!uploadWholeTexture) dirtyTiles.add(tileKey(tx / TILE_SIZE, tz / TILE_SIZE));
             textureDirty = true;
         }
@@ -195,12 +193,9 @@ final class MinimapRenderer {
     }
 
     private static void rebuildTexture(BlockPos center) {
-        // onTickStart가 floodFill 다음 rebuildTexture를 호출하므로 dirty 마킹 완료.
-        // 현재 색이 안 정해지면 상태를 바꾸지 않고 미룬다. originSet 커밋 후 리턴하면 재시도가
-        // 끊겨 칠이 안 된 origin이 확정되므로 최상단에서 막아야 한다.
-        if (!MCRiderMinimap.isDebugColors() && FrontierSearch.activeColor == NO_ID) {
-            return;
-        }
+        // 현재 색이 정해지지 않으면 원점 커밋 전에 리턴해 재시도 가능하게 함
+        if (!MCRiderMinimap.isDebugColors() && FrontierSearch.activeColor == NO_ID) return;
+
 
         TextureBuffer target = front.originSet ? back : front;
         target.ensure();
@@ -208,8 +203,7 @@ final class MinimapRenderer {
         int newOriginX = center.getX() - TEX_SIZE / 2;
         int newOriginZ = center.getZ() - TEX_SIZE / 2;
 
-        // 스크롤 재사용 조건: 소스는 front(최신), 겹침 영역 존재, 디버그 모드 아님.
-        // 주의! dirty 마킹 불변식: paintCell/addEdge/absorbInto/activeColor 변경이 모두 거쳐야 함.
+        // 스크롤 재사용: 디버그 모드 아니고, 겹침 영역 존재할 때만 가능
         boolean canScroll = !MCRiderMinimap.isDebugColors()
                 && target != front
                 && front.originSet
@@ -237,11 +231,11 @@ final class MinimapRenderer {
                 copyRect.copyDz = dz;
             }
 
-            // 겹치지 않는 부분만 L자(세로 띠 + 가로 띠)로 정확히, 중복 없이 나눠 계산 대상에 넣는다.
+            // 겹치지 않는 부분만 L자 모양으로 등록 (중복 없음)
             if (dx > 0) {
-                addRebuildRect(TEX_SIZE - dx, 0, dx, TEX_SIZE, false);   // +x로 이동 -> 오른쪽에 새 컬럼 노출
+                addRebuildRect(TEX_SIZE - dx, 0, dx, TEX_SIZE, false);
             } else if (dx < 0) {
-                addRebuildRect(0, 0, -dx, TEX_SIZE, false);              // -x로 이동 -> 왼쪽에 새 컬럼 노출
+                addRebuildRect(0, 0, -dx, TEX_SIZE, false);
             }
             if (dz > 0) {
                 addRebuildRect(destX0, TEX_SIZE - dz, overlapW, dz, false);
@@ -249,9 +243,7 @@ final class MinimapRenderer {
                 addRebuildRect(destX0, 0, overlapW, -dz, false);
             }
         } else {
-            // canScroll이 false인 모든 경우가 여기로 온다: 최초 빌드(origin 미설정), 디버그 모드의
-            // 모든 재앵커(스크롤 재사용을 아예 안 씀), 혹은 겹침이 전혀 없는 순간이동. 셋 다 전체를
-            // 새로 계산하는 수밖에 없다 — 특히 디버그 모드는 재앵커마다 매번 이 경로를 탄다.
+            // canScroll이 false인 모든 경우가 여기로 온다! 최초 빌드이거나 겹침이 없는 경우 전체 다시 계산
             target.image.fillRect(0, 0, TEX_SIZE, TEX_SIZE, 0);
             addRebuildRect(0, 0, TEX_SIZE, TEX_SIZE, false);
         }
@@ -269,12 +261,9 @@ final class MinimapRenderer {
 
     private static void continueRebuildIfInProgress() {
         if (!rebuildInProgress) return;
+        // rebuildRects의 총 넓이는 최대 512x512이므로 deadline 검사만으로 충분
         final long deadline = System.nanoTime() + REPAINT_TIME_BUDGET_NANOS;
         int sinceTimeCheck = 0;
-
-        // 이 루프의 총 작업량은 rebuildRects들의 넓이 합(최대 TEX_SIZE²)으로 이미 자연스럽게
-        // 유한하므로 REPAINT_HARD_CAP_PER_TICK 같은 별도 상한은 여기선 의미가 없다(도달 전에
-        // 항상 deadline이나 작업 완료로 먼저 끝남). deadline 검사만으로 다음 틱 이어가기를 보장한다.
         while (rebuildRectCursor < rebuildRectCount) {
             RebuildRect rect = rebuildRects[rebuildRectCursor];
             int w = rect.w;
@@ -286,8 +275,7 @@ final class MinimapRenderer {
                 if (rect.isCopy) {
                     int tx = rect.x + lx;
                     int tz = rect.z + lz;
-                    // 안전성: onTickStart 순서가 floodFill(dirty마킹) -> rebuildTexture이므로 stale 아님.
-                    // 재빌드 중 dirty는 mirrorToBack으로 cover. repaintDirtyColumns가 범위 필터링.
+                    // onTickStart 순서상 dirty 마킹이 완료됨. 재빌드 중 dirty는 mirrorToBack으로 동기화
                     int argb = front.image.getColorArgb(tx + rect.copyDx, tz + rect.copyDz);
                     rebuildTarget.image.setColorArgb(tx, tz, argb);
                 } else {
@@ -490,8 +478,7 @@ final class MinimapRenderer {
         final float u0 = (float) Math.max(0, Math.min(TEX_SIZE - texRegion, p.x - front.originX - texRegion / 2.0));
         final float v0 = (float) Math.max(0, Math.min(TEX_SIZE - texRegion, p.z - front.originZ - texRegion / 2.0));
 
-        // try/finally로 disableScissor를 보장한다
-        // pop이 누락되면 GL scissor가 다음 프레임까지 새어나가 화면 전체(엔티티 포함)가 클리핑된다(실제 발생 이력 있음)
+        // try finally로 disableScissor 보장 (누락되면 GL scissor가 다음 프레임까지 적용되어 화면 클리핑)
         context.enableScissor(viewX1, viewY1, viewX2, viewY2);
         try {
             MatrixStack matrices = context.getMatrices();
@@ -532,8 +519,7 @@ final class MinimapRenderer {
                 : getKartBodyYaw(MCRiderMain.getRidingPlayer(), tickDelta);
         final float delta = (myKartYaw - yawDeg) + IMAGE_CORRECTION_TRICK;
 
-        // 렌더 순서: 몸체(흰색), 적, 윤곽선. 몸체는 적에게 가려질 수 있지만
-        // 윤곽선은 항상 맨 위라 겹쳐도 테두리는 보인다
+        // 내 카트 몸체, 적, 윤곽선 순서
         drawSelfMarker(context, centerX, centerY, selfIconSize, delta);
 
         for (AbstractClientPlayerEntity other : Objects.requireNonNull(client.world).getPlayers()) {
@@ -572,7 +558,7 @@ final class MinimapRenderer {
         return player.getYaw(tickDelta);
     }
     private static void drawSelfMarker(DrawContext context, float cx, float cy, float size, float rotationDeg) {
-        // try / finally로 pop을 보장한다 — 누락되면 이후 HUD 요소들이 잘못된 위치/회전으로 그려진다
+        // try finally로 pop 보장 (누락되면 이후 HUD가 잘못된 위치/회전으로 그려짐)
         MatrixStack matrices = context.getMatrices();
         matrices.push();
         try {
@@ -696,8 +682,7 @@ final class MinimapRenderer {
             matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(rotationDeg));
             matrices.translate(-size / 2f, -size / 2f, 0);
 
-            // 중심 기준으로 살짝 확대해, 삐져나오는 폭이 정수 1이 아니라
-            // ENEMY_HEAD_OUTLINE_THICKNESS만큼만 되게 한다.
+            // 중심 기준 확대로 윤곽선 두께 정확히 조정
             matrices.push();
             try {
                 float outlineScale = (isize + 2f * ENEMY_HEAD_OUTLINE_THICKNESS) / (isize + 2f);

@@ -9,24 +9,19 @@ import it.unimi.dsi.fastutil.objects.ObjectIterator;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 
-// 활성 프론티어(청크별 대기 셀)과 exile(보류된 셀) 관리
-// FrontierSearch가 판단한 셀을 어느 저장소에 넣고 뺄지 담당
+// 프론티어 및 보류 셀 저장소 관리
 
 final class FrontierQueue {
     private FrontierQueue() {}
 
-    // 셀 보류 사유: 저장소 선택을 명시적으로
     enum ParkReason {
-        CHUNK_NOT_LOADED,     // 미로딩 청크 → exiledByChunk로
-        OUT_OF_RANGE,         // 범위 밖 → exiledByChunk로
-        COLOR_INACTIVE        // 활성 색 아님 → inactiveColorParked로
+        CHUNK_NOT_LOADED,
+        OUT_OF_RANGE,
+        COLOR_INACTIVE
     }
 
-    // 청크별 활성 프론티어 (청크 캐시 효율 향상)
     static Long2ObjectOpenHashMap<LongArrayList> frontierByChunk = new Long2ObjectOpenHashMap<>();
-    // 미로딩/범위 밖 청크의 보류 셀
     static Long2ObjectOpenHashMap<LongArrayList> exiledByChunk = new Long2ObjectOpenHashMap<>();
-    // 비활성 색 셀 (별도 저장소: ping-pong 방지, 매 틱 재처리 회피)
     static final LongOpenHashSet inactiveColorParked = new LongOpenHashSet();
 
     static final LongArrayList revivedScratch = new LongArrayList();
@@ -42,9 +37,7 @@ final class FrontierQueue {
     private static int lastSortSx = Integer.MIN_VALUE, lastSortSz = Integer.MIN_VALUE;
     private static int lastSortN = 0;
 
-    // System.nanoTime()은 절대값이 아니라 임의 원점 기준이라 오버플로우를 감안한 뺄셈 비교가 필요하다
-    // (System.nanoTime() >= deadline 형태는 nanoTime()이 오버플로우로 음수가 되는 순간 deadline보다
-    // 항상 작다고 잘못 판정될 수 있다). 여러 파일에서 반복되는 이 비교를 한 곳에 이름 붙여둔다.
+    // nanoTime() 오버플로우 안전 비교
     static boolean deadlineReached(long deadline) {
         return System.nanoTime() - deadline >= 0;
     }
@@ -116,7 +109,7 @@ final class FrontierQueue {
         inactiveColorParked.clear();
     }
 
-    // 청크를 거리순으로 정렬 (캐싱으로 O(n log n) 정렬 회피)
+    // 청크 거리순 정렬 (캐싱)
     static int sortChunkKeysByDistance(int sx, int sz) {
         if (chunkKeysVersion == lastSortVersion && sx == lastSortSx && sz == lastSortSz) {
             return lastSortN;
@@ -143,7 +136,7 @@ final class FrontierQueue {
         return n;
     }
 
-    // 범위 내 exile 셀을 revivedScratch에 모아 복구 (deadline 예산으로 분산 처리)
+    // 범위 내 보류 셀 복구 (예산 분산)
     static boolean drainExiledWithinRange(int sx, int sz, int maxRange, long deadline) {
         revivedScratch.clear();
         boolean timedOut = false;
@@ -159,10 +152,7 @@ final class FrontierQueue {
             int chunkZ = ChunkPos.getPackedZ(chunkKey);
             if (taxiDistanceFromChunkToPos(chunkX, chunkZ, sx, sz) <= maxRange
                     && MCRiderMinimap.client.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
-                // 청크는 범위 안이지만(가장 가까운 변 기준) 청크 코너 쪽 셀은 여전히 maxRange
-                // 밖일 수 있다. 그런 셀까지 되살리면 곧바로 enqueue의 셀 단위 거리 재검사에서
-                // 다시 OUT_OF_RANGE로 park되어 경계 청크 전체가 매 틱 revive/park를 반복한다.
-                // 여기서 셀 단위로 한 번 더 걸러 진짜 범위 안인 것만 꺼내고, 나머지는 그대로 남긴다.
+                // 청크 코너 셀도 거리 재검사 (park/revive 반복 회피)
                 LongArrayList pending = e.getValue();
                 int keep = 0;
                 for (int i = 0, n = pending.size(); i < n; i++) {
