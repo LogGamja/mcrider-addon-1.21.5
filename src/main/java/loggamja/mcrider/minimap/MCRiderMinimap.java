@@ -43,6 +43,8 @@ public class MCRiderMinimap implements ClientModInitializer {
 
         ClientChunkEvents.CHUNK_UNLOAD.register((world, chunk) ->
                 BlockSearch.invalidateChunkCacheAt(chunk.getPos().x, chunk.getPos().z));
+        // CHUNK_NOT_LOADED로 보류된 셀 복구용
+        ClientChunkEvents.CHUNK_LOAD.register((world, chunk) -> FrontierSearch.notifyChunkLoaded());
     }
     private static World lastWorld = null;
     private static boolean lastDebugColors = false;

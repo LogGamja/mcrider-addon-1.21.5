@@ -199,8 +199,29 @@ final class FrontierSearch {
     // 복구된 exile 셀 처리 재개 상태 (이미 로딩 확인됨)
     private static final ResumableDrain revivedProcessDrain = new ResumableDrain();
 
+    // exiledByChunk엔 CHUNK_NOT_LOADED(청크 로딩 필요)와 OUT_OF_RANGE(플레이어 접근 필요)가 섞여 있어 트리거는 둘 다 봐야 한다
+    // 위치는 청크 단위로만 비교. maxRange 여유상 청크
+    private static boolean chunkLoadedSinceLastDrain = false;
+    private static int lastDrainChunkX = Integer.MIN_VALUE, lastDrainChunkZ = Integer.MIN_VALUE;
+
+    // ClientChunkEvents.CHUNK_LOAD 훅(MCRiderMinimap)에서 호출
+    // 실제 드레인은 다음 floodFillWithVertical 호출(다음 틱)에서 이 신호를 소비해 처리한다
+    static void notifyChunkLoaded() {
+        chunkLoadedSinceLastDrain = true;
+    }
+
     private static void processRevivedExiledCells(int sx, int sz, int maxRange, boolean containToActive, long deadline) {
-        revivedProcessDrain.beginIfIdle(true, FrontierQueue.revivedScratch,
+        int chunkX = sx >> 4, chunkZ = sz >> 4;
+        boolean chunkMoved = chunkX != lastDrainChunkX || chunkZ != lastDrainChunkZ;
+        boolean trigger = chunkMoved || chunkLoadedSinceLastDrain;
+        if (trigger) {
+            // beginIfIdle 내부의 pendingTrigger가 이 사실을 래치해두므로(진행 중이라 이번 틱에
+            // 못 써도 다음 유휴 틱에 소비됨) 여기서 바로 리셋해도 신호가 유실되지 않는다
+            lastDrainChunkX = chunkX;
+            lastDrainChunkZ = chunkZ;
+            chunkLoadedSinceLastDrain = false;
+        }
+        revivedProcessDrain.beginIfIdle(trigger, FrontierQueue.revivedScratch,
                 () -> FrontierQueue.drainExiledWithinRange(sx, sz, maxRange, deadline));
         revivedProcessDrain.drain(FrontierQueue.revivedScratch, sx, sz, maxRange, containToActive, deadline);
     }
@@ -361,6 +382,9 @@ final class FrontierSearch {
         processRevivedExiledCells(sx, sz, maxRange, containToActive, deadline);
 
         boolean stop = false;
+
+        // 다른 재개형 루프들과 동일하게 256회마다 한 번씩만 System.nanoTime()을 호출한다
+        int sinceTimeCheck = 0;
         while (!stop && !FrontierQueue.frontierByChunk.isEmpty()) {
             int n = FrontierQueue.sortChunkKeysByDistance(sx, sz);
 
@@ -370,7 +394,7 @@ final class FrontierSearch {
                 if (bucket == null) continue;
 
                 while (!bucket.isEmpty()) {
-                    if (FrontierQueue.deadlineReached(deadline)) {
+                    if ((++sinceTimeCheck % 256) == 0 && FrontierQueue.deadlineReached(deadline)) {
                         stop = true;
                         break;
                     }
@@ -420,9 +444,8 @@ final class FrontierSearch {
                         if (MCRiderMinimap.EXCLUDE_NARROW_PATHS) {
                             long narrow = BlockSearch.isNarrowPassageInRange(nx, cy, ty, nz, d[0], d[1]);
                             if (narrow != BlockSearch.PASSAGE_OPEN && narrow != BlockSearch.PASSAGE_NARROW) {
-                                // 좁은 길인지 확정할 수 없는 게 아니라 이웃 청크가 아직 안 로딩된 것.
-                                // 벽으로 오인해 탐색을 막는 대신, narrow에 패킹된 그 청크의 월드 좌표로
-                                // 로딩될 때까지 이 셀을 보류한다.
+                                // 좁은 길인지 확정할 수 없는 게 아니라 이웃 청크가 아직 안 로딩된 것
+                                // 벽으로 오인해 탐색을 막는 대신 narrow에 패킹된 그 청크의 월드 좌표로 로딩될 때까지 이 셀을 보류한다.
                                 if (!parkedSelf) {
                                     int unknownX = (int) (narrow >> 32);
                                     int unknownZ = (int) narrow;
@@ -477,9 +500,6 @@ final class FrontierSearch {
                 long parentRoot = ColorGraph.resolve(curColor);
                 long childRoot = ColorGraph.resolve(existing);
                 if (parentRoot != childRoot) {
-                    // Cycle prevention: don't add edge if childRoot is already ancestor
-                    // hasEdge(true) → 조상 BFS 스킵 안전. mergeColors는 항상 rescanCycles(do-while)로
-                    // 모든 새 사이클을 완전히 해결하므로, 엣지 존재 = 사이클 없음.
                     boolean isCycleMergeRequired;
                     if (ColorGraph.hasEdge(parentRoot, childRoot)) {
                         isCycleMergeRequired = false;
@@ -539,6 +559,9 @@ final class FrontierSearch {
         inactiveRevivalScratch.clear();
         inactiveRevivalDrain.reset();
         revivedProcessDrain.reset();
+        chunkLoadedSinceLastDrain = false;
+        lastDrainChunkX = Integer.MIN_VALUE;
+        lastDrainChunkZ = Integer.MIN_VALUE;
         BlockSearch.invalidateChunkCache();
     }
 }
