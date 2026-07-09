@@ -442,6 +442,27 @@ final class FrontierSearch {
                         int ty = BlockSearch.resolveTargetY(nx, cy, nz, baseIsAir, baseIsWall, hasBlockAt2Meter, world.getBottomY());
                         if (ty == Integer.MIN_VALUE) continue;
 
+                        // 가짜 블록은 narrow 경로를 걸러내는 설정이 켜져 있을 때만 동작한다 — 꺼져있으면
+                        // narrow 체크가 안전망 역할을 못 해서, 실제로 이어지는 좁은 통로를 가짜 블록으로
+                        // 덮어써 지워버릴 수 있다.
+                        if (MCRiderMinimap.EXCLUDE_NARROW_PATHS && cy - ty == 1) {
+                            boolean frontBlocked = !BlockSearch.isAirAt(nx + d[0], ty, nz + d[1]);
+                            boolean backBlocked = !BlockSearch.isAirAt(nx - d[0], ty, nz - d[1]);
+                            int blockedSides = 0;
+                            for (int[] pd : BlockSearch.DIRECTIONS) {
+                                if (!BlockSearch.isAirAt(nx + pd[0], ty, nz + pd[1])) blockedSides++;
+                            }
+                            // 주변 상하좌우 3면 이상이 (오르든 아니든) 막혀있거나, 진행 방향 앞뒤만 막히고
+                            // 좌우는 열려있으면(진행축과 수직인 좁은 도랑) 실수로 판 듯한 1칸 구덩이로 보고
+                            // 가상 블록으로 메운다. 밟고 지나가는 평평한 바닥으로 재계산된다.
+                            boolean frontBackOnly = frontBlocked && backBlocked && blockedSides == 2;
+                            if (blockedSides >= 3 || frontBackOnly) {
+                                BlockSearch.addFakeBlock(nx, ty, nz);
+                                ty = BlockSearch.resolveTargetY(nx, cy, nz, baseIsAir, baseIsWall, hasBlockAt2Meter, world.getBottomY());
+                                if (ty == Integer.MIN_VALUE) continue;
+                            }
+                        }
+
                         if (MCRiderMinimap.EXCLUDE_NARROW_PATHS) {
                             long narrow = BlockSearch.isNarrowPassageInRange(nx, cy, ty, nz, d[0], d[1]);
                             if (narrow != BlockSearch.PASSAGE_OPEN && narrow != BlockSearch.PASSAGE_NARROW) {
@@ -548,6 +569,7 @@ final class FrontierSearch {
         visitedColumns.clear();
         dirtyColumns.clear();
         columnsByRoot.clear();
+        BlockSearch.clearFakeBlocks();
         FrontierQueue.reset();
         activeColor = NO_ID;
         activeSet.clear();

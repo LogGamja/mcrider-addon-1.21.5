@@ -27,6 +27,18 @@ final class BlockSearch {
     static final int[][] DIRECTIONS = { {1, 0}, {-1, 0}, {0, 1}, {0, -1} };
     static final int MAX_ANCHOR_DROP_SEARCH = 16;
 
+    // 3면 이상 막힌 1칸 구덩이를 메우는 가상 블록. isAirAt에서만 반영되고 isWallAt은 그대로라
+    // "밟고 지나가는 평평한 바닥"으로 처리된다(완전히 막힌 벽이 아니라).
+    private static final LongOpenHashSet fakeBlocks = new LongOpenHashSet();
+
+    static void addFakeBlock(int x, int y, int z) {
+        fakeBlocks.add(BlockPos.asLong(x, y, z));
+    }
+
+    static void clearFakeBlocks() {
+        fakeBlocks.clear();
+    }
+
     private static final int CHUNK_CACHE_SLOTS = 4;
     private static final long[] cacheKeys = new long[CHUNK_CACHE_SLOTS];
     private static final Chunk[] cacheChunks = new Chunk[CHUNK_CACHE_SLOTS];
@@ -82,6 +94,7 @@ final class BlockSearch {
     }
 
     static boolean isAirAt(int x, int y, int z) {
+        if (fakeBlocks.contains(BlockPos.asLong(x, y, z))) return false;
         return testAt(isAir, x, y, z);
     }
     static boolean isWallAt(int x, int y, int z) {
