@@ -159,29 +159,62 @@ final class BlockSearch {
         return LATERAL_OPEN;
     }
 
-    // 수직굴에서 벽이 한 칸씩 아래로 어긋나는(지그재그) 경우까지 잡기 위해,
-    // 이 행(y)뿐 아니라 한 칸 아래(y-1)도 같은 direct/rear 기준으로 확인해 OR로 묶는다.
-    // 청크 로딩 여부는 y와 무관하므로 loaded 플래그는 그대로 재사용한다.
-    private static int sideStateWithBelow(boolean directLoaded, int dx, int dz,
-                                           boolean rearLoaded, int rx, int rz, int y) {
-        int here = sideState(directLoaded, dx, dz, rearLoaded, rx, rz, y);
-        if (here == LATERAL_OPEN) return LATERAL_OPEN;
-        int below = sideState(directLoaded, dx, dz, rearLoaded, rx, rz, y - 1);
-        if (below == LATERAL_OPEN) return LATERAL_OPEN;
+    // 낙하 중(cy보다 아래)에는 가로 이동이 없으므로 rear는 물리적 의미가 없다 — 구덩이 가장자리로
+    // 진입할 때 rear가 항상 구덩이 "바깥"의 원래 지면에 걸려서, 넓은 구덩이까지 NARROW로 오판하게 된다.
+    // 대신 direct 칸과 한 칸 아래(belowY)가 "둘 다" open일 때만 open으로 인정해 수직 지그재그를 잡는다.
+    // belowY == y면 착지 행 등 더 내려갈 수 없는 경계라는 뜻이므로 자기 자신과만 비교해 아래 체크를 생략한다.
+    private static int verticalSideState(boolean directLoaded, int dx, int dz, int y, int belowY) {
+        int here = lateralStateKnownLoaded(directLoaded, dx, y, dz);
+        if (here == LATERAL_BLOCKED) return LATERAL_BLOCKED;
+        if (belowY == y) return here;
+        int below = lateralStateKnownLoaded(directLoaded, dx, belowY, dz);
+        if (below == LATERAL_BLOCKED) return LATERAL_BLOCKED;
         if (here == LATERAL_UNKNOWN || below == LATERAL_UNKNOWN) return LATERAL_UNKNOWN;
-        return LATERAL_BLOCKED;
+        return LATERAL_OPEN;
+    }
+
+    // 진입 행(cy)은 direct+rear로 "실제로 밟은 가로 이동이 넓었는지"뿐 아니라, 바로 아래 행(belowY)과도
+    // 이어지는지까지 같이 봐야 한다. 그렇지 않으면 cy와 cy-1 사이에서 어긋나는(가장 단순한) 수직
+    // 지그재그가, cy는 rear만 보고 cy-1은 그보다 더 아래(cy-2)만 보느라 둘 다 통과해버린다.
+    private static int entrySideState(boolean directLoaded, int dx, int dz,
+                                       boolean rearLoaded, int rx, int rz, int y, int belowY) {
+        int entry = sideState(directLoaded, dx, dz, rearLoaded, rx, rz, y);
+        if (entry == LATERAL_BLOCKED) return LATERAL_BLOCKED;
+        if (belowY == y) return entry;
+        int below = lateralStateKnownLoaded(directLoaded, dx, belowY, dz);
+        if (below == LATERAL_BLOCKED) return LATERAL_BLOCKED;
+        if (entry == LATERAL_UNKNOWN || below == LATERAL_UNKNOWN) return LATERAL_UNKNOWN;
+        return LATERAL_OPEN;
     }
 
     private static long axisResult(boolean loaded1, int x1, int z1, boolean loaded1r, int x1r, int z1r,
-                                    boolean loaded2, int x2, int z2, boolean loaded2r, int x2r, int z2r, int y,
-                                    boolean includeBelow) {
-        int s1 = includeBelow
-                ? sideStateWithBelow(loaded1, x1, z1, loaded1r, x1r, z1r, y)
-                : sideState(loaded1, x1, z1, loaded1r, x1r, z1r, y);
+                                    boolean loaded2, int x2, int z2, boolean loaded2r, int x2r, int z2r, int y) {
+        int s1 = sideState(loaded1, x1, z1, loaded1r, x1r, z1r, y);
         if (s1 == LATERAL_OPEN) return PASSAGE_OPEN;
-        int s2 = includeBelow
-                ? sideStateWithBelow(loaded2, x2, z2, loaded2r, x2r, z2r, y)
-                : sideState(loaded2, x2, z2, loaded2r, x2r, z2r, y);
+        int s2 = sideState(loaded2, x2, z2, loaded2r, x2r, z2r, y);
+        if (s2 == LATERAL_OPEN) return PASSAGE_OPEN;
+        if (s1 == LATERAL_UNKNOWN) return packWorldXZ(x1, z1);
+        if (s2 == LATERAL_UNKNOWN) return packWorldXZ(x2, z2);
+        return PASSAGE_NARROW;
+    }
+
+    private static long axisResultEntry(boolean loaded1, int x1, int z1, boolean loaded1r, int x1r, int z1r,
+                                         boolean loaded2, int x2, int z2, boolean loaded2r, int x2r, int z2r,
+                                         int y, int belowY) {
+        int s1 = entrySideState(loaded1, x1, z1, loaded1r, x1r, z1r, y, belowY);
+        if (s1 == LATERAL_OPEN) return PASSAGE_OPEN;
+        int s2 = entrySideState(loaded2, x2, z2, loaded2r, x2r, z2r, y, belowY);
+        if (s2 == LATERAL_OPEN) return PASSAGE_OPEN;
+        if (s1 == LATERAL_UNKNOWN) return packWorldXZ(x1, z1);
+        if (s2 == LATERAL_UNKNOWN) return packWorldXZ(x2, z2);
+        return PASSAGE_NARROW;
+    }
+
+    private static long axisResultVertical(boolean loaded1, int x1, int z1, boolean loaded2, int x2, int z2,
+                                            int y, int belowY) {
+        int s1 = verticalSideState(loaded1, x1, z1, y, belowY);
+        if (s1 == LATERAL_OPEN) return PASSAGE_OPEN;
+        int s2 = verticalSideState(loaded2, x2, z2, y, belowY);
         if (s2 == LATERAL_OPEN) return PASSAGE_OPEN;
         if (s1 == LATERAL_UNKNOWN) return packWorldXZ(x1, z1);
         if (s2 == LATERAL_UNKNOWN) return packWorldXZ(x2, z2);
@@ -200,7 +233,7 @@ final class BlockSearch {
         int x1r = x1 - dx, z1r = z1 - dz;
         int x2r = x2 - dx, z2r = z2 - dz;
         return axisResult(isChunkLoadedAt(x1, z1), x1, z1, isChunkLoadedAt(x1r, z1r), x1r, z1r,
-                isChunkLoadedAt(x2, z2), x2, z2, isChunkLoadedAt(x2r, z2r), x2r, z2r, ny, false);
+                isChunkLoadedAt(x2, z2), x2, z2, isChunkLoadedAt(x2r, z2r), x2r, z2r, ny);
     }
 
     // 플레이어가 1칸은 못 들어간다고 가정
@@ -229,14 +262,27 @@ final class BlockSearch {
         boolean sawUnknown = false;
         long unknownResult = 0;
         for (int y = cy; y >= ty; y--) {
+            long r1, r2;
+            if (y == cy) {
+                // 진입하는 행: 실제로 밟은 가로 이동 한 칸이 후방까지 진짜 넓었는지 + 바로 아래 행과도
+                // 이어지는지(cy-cy-1 사이 수직 지그재그) 함께 검증한다.
+                int belowY = Math.max(y - 1, ty);
+                r1 = axisResultEntry(zMinusLoaded, x1, z1, zMinusRearLoaded, x1r, z1r,
+                        zPlusLoaded, x2, z2, zPlusRearLoaded, x2r, z2r, y, belowY);
+                r2 = axisResultEntry(xMinusLoaded, x3, z3, xMinusRearLoaded, x3r, z3r,
+                        xPlusLoaded, x4, z4, xPlusRearLoaded, x4r, z4r, y, belowY);
+            } else {
+                // 낙하 중: 가로 이동이 없으므로 rear 대신 direct + 한 칸 아래로 수직 지그재그만 확인한다.
+                // 착지 행(ty)에서는 한 칸 더 아래를 보면 착지 지점의 바닥(지하)을 검사하게 되므로 클램프한다.
+                int belowY = Math.max(y - 1, ty);
+                r1 = axisResultVertical(zMinusLoaded, x1, z1, zPlusLoaded, x2, z2, y, belowY);
+                r2 = axisResultVertical(xMinusLoaded, x3, z3, xPlusLoaded, x4, z4, y, belowY);
+            }
+
             // 낙하 중 NARROW 발견 시 즉시 반환. 그 전까지 UNKNOWN 기억했다가 반환
-            long r1 = axisResult(zMinusLoaded, x1, z1, zMinusRearLoaded, x1r, z1r,
-                    zPlusLoaded, x2, z2, zPlusRearLoaded, x2r, z2r, y, true);
             if (r1 == PASSAGE_NARROW) return PASSAGE_NARROW;
             if (r1 != PASSAGE_OPEN && !sawUnknown) { sawUnknown = true; unknownResult = r1; }
 
-            long r2 = axisResult(xMinusLoaded, x3, z3, xMinusRearLoaded, x3r, z3r,
-                    xPlusLoaded, x4, z4, xPlusRearLoaded, x4r, z4r, y, true);
             if (r2 == PASSAGE_NARROW) return PASSAGE_NARROW;
             if (r2 != PASSAGE_OPEN && !sawUnknown) { sawUnknown = true; unknownResult = r2; }
         }
