@@ -49,7 +49,7 @@ final class MinimapRenderer {
 
     static final int REANCHOR_MARGIN = (int) Math.ceil(maxDist * SQRT2) + 16;
     private static final int VISITED_COLOR = 0xBBCCCCCC;
-    private static final int OVERLAP_COLOR = 0xCCDDDDDD;
+    private static final int OVERLAP_COLOR = 0xDCCCCCCC;
 
     private static final float IMAGE_CORRECTION_TRICK = 0.001f;
     private static final double RIDER_ICON_SIZE = 6 * LEGACY_GUI_SCALE_BASIS;
@@ -130,14 +130,11 @@ final class MinimapRenderer {
         }
 
         void close() {
-            if (image != null) {
-                image.close();
-                image = null;
-            }
             if (texture != null) {
                 texture.close();
                 texture = null;
             }
+            image = null;
             dirtyTiles.clear();
             uploadWholeTexture = false;
             textureDirty = false;
