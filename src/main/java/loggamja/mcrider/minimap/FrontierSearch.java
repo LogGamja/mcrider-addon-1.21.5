@@ -462,11 +462,14 @@ final class FrontierSearch {
                             }
                             if (lateralUnloaded) continue;
 
-                            boolean frontBlocked = !BlockSearch.isAirAt(nx + d[0], ty, nz + d[1]);
-                            boolean backBlocked = !BlockSearch.isAirAt(nx - d[0], ty, nz - d[1]);
+                            boolean frontBlocked = false, backBlocked = false;
                             int blockedSides = 0;
                             for (int[] pd : BlockSearch.DIRECTIONS) {
-                                if (!BlockSearch.isAirAt(nx + pd[0], ty, nz + pd[1])) blockedSides++;
+                                if (!BlockSearch.isAirAt(nx + pd[0], ty, nz + pd[1])) {
+                                    blockedSides++;
+                                    if (pd[0] == d[0] && pd[1] == d[1]) frontBlocked = true;
+                                    else if (pd[0] == -d[0] && pd[1] == -d[1]) backBlocked = true;
+                                }
                             }
                             // 주변 상하좌우 3면 이상이 (오르든 아니든) 막혀있거나, 진행 방향 앞뒤만 막히고
                             // 좌우는 열려있으면(진행축과 수직인 좁은 도랑) 실수로 판 듯한 1칸 구덩이로 보고

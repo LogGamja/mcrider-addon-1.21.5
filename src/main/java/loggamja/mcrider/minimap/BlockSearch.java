@@ -94,7 +94,8 @@ final class BlockSearch {
     }
 
     static boolean isAirAt(int x, int y, int z) {
-        if (fakeBlocks.contains(BlockPos.asLong(x, y, z))) return false;
+        // 가짜 블록이 하나도 없으면(대부분의 틱/깨끗한 트랙) asLong·해시 조회를 건너뛴다.
+        if (!fakeBlocks.isEmpty() && fakeBlocks.contains(BlockPos.asLong(x, y, z))) return false;
         return testAt(isAir, x, y, z);
     }
     static boolean isWallAt(int x, int y, int z) {
