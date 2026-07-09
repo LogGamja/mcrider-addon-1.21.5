@@ -188,7 +188,7 @@ final class FrontierSearch {
 
     // searchActiveSet 변경 시 보류된 셀 재검사
     private static void reviveInactiveColorParked(int sx, int sz, int maxRange, boolean containToActive,
-                                                   boolean searchActiveSetChanged, long deadline) {
+                                                  boolean searchActiveSetChanged, long deadline) {
         inactiveRevivalDrain.beginIfIdle(searchActiveSetChanged, inactiveRevivalScratch, () -> {
             inactiveRevivalScratch.clear();
             FrontierQueue.reviveInactiveColorParked(inactiveRevivalScratch);
@@ -298,8 +298,18 @@ final class FrontierSearch {
         if (candidate == pendingActiveColorCandidate) {
             pendingActiveColorStreak++;
         } else {
-            pendingActiveColorCandidate = candidate;
-            pendingActiveColorStreak = 1;
+            // 스트릭 진행 중 pendingActiveColorCandidate가 다른 색에 흡수(merge)됐을 수 있으므로
+            // 곧바로 새 후보로 리셋하기 전에 재해석해서 같은 논리적 색이면 스트릭을 이어간다.
+            long resolvedPending = pendingActiveColorCandidate == NO_ID
+                    ? NO_ID
+                    : ColorGraph.resolve(pendingActiveColorCandidate);
+            if (candidate == resolvedPending) {
+                pendingActiveColorCandidate = resolvedPending; // 정규형으로 갱신
+                pendingActiveColorStreak++;
+            } else {
+                pendingActiveColorCandidate = candidate;
+                pendingActiveColorStreak = 1;
+            }
         }
 
         if (pendingActiveColorStreak >= ACTIVE_COLOR_SWITCH_STREAK) {

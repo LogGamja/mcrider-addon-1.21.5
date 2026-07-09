@@ -6,6 +6,8 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
 import it.unimi.dsi.fastutil.longs.LongIterator;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 // 규칙1: 고아 진입(TP)은 새 루트 색
 // 규칙2: 양방향 이동은 색 유지
@@ -14,6 +16,8 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 
 final class ColorGraph {
     private ColorGraph() {}
+
+    private static final Logger LOGGER = LoggerFactory.getLogger("mcrider");
 
     static final long NO_ID = Long.MIN_VALUE;
 
@@ -211,8 +215,8 @@ final class ColorGraph {
 
     // ownAdj[loser]를 survivor로 옮기면서 양방향 참조도 함께 치환 (한 번의 순회)
     private static void migrateDirection(Long2ObjectOpenHashMap<LongOpenHashSet> ownAdj,
-                                          Long2ObjectOpenHashMap<LongOpenHashSet> otherAdj,
-                                          long loser, long survivor) {
+                                         Long2ObjectOpenHashMap<LongOpenHashSet> otherAdj,
+                                         long loser, long survivor) {
         LongOpenHashSet own = ownAdj.remove(loser);
         if (own == null || own.isEmpty()) return;
         LongOpenHashSet target = ownAdj.computeIfAbsent(survivor, k -> new LongOpenHashSet());
@@ -230,6 +234,7 @@ final class ColorGraph {
     // 무한 루프로 모든 사이클 해결 (deadline 없음 주의)
     static void rescanCycles(long survivor) {
         survivor = resolve(survivor);
+        long rescanStartNanos = System.nanoTime();
         boolean merged;
         do {
             LongOpenHashSet descendants = scratchDescendants;
@@ -251,6 +256,11 @@ final class ColorGraph {
             }
             if (merged) bumpColorGraphVersion();
         } while (merged);
+
+        long elapsed = System.nanoTime() - rescanStartNanos;
+        if (elapsed > 5_000_000L) {
+            LOGGER.warn("[MCRider] rescanCycles took {}ms for survivor={}", elapsed / 1_000_000.0, survivor);
+        }
     }
 
     // 방향별 도달 가능 노드 수집 BFS
