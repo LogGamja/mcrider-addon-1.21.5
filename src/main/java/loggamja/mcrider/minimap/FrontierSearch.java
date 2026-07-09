@@ -365,8 +365,12 @@ final class FrontierSearch {
 
         long startCell = BlockPos.asLong(sx, sy, sz);
         if (cellColor.get(startCell) == NO_ID && BlockSearch.isStandable(sx, sy, sz, false)) {
-            boolean seedIsNarrow = MCRiderMinimap.EXCLUDE_NARROW_PATHS
-                    && (BlockSearch.isNarrowPassage(sx, sy, sz, 1, 0) || BlockSearch.isNarrowPassage(sx, sy, sz, 0, 1));
+            boolean seedIsNarrow = false;
+            if (MCRiderMinimap.EXCLUDE_NARROW_PATHS) {
+                // 미로딩 청크는 NARROW로 취급해 시딩 보류 (다음 틱 재시도)
+                seedIsNarrow = BlockSearch.isNarrowPassage(sx, sy, sz, 1, 0) != BlockSearch.PASSAGE_OPEN
+                        || BlockSearch.isNarrowPassage(sx, sy, sz, 0, 1) != BlockSearch.PASSAGE_OPEN;
+            }
             if (!seedIsNarrow) {
                 long c = ColorGraph.newColor(NO_ID);
                 paintCell(sx, sy, sz, c);
@@ -447,9 +451,20 @@ final class FrontierSearch {
                         int ty = BlockSearch.resolveTargetY(nx, cy, nz, baseIsAir, baseIsWall, hasBlockAt2Meter, world.getBottomY());
                         if (ty == Integer.MIN_VALUE) continue;
 
-                        if (MCRiderMinimap.EXCLUDE_NARROW_PATHS
-                                && BlockSearch.isNarrowPassageInRange(nx, cy, ty, nz, d[0], d[1])) {
-                            continue;
+                        if (MCRiderMinimap.EXCLUDE_NARROW_PATHS) {
+                            long narrow = BlockSearch.isNarrowPassageInRange(nx, cy, ty, nz, d[0], d[1]);
+                            if (narrow != BlockSearch.PASSAGE_OPEN && narrow != BlockSearch.PASSAGE_NARROW) {
+                                // 좁은 길인지 확정할 수 없는 게 아니라 이웃 청크가 아직 안 로딩된 것
+                                // 벽으로 오인해 탐색을 막는 대신 narrow에 패킹된 그 청크의 월드 좌표로 로딩될 때까지 이 셀을 보류한다.
+                                if (!parkedSelf) {
+                                    int unknownX = (int) (narrow >> 32);
+                                    int unknownZ = (int) narrow;
+                                    FrontierQueue.park(curPacked, unknownX, unknownZ, FrontierQueue.ParkReason.CHUNK_NOT_LOADED);
+                                    parkedSelf = true;
+                                }
+                                continue;
+                            }
+                            if (narrow == BlockSearch.PASSAGE_NARROW) continue;
                         }
 
                         boolean twoWay = BlockSearch.canMoveBetween(nx, ty, nz, cx, cy, cz, world.getBottomY());

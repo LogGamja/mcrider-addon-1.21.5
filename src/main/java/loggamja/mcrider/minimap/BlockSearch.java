@@ -131,34 +131,69 @@ final class BlockSearch {
         }
     }
 
-    // 미로딩 이웃은 "열려있지 않음"으로 취급한다. 메인 루프에서 이미 nx,nz 청크 로딩 여부를
-    // isChunkLoadedAt으로 확인하고 park 처리하므로, 여기서까지 UNKNOWN을 별도로 추적해 다시
-    // park하면 청크 경계(렌더/시뮬레이션 거리 언저리)에서 병합 못지않게 자주 도는 핫패스에
-    // exile 큐 등록/해제 왕복이 추가된다. 대신 그냥 막힌 것으로 보고, 청크가 로딩되면
-    // 다음 재탐색(예: 플레이어 이동, floodFill 재시도) 때 다시 정상 판정된다.
-    private static boolean isLaterallyOpen(int x, int y, int z) {
-        if (!isChunkLoadedAt(x, z)) return false;
-        return isAirAt(x, y, z);
+    // OPEN/NARROW는 sentinel. 그 외 값은 미로딩 청크 좌표 (패킹됨)
+    private static long packWorldXZ(int x, int z) {
+        return ((long) x << 32) | (z & 0xFFFFFFFFL);
+    }
+    static final long PASSAGE_OPEN = packWorldXZ(0, Integer.MIN_VALUE);
+    static final long PASSAGE_NARROW = packWorldXZ(0, Integer.MIN_VALUE + 1);
+
+    private static final int LATERAL_OPEN = 0;
+    private static final int LATERAL_BLOCKED = 1;
+    private static final int LATERAL_UNKNOWN = 2;
+
+    // 호출부에서 미리 구한 로딩 여부 활용
+    private static int lateralStateKnownLoaded(boolean loaded, int x, int y, int z) {
+        if (!loaded) return LATERAL_UNKNOWN;
+        return isAirAt(x, y, z) ? LATERAL_OPEN : LATERAL_BLOCKED;
     }
 
-    static boolean isNarrowPassage(int nx, int ny, int nz, int dx, int dz) {
+    // 한 축의 폭 판정 (양쪽 측면)
+    private static long axisResult(boolean loaded1, int x1, int z1, boolean loaded2, int x2, int z2, int y) {
+        int s1 = lateralStateKnownLoaded(loaded1, x1, y, z1);
+        if (s1 == LATERAL_OPEN) return PASSAGE_OPEN; // 한쪽 열려있으면 결론 정함
+        int s2 = lateralStateKnownLoaded(loaded2, x2, y, z2);
+        if (s2 == LATERAL_OPEN) return PASSAGE_OPEN;
+        if (s1 == LATERAL_UNKNOWN) return packWorldXZ(x1, z1);
+        if (s2 == LATERAL_UNKNOWN) return packWorldXZ(x2, z2);
+        return PASSAGE_NARROW;
+    }
+
+    static long isNarrowPassage(int nx, int ny, int nz, int dx, int dz) {
+        int x1, z1, x2, z2;
         if (dx != 0) {
-            return !isLaterallyOpen(nx, ny, nz - 1) && !isLaterallyOpen(nx, ny, nz + 1);
+            x1 = nx; z1 = nz - 1;
+            x2 = nx; z2 = nz + 1;
         } else {
-            return !isLaterallyOpen(nx - 1, ny, nz) && !isLaterallyOpen(nx + 1, ny, nz);
+            x1 = nx - 1; z1 = nz;
+            x2 = nx + 1; z2 = nz;
         }
+        return axisResult(isChunkLoadedAt(x1, z1), x1, z1, isChunkLoadedAt(x2, z2), x2, z2, ny);
     }
 
     // 플레이어가 1칸은 못 들어간다고 가정
-    static boolean isNarrowPassageInRange(int nx, int cy, int ty, int nz, int dx, int dz) {
-        if (ty >= cy) {
-            return isNarrowPassage(nx, ty, nz, dx, dz);
-        }
+    static long isNarrowPassageInRange(int nx, int cy, int ty, int nz, int dx, int dz) {
+        if (ty >= cy) return isNarrowPassage(nx, ty, nz, dx, dz);
+
+        // 청크 로딩 여부는 y와 무관하므로 루프 밖에서 축당 한 번만 판정한다
+        boolean zMinusLoaded = isChunkLoadedAt(nx, nz - 1);
+        boolean zPlusLoaded = isChunkLoadedAt(nx, nz + 1);
+        boolean xMinusLoaded = isChunkLoadedAt(nx - 1, nz);
+        boolean xPlusLoaded = isChunkLoadedAt(nx + 1, nz);
+
+        boolean sawUnknown = false;
+        long unknownResult = 0;
         for (int y = cy; y >= ty; y--) {
-            // 낙하 중엔 동서남북 다봐야함
-            if (isNarrowPassage(nx, y, nz, 1, 0) || isNarrowPassage(nx, y, nz, 0, 1)) return true;
+            // 낙하 중 NARROW 발견 시 즉시 반환. 그 전까지 UNKNOWN 기억했다가 반환
+            long r1 = axisResult(zMinusLoaded, nx, nz - 1, zPlusLoaded, nx, nz + 1, y);
+            if (r1 == PASSAGE_NARROW) return PASSAGE_NARROW;
+            if (r1 != PASSAGE_OPEN && !sawUnknown) { sawUnknown = true; unknownResult = r1; }
+
+            long r2 = axisResult(xMinusLoaded, nx - 1, nz, xPlusLoaded, nx + 1, nz, y);
+            if (r2 == PASSAGE_NARROW) return PASSAGE_NARROW;
+            if (r2 != PASSAGE_OPEN && !sawUnknown) { sawUnknown = true; unknownResult = r2; }
         }
-        return false;
+        return sawUnknown ? unknownResult : PASSAGE_OPEN;
     }
 
     // air 먼저 검사 (tag 중복 시 일관성 유지)
