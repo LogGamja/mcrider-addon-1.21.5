@@ -214,36 +214,26 @@ final class ColorGraph {
             FrontierSearch.columnsByRoot.computeIfAbsent(survivor, k -> new LongOpenHashSet()).addAll(cols);
         }
         // parentToChildren / childToParents의 loser 키 버킷은 resolve()로 자동 정규화되지 않으므로 survivor 키로 직접 옮긴다.
-        // 그 전에 stale loser id의 메모리 누수 방지 차우너에서 loser를 참조하는 반대편 항목들도 survivor로 치환해야 한다.
-        replaceValueInReverseMap(parentToChildren, childToParents, loser, survivor);
-        replaceValueInReverseMap(childToParents, parentToChildren, loser, survivor);
-        migrateAdjacency(parentToChildren, loser, survivor);
-        migrateAdjacency(childToParents, loser, survivor);
+        // 그 전에 stale loser id의 메모리 누수 방지 차원에서 loser를 참조하는 반대편 항목들도 survivor로 치환해야 한다.
+        migrateDirection(parentToChildren, childToParents, loser, survivor);
+        migrateDirection(childToParents, parentToChildren, loser, survivor);
         colorParentPtr.put(loser, survivor);
     }
 
-    private static void migrateAdjacency(Long2ObjectOpenHashMap<LongOpenHashSet> adj, long loser, long survivor) {
-        LongOpenHashSet moved = adj.remove(loser);
-        if (moved == null || moved.isEmpty()) return;
-        LongOpenHashSet target = adj.computeIfAbsent(survivor, k -> new LongOpenHashSet());
-        LongIterator it = moved.iterator();
-        while (it.hasNext()) {
-            long v = it.nextLong();
-            if (v != survivor) target.add(v);
-        }
-    }
-
-    // ownAdj[loser](마이그레이션 전 loser 자신의 버킷)의 각 원소 v에 대해, v가 반대 방향으로 loser를
-    // 가리키고 있는 otherAdj[v]에서 loser를 survivor로 치환한다. v == survivor인 경우(둘 사이에 직접
-    // 엣지가 있던 경우)는 병합 후 자기 자신을 향한 엣지가 되므로 survivor를 다시 추가하지 않고 제거만 한다.
-    private static void replaceValueInReverseMap(Long2ObjectOpenHashMap<LongOpenHashSet> ownAdj,
-                                                  Long2ObjectOpenHashMap<LongOpenHashSet> otherAdj,
-                                                  long loser, long survivor) {
-        LongOpenHashSet own = ownAdj.get(loser);
+    // ownAdj[loser] 버킷을 survivor 버킷으로 옮기면서, 그 과정에서 만나는 각 원소 v에 대해 반대
+    // 방향으로 loser를 가리키고 있는 otherAdj[v]도 함께 survivor로 치환한다(한 번의 순회로 두 일을
+    // 처리해 버킷을 두 번 훑지 않는다). v == survivor인 경우(둘 사이에 직접 엣지가 있던 경우)는
+    // 병합 후 자기 자신을 향한 엣지가 되므로 survivor를 다시 추가하지 않고 제거만 한다.
+    private static void migrateDirection(Long2ObjectOpenHashMap<LongOpenHashSet> ownAdj,
+                                          Long2ObjectOpenHashMap<LongOpenHashSet> otherAdj,
+                                          long loser, long survivor) {
+        LongOpenHashSet own = ownAdj.remove(loser);
         if (own == null || own.isEmpty()) return;
+        LongOpenHashSet target = ownAdj.computeIfAbsent(survivor, k -> new LongOpenHashSet());
         LongIterator it = own.iterator();
         while (it.hasNext()) {
             long v = it.nextLong();
+            if (v != survivor) target.add(v);
             LongOpenHashSet other = otherAdj.get(v);
             if (other != null && other.remove(loser) && v != survivor) {
                 other.add(survivor);

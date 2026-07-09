@@ -191,7 +191,7 @@ final class FrontierSearch {
                     int cz = BlockPos.unpackLongZ(cell);
                     FrontierQueue.enqueue(cell, cx, cz, sx, sz, maxRange);
                 }
-                if ((++sinceTimeCheck & 0xFF) == 0 && System.nanoTime() - deadline >= 0) return; // 다음 틱에 이어서
+                if ((++sinceTimeCheck & 0xFF) == 0 && FrontierQueue.deadlineReached(deadline)) return; // 다음 틱에 이어서
             }
             scratch.clear();
             index = 0;
@@ -303,10 +303,6 @@ final class FrontierSearch {
     private static long pendingActiveColorCandidate = NO_ID;
     private static int pendingActiveColorStreak = 0;
 
-    // 이번 floodFillWithVertical 호출이 activeColor를 갱신했으면 true. 초기 리턴 시(청크 미로딩 등)
-    // false로 남는데, 그 경우들은 이번 틱에 다시 조회해도 항상 같은 이유로 실패하므로 별도 재시도는 하지 않는다.
-    static boolean activeColorUpdatedThisTick = false;
-
     // 이미 구해둔 플레이어 앵커 셀로 activeColor를 갱신한다(resolvePlayerCell 중복 호출 회피)
     static void updateActiveColorFromCell(long cell) {
         if (cell == NO_ID) return;
@@ -383,13 +379,12 @@ final class FrontierSearch {
         if (cellColor.get(startCell) == NO_ID && BlockSearch.isStandable(sx, sy, sz, false)) {
             boolean seedIsNarrow = false;
             if (MCRiderMinimap.EXCLUDE_NARROW_PATHS) {
-                int n1 = BlockSearch.isNarrowPassage(sx, sy, sz, 1, 0);
-                int n2 = BlockSearch.isNarrowPassage(sx, sy, sz, 0, 1);
-                // 미로딩 청크라 판정 불가면(UNKNOWN) 이번 틱은 시딩을 보류한다. 시드는 아직 큐에
-                // 들어간 셀이 없어 park할 대상이 없으므로, 다음 틱에 이 블록이 다시 검사될 때
-                // (cellColor가 여전히 NO_ID인 한 매 틱 재시도됨) 청크가 로딩됐으면 자연히 풀린다.
-                seedIsNarrow = n1 == BlockSearch.PASSAGE_NARROW || n2 == BlockSearch.PASSAGE_NARROW
-                        || n1 == BlockSearch.PASSAGE_UNKNOWN || n2 == BlockSearch.PASSAGE_UNKNOWN;
+                // 미로딩 청크라 판정 불가면(UNKNOWN) NARROW와 동일하게 취급해 이번 틱은 시딩을 보류한다.
+                // 시드는 아직 큐에 들어간 셀이 없어 park할 대상이 없으므로, 다음 틱에 이 블록이 다시
+                // 검사될 때(cellColor가 여전히 NO_ID인 한 매 틱 재시도됨) 청크가 로딩됐으면 자연히 풀린다.
+                // 첫 축이 이미 OPEN이 아니면 결론이 정해지므로 둘째 축은 그때만 확인한다.
+                seedIsNarrow = BlockSearch.isNarrowPassage(sx, sy, sz, 1, 0) != BlockSearch.PASSAGE_OPEN
+                        || BlockSearch.isNarrowPassage(sx, sy, sz, 0, 1) != BlockSearch.PASSAGE_OPEN;
             }
             if (!seedIsNarrow) {
                 long c = ColorGraph.newColor(NO_ID);
@@ -399,7 +394,6 @@ final class FrontierSearch {
         }
         long playerCell = resolvePlayerCellFromAnchor(anchorCell);
         updateActiveColorFromCell(playerCell);
-        activeColorUpdatedThisTick = true;
         rebuildActiveSet();
 
         // 앵커가 잠깐 풀린 틱(점프/추락 등)에는 searchActiveSet을 재계산하지 않고 이전 필터를 유지한다.
@@ -429,7 +423,7 @@ final class FrontierSearch {
                 if (bucket == null) continue;
 
                 while (!bucket.isEmpty()) {
-                    if (System.nanoTime() - deadline >= 0) {
+                    if (FrontierQueue.deadlineReached(deadline)) {
                         stop = true;
                         break;
                     }
@@ -470,20 +464,22 @@ final class FrontierSearch {
                         }
 
                         boolean baseIsAir = BlockSearch.isAirAt(nx, cy, nz);
-                        boolean baseIsWall = !baseIsAir && BlockSearch.isWallAt(nx, cy, nz);
+                        boolean baseIsWall = BlockSearch.isWallGivenAir(baseIsAir, nx, cy, nz);
                         if (baseIsWall) continue;
 
                         int ty = BlockSearch.resolveTargetY(nx, cy, nz, baseIsAir, baseIsWall, hasBlockAt2Meter, world.getBottomY());
                         if (ty == Integer.MIN_VALUE) continue;
 
                         if (MCRiderMinimap.EXCLUDE_NARROW_PATHS) {
-                            int narrow = BlockSearch.isNarrowPassageInRange(nx, cy, ty, nz, d[0], d[1]);
-                            if (narrow == BlockSearch.PASSAGE_UNKNOWN) {
+                            long narrow = BlockSearch.isNarrowPassageInRange(nx, cy, ty, nz, d[0], d[1]);
+                            if (narrow != BlockSearch.PASSAGE_OPEN && narrow != BlockSearch.PASSAGE_NARROW) {
                                 // 좁은 길인지 확정할 수 없는 게 아니라 이웃 청크가 아직 안 로딩된 것.
-                                // 벽으로 오인해 탐색을 막는 대신, 그 청크가 로딩될 때까지 이 셀을 보류한다.
+                                // 벽으로 오인해 탐색을 막는 대신, narrow에 패킹된 그 청크의 월드 좌표로
+                                // 로딩될 때까지 이 셀을 보류한다.
                                 if (!parkedSelf) {
-                                    FrontierQueue.park(curPacked, BlockSearch.lastUnknownChunkX,
-                                            BlockSearch.lastUnknownChunkZ, FrontierQueue.ParkReason.CHUNK_NOT_LOADED);
+                                    int unknownX = (int) (narrow >> 32);
+                                    int unknownZ = (int) narrow;
+                                    FrontierQueue.park(curPacked, unknownX, unknownZ, FrontierQueue.ParkReason.CHUNK_NOT_LOADED);
                                     parkedSelf = true;
                                 }
                                 continue;

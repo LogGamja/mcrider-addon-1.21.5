@@ -134,27 +134,43 @@ final class BlockSearch {
         }
     }
 
-    // 로딩되지 않은 청크를 위한 3상태
-    static final int PASSAGE_OPEN = 0;
-    static final int PASSAGE_NARROW = 1;
-    static final int PASSAGE_UNKNOWN = 2;
-
-    // PASSAGE_UNKNOWN을 반환했을 때 판정 불가 사유가 된 미로딩 청크의 월드 좌표.
-    // 호출부(FrontierSearch)가 여기로 FrontierQueue.park(CHUNK_NOT_LOADED)를 걸고 로딩될 때까지 현재 셀 탐색을 보류한다.
-    static int lastUnknownChunkX;
-    static int lastUnknownChunkZ;
+    // 폭 판정 결과: OPEN/NARROW는 sentinel 값이고, 그 외 값은 판정 불가 사유가 된 미로딩 청크의
+    // 월드 좌표(packWorldXZ로 패킹)다. 호출부(FrontierSearch)가 이 좌표로 FrontierQueue.park를
+    // 걸어 그 청크가 로딩될 때까지 현재 셀 탐색을 보류한다. 반환값 자체에 좌표를 실어 static
+    // 필드로 넘기지 않으므로, 호출 사이 순서에 의존하는 숨은 계약이 없다.
+    //
+    // sentinel은 packWorldXZ(0, Integer.MIN_VALUE) 계열을 쓴다. nx/nz는 항상 이미 로딩된 청크
+    // 안의 좌표(플레이어 주변, 기본 월드 보더 ±30,000,000 이내)에서 유래하므로 z가
+    // Integer.MIN_VALUE에 도달할 수 없어 실제 좌표와 절대 충돌하지 않는다.
+    private static long packWorldXZ(int x, int z) {
+        return ((long) x << 32) | (z & 0xFFFFFFFFL);
+    }
+    static final long PASSAGE_OPEN = packWorldXZ(0, Integer.MIN_VALUE);
+    static final long PASSAGE_NARROW = packWorldXZ(0, Integer.MIN_VALUE + 1);
 
     private static final int LATERAL_OPEN = 0;
     private static final int LATERAL_BLOCKED = 1;
     private static final int LATERAL_UNKNOWN = 2;
 
-    // 폭 판정 전용
-    private static int lateralState(int x, int y, int z) {
-        if (!isChunkLoadedAt(x, z)) return LATERAL_UNKNOWN;
+    // 폭 판정 전용. loaded를 호출부가 이미 알고 있을 때(루프에서 y-불변인 로딩 여부를 미리 구해둔 경우) 재확인을 피한다
+    private static int lateralStateKnownLoaded(boolean loaded, int x, int y, int z) {
+        if (!loaded) return LATERAL_UNKNOWN;
         return isAirAt(x, y, z) ? LATERAL_OPEN : LATERAL_BLOCKED;
     }
 
-    static int isNarrowPassage(int nx, int ny, int nz, int dx, int dz) {
+    // 한 축(양쪽 측면 x1,z1 / x2,z2)의 폭 판정. 로딩 여부는 호출부가 넘겨준 값을 그대로 쓴다
+    private static long axisResult(boolean loaded1, int x1, int z1, boolean loaded2, int x2, int z2, int y) {
+        int s1 = lateralStateKnownLoaded(loaded1, x1, y, z1);
+        // 한쪽이 열려 있으면 나머지가 미로딩이어도 결론(안 좁음)은 안 바뀐다. 굳이 확인 안 해도 됨
+        if (s1 == LATERAL_OPEN) return PASSAGE_OPEN;
+        int s2 = lateralStateKnownLoaded(loaded2, x2, y, z2);
+        if (s2 == LATERAL_OPEN) return PASSAGE_OPEN;
+        if (s1 == LATERAL_UNKNOWN) return packWorldXZ(x1, z1);
+        if (s2 == LATERAL_UNKNOWN) return packWorldXZ(x2, z2);
+        return PASSAGE_NARROW;
+    }
+
+    static long isNarrowPassage(int nx, int ny, int nz, int dx, int dz) {
         int x1, z1, x2, z2;
         if (dx != 0) {
             x1 = nx; z1 = nz - 1;
@@ -163,50 +179,45 @@ final class BlockSearch {
             x1 = nx - 1; z1 = nz;
             x2 = nx + 1; z2 = nz;
         }
-        int s1 = lateralState(x1, ny, z1);
-        // 한쪽이 열려 있으면 나머지가 미로딩이어도 결론(안 좁음)은 안 바뀐다. 굳이 확인 안 해도 됨
-        if (s1 == LATERAL_OPEN) return PASSAGE_OPEN;
-        int s2 = lateralState(x2, ny, z2);
-        if (s2 == LATERAL_OPEN) return PASSAGE_OPEN;
-        if (s1 == LATERAL_UNKNOWN) { lastUnknownChunkX = x1; lastUnknownChunkZ = z1; return PASSAGE_UNKNOWN; }
-        if (s2 == LATERAL_UNKNOWN) { lastUnknownChunkX = x2; lastUnknownChunkZ = z2; return PASSAGE_UNKNOWN; }
-        return PASSAGE_NARROW;
+        return axisResult(isChunkLoadedAt(x1, z1), x1, z1, isChunkLoadedAt(x2, z2), x2, z2, ny);
     }
 
-    static int isNarrowPassageInRange(int nx, int cy, int ty, int nz, int dx, int dz) {
+    static long isNarrowPassageInRange(int nx, int cy, int ty, int nz, int dx, int dz) {
         if (ty >= cy) {
             return isNarrowPassage(nx, ty, nz, dx, dz);
         }
+        // 청크 로딩 여부는 y와 무관하므로 루프 밖에서 축당 한 번만 판정한다
+        // (예전엔 y 레벨마다 매번 재조회해 미로딩 경계에서 낙하 깊이만큼 헛조회가 반복됐다)
+        boolean zMinusLoaded = isChunkLoadedAt(nx, nz - 1);
+        boolean zPlusLoaded = isChunkLoadedAt(nx, nz + 1);
+        boolean xMinusLoaded = isChunkLoadedAt(nx - 1, nz);
+        boolean xPlusLoaded = isChunkLoadedAt(nx + 1, nz);
+
         boolean sawUnknown = false;
-        int unknownX = 0, unknownZ = 0;
+        long unknownResult = 0;
         for (int y = cy; y >= ty; y--) {
             // 낙하 중엔 동서남북 다봐야함. 확정적 NARROW를 찾으면 즉시 반환하되
             // 그 전까지 만난 UNKNOWN은 기억해뒀다가 NARROW를 못 찾고 끝나면 UNKNOWN으로 반환한다.
-            int r1 = isNarrowPassage(nx, y, nz, 1, 0);
+            long r1 = axisResult(zMinusLoaded, nx, nz - 1, zPlusLoaded, nx, nz + 1, y);
             if (r1 == PASSAGE_NARROW) return PASSAGE_NARROW;
-            if (r1 == PASSAGE_UNKNOWN && !sawUnknown) {
-                sawUnknown = true;
-                unknownX = lastUnknownChunkX;
-                unknownZ = lastUnknownChunkZ;
-            }
-            int r2 = isNarrowPassage(nx, y, nz, 0, 1);
+            if (r1 != PASSAGE_OPEN && !sawUnknown) { sawUnknown = true; unknownResult = r1; }
+
+            long r2 = axisResult(xMinusLoaded, nx - 1, nz, xPlusLoaded, nx + 1, nz, y);
             if (r2 == PASSAGE_NARROW) return PASSAGE_NARROW;
-            if (r2 == PASSAGE_UNKNOWN && !sawUnknown) {
-                sawUnknown = true;
-                unknownX = lastUnknownChunkX;
-                unknownZ = lastUnknownChunkZ;
-            }
+            if (r2 != PASSAGE_OPEN && !sawUnknown) { sawUnknown = true; unknownResult = r2; }
         }
-        if (sawUnknown) {
-            lastUnknownChunkX = unknownX;
-            lastUnknownChunkZ = unknownZ;
-            return PASSAGE_UNKNOWN;
-        }
-        return PASSAGE_OPEN;
+        return sawUnknown ? unknownResult : PASSAGE_OPEN;
     }
+
+    // air 여부를 먼저 보고, air가 아닐 때만 wall을 본다(순서를 한 곳에 고정해 호출부 간 비대칭을 방지).
+    // 순서가 반대면 한 블록이 air/wall 태그를 동시에 갖는 경우(설정 오류 등) 호출부마다 다른 결론이 날 수 있다.
+    static boolean isWallGivenAir(boolean isAir, int x, int y, int z) {
+        return !isAir && isWallAt(x, y, z);
+    }
+
     static boolean canMoveBetween(int tx, int ty, int tz, int fx, int fy, int fz, int bottomY) {
         boolean baseIsAir = isAirAt(fx, ty, fz);
-        boolean baseIsWall = !baseIsAir && isWallAt(fx, ty, fz); // 역방향 못 감
+        boolean baseIsWall = isWallGivenAir(baseIsAir, fx, ty, fz); // 역방향 못 감
         if (baseIsWall) return false;
         boolean tHasBlockAt2 = !isAirAt(tx, ty + 2, tz);
         int back = resolveTargetY(fx, ty, fz, baseIsAir, baseIsWall, tHasBlockAt2, bottomY);

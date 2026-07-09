@@ -41,6 +41,13 @@ final class FrontierQueue {
     private static int lastSortSx = Integer.MIN_VALUE, lastSortSz = Integer.MIN_VALUE;
     private static int lastSortN = 0;
 
+    // System.nanoTime()은 절대값이 아니라 임의 원점 기준이라 오버플로우를 감안한 뺄셈 비교가 필요하다
+    // (System.nanoTime() >= deadline 형태는 nanoTime()이 오버플로우로 음수가 되는 순간 deadline보다
+    // 항상 작다고 잘못 판정될 수 있다). 여러 파일에서 반복되는 이 비교를 한 곳에 이름 붙여둔다.
+    static boolean deadlineReached(long deadline) {
+        return System.nanoTime() - deadline >= 0;
+    }
+
     static int taxiDistance2D(int ax, int az, int bx, int bz) {
         return Math.abs(ax - bx) + Math.abs(az - bz);
     }
@@ -141,7 +148,7 @@ final class FrontierQueue {
         boolean timedOut = false;
         ObjectIterator<Long2ObjectMap.Entry<LongArrayList>> exiledIt = exiledByChunk.long2ObjectEntrySet().iterator();
         while (exiledIt.hasNext()) {
-            if (System.nanoTime() - deadline >= 0) {
+            if (deadlineReached(deadline)) {
                 timedOut = true;
                 break;
             }

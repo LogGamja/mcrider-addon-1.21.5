@@ -285,7 +285,7 @@ final class MinimapRenderer {
                 }
                 rebuildRectLocalIndex++;
                 budget--;
-                if ((++sinceTimeCheck & 0xFF) == 0 && System.nanoTime() - deadline >= 0) return; // 다음 틱에 이어서
+                if ((++sinceTimeCheck & 0xFF) == 0 && FrontierQueue.deadlineReached(deadline)) return; // 다음 틱에 이어서
             }
             if (rebuildRectLocalIndex >= total) {
                 rebuildRectCursor++;
@@ -357,7 +357,7 @@ final class MinimapRenderer {
                 dirtyIt.remove();
                 hardCap--;
             }
-            if ((++sinceTimeCheck & 0xFF) == 0 && System.nanoTime() - repaintDeadline >= 0) {
+            if ((++sinceTimeCheck & 0xFF) == 0 && FrontierQueue.deadlineReached(repaintDeadline)) {
                 timedOut = true;
             }
         }
@@ -371,7 +371,7 @@ final class MinimapRenderer {
                 if (mirrorToBack) back.plotColumn(wx, wz);
                 dirtyIt.remove();
                 hardCap--;
-                if ((++sinceTimeCheck & 0xFF) == 0 && System.nanoTime() - repaintDeadline >= 0) break;
+                if ((++sinceTimeCheck & 0xFF) == 0 && FrontierQueue.deadlineReached(repaintDeadline)) break;
             }
         }
     }
