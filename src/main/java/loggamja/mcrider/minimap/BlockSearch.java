@@ -146,10 +146,42 @@ final class BlockSearch {
         return isAirAt(x, y, z) ? LATERAL_OPEN : LATERAL_BLOCKED;
     }
 
-    private static long axisResult(boolean loaded1, int x1, int z1, boolean loaded2, int x2, int z2, int y) {
-        int s1 = lateralStateKnownLoaded(loaded1, x1, y, z1);
+    // 한 쪽(좌 또는 우)은 직접 칸과 후방 칸이 "둘 다" air일 때만 open이다.
+    // 벽이 한 칸씩 어긋나게(지그재그) 설치된 경우 직접 칸만 보면 open으로 오판하므로,
+    // 후방 칸까지 막혀 있으면 그 쪽은 blocked로 취급한다.
+    private static int sideState(boolean directLoaded, int dx, int dz,
+                                  boolean rearLoaded, int rx, int rz, int y) {
+        int direct = lateralStateKnownLoaded(directLoaded, dx, y, dz);
+        if (direct == LATERAL_BLOCKED) return LATERAL_BLOCKED;
+        int rear = lateralStateKnownLoaded(rearLoaded, rx, y, rz);
+        if (rear == LATERAL_BLOCKED) return LATERAL_BLOCKED;
+        if (direct == LATERAL_UNKNOWN || rear == LATERAL_UNKNOWN) return LATERAL_UNKNOWN;
+        return LATERAL_OPEN;
+    }
+
+    // 수직굴에서 벽이 한 칸씩 아래로 어긋나는(지그재그) 경우까지 잡기 위해,
+    // 이 행(y)뿐 아니라 한 칸 아래(y-1)도 같은 direct/rear 기준으로 확인해 OR로 묶는다.
+    // 청크 로딩 여부는 y와 무관하므로 loaded 플래그는 그대로 재사용한다.
+    private static int sideStateWithBelow(boolean directLoaded, int dx, int dz,
+                                           boolean rearLoaded, int rx, int rz, int y) {
+        int here = sideState(directLoaded, dx, dz, rearLoaded, rx, rz, y);
+        if (here == LATERAL_OPEN) return LATERAL_OPEN;
+        int below = sideState(directLoaded, dx, dz, rearLoaded, rx, rz, y - 1);
+        if (below == LATERAL_OPEN) return LATERAL_OPEN;
+        if (here == LATERAL_UNKNOWN || below == LATERAL_UNKNOWN) return LATERAL_UNKNOWN;
+        return LATERAL_BLOCKED;
+    }
+
+    private static long axisResult(boolean loaded1, int x1, int z1, boolean loaded1r, int x1r, int z1r,
+                                    boolean loaded2, int x2, int z2, boolean loaded2r, int x2r, int z2r, int y,
+                                    boolean includeBelow) {
+        int s1 = includeBelow
+                ? sideStateWithBelow(loaded1, x1, z1, loaded1r, x1r, z1r, y)
+                : sideState(loaded1, x1, z1, loaded1r, x1r, z1r, y);
         if (s1 == LATERAL_OPEN) return PASSAGE_OPEN;
-        int s2 = lateralStateKnownLoaded(loaded2, x2, y, z2);
+        int s2 = includeBelow
+                ? sideStateWithBelow(loaded2, x2, z2, loaded2r, x2r, z2r, y)
+                : sideState(loaded2, x2, z2, loaded2r, x2r, z2r, y);
         if (s2 == LATERAL_OPEN) return PASSAGE_OPEN;
         if (s1 == LATERAL_UNKNOWN) return packWorldXZ(x1, z1);
         if (s2 == LATERAL_UNKNOWN) return packWorldXZ(x2, z2);
@@ -165,28 +197,46 @@ final class BlockSearch {
             x1 = nx - 1; z1 = nz;
             x2 = nx + 1; z2 = nz;
         }
-        return axisResult(isChunkLoadedAt(x1, z1), x1, z1, isChunkLoadedAt(x2, z2), x2, z2, ny);
+        int x1r = x1 - dx, z1r = z1 - dz;
+        int x2r = x2 - dx, z2r = z2 - dz;
+        return axisResult(isChunkLoadedAt(x1, z1), x1, z1, isChunkLoadedAt(x1r, z1r), x1r, z1r,
+                isChunkLoadedAt(x2, z2), x2, z2, isChunkLoadedAt(x2r, z2r), x2r, z2r, ny, false);
     }
 
     // 플레이어가 1칸은 못 들어간다고 가정
     static long isNarrowPassageInRange(int nx, int cy, int ty, int nz, int dx, int dz) {
         if (ty >= cy) return isNarrowPassage(nx, ty, nz, dx, dz);
 
-        // 청크 로딩 여부는 y와 무관하므로 루프 밖에서 축당 한 번만 판정한다
-        boolean zMinusLoaded = isChunkLoadedAt(nx, nz - 1);
-        boolean zPlusLoaded = isChunkLoadedAt(nx, nz + 1);
-        boolean xMinusLoaded = isChunkLoadedAt(nx - 1, nz);
-        boolean xPlusLoaded = isChunkLoadedAt(nx + 1, nz);
+        // 청크 로딩 여부는 y와 무관하므로 루프 밖에서 좌표당 한 번만 판정한다
+        int x1 = nx, z1 = nz - 1;
+        int x2 = nx, z2 = nz + 1;
+        int x3 = nx - 1, z3 = nz;
+        int x4 = nx + 1, z4 = nz;
+        int x1r = x1 - dx, z1r = z1 - dz;
+        int x2r = x2 - dx, z2r = z2 - dz;
+        int x3r = x3 - dx, z3r = z3 - dz;
+        int x4r = x4 - dx, z4r = z4 - dz;
+
+        boolean zMinusLoaded = isChunkLoadedAt(x1, z1);
+        boolean zPlusLoaded = isChunkLoadedAt(x2, z2);
+        boolean xMinusLoaded = isChunkLoadedAt(x3, z3);
+        boolean xPlusLoaded = isChunkLoadedAt(x4, z4);
+        boolean zMinusRearLoaded = isChunkLoadedAt(x1r, z1r);
+        boolean zPlusRearLoaded = isChunkLoadedAt(x2r, z2r);
+        boolean xMinusRearLoaded = isChunkLoadedAt(x3r, z3r);
+        boolean xPlusRearLoaded = isChunkLoadedAt(x4r, z4r);
 
         boolean sawUnknown = false;
         long unknownResult = 0;
         for (int y = cy; y >= ty; y--) {
             // 낙하 중 NARROW 발견 시 즉시 반환. 그 전까지 UNKNOWN 기억했다가 반환
-            long r1 = axisResult(zMinusLoaded, nx, nz - 1, zPlusLoaded, nx, nz + 1, y);
+            long r1 = axisResult(zMinusLoaded, x1, z1, zMinusRearLoaded, x1r, z1r,
+                    zPlusLoaded, x2, z2, zPlusRearLoaded, x2r, z2r, y, true);
             if (r1 == PASSAGE_NARROW) return PASSAGE_NARROW;
             if (r1 != PASSAGE_OPEN && !sawUnknown) { sawUnknown = true; unknownResult = r1; }
 
-            long r2 = axisResult(xMinusLoaded, nx - 1, nz, xPlusLoaded, nx + 1, nz, y);
+            long r2 = axisResult(xMinusLoaded, x3, z3, xMinusRearLoaded, x3r, z3r,
+                    xPlusLoaded, x4, z4, xPlusRearLoaded, x4r, z4r, y, true);
             if (r2 == PASSAGE_NARROW) return PASSAGE_NARROW;
             if (r2 != PASSAGE_OPEN && !sawUnknown) { sawUnknown = true; unknownResult = r2; }
         }
