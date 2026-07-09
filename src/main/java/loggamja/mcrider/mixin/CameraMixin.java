@@ -67,30 +67,26 @@ public class CameraMixin {
         float dt = (mcrider$lastTime == 0L) ? 0f : (now - mcrider$lastTime) / 1.0e9f;
         mcrider$lastTime = now;
 
-        // 프레임 요동 / 멈춤 대비: 음수 제거 + 상한 클램프
         if (dt < 0f) dt = 0f;
         if (dt > mcrider$MAX_DT) dt = mcrider$MAX_DT;
 
-        // 2) 대상 확인
         Entity focused = ((Camera) (Object) this).getFocusedEntity();
         if (!(focused instanceof PlayerEntity player)) return;
 
-        // 3) 이번 프레임 원본 롤(0이어도 그대로 반영해 평균이 0으로 수렴하게 함)
+        // 0이어도 그대로 반영해야 평균이 0으로 수렴한다
         float raw = EntityRollManager.getCurrentRoll(player.getUuid()) * mcrider$ROLL_MULTIPLIER;
         var isBike = MCRiderMain.getS2CValue(player, "data-is-bike");
         if (isBike == 1 && MCRiderConfig.INSTANCE.bikeSuspension == 3) {
             raw /= 4;
         }
 
-        // 4) FPS 무관 지수 평활. alpha 는 항상 (0,1] 이라 튀거나 발산하지 않음.
+        // alpha는 항상 (0,1]이라 튀거나 발산하지 않음
         float alpha = (mcrider$SMOOTH_TIME <= 0f) ? 1f
                 : 1f - (float) Math.exp(-dt / mcrider$SMOOTH_TIME);
         mcrider$smoothRoll += (raw - mcrider$smoothRoll) * alpha;
 
-        // 비정상 값 안전망
         if (!Float.isFinite(mcrider$smoothRoll)) mcrider$smoothRoll = raw;
 
-        // 5) 적용
         if (Math.abs(mcrider$smoothRoll) < 1.0e-4f) return;
         this.rotation.rotateZ((float) Math.toRadians(mcrider$smoothRoll));
     }

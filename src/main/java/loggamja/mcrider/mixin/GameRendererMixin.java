@@ -109,7 +109,6 @@ public abstract class GameRendererMixin {
     private void mcrider$renderTail(RenderTickCounter tickCounter, boolean tick, CallbackInfo ci) {
         if (!MCRiderMain.isRidingKart || !MCRiderMain.isPlayingInGame() || !MCRiderConfig.INSTANCE.MCRiderPacketAcceleration) return;
 
-        // 300프레임 리미트
         long now = System.nanoTime();
         if (now - mcrider$lastPacketSendNanos <= mcrider$MIN_PACKET_INTERVAL_NANOS) return;
         mcrider$lastPacketSendNanos = now;

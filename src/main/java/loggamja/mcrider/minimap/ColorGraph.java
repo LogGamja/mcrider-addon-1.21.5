@@ -79,7 +79,7 @@ final class ColorGraph {
         if (parent == child) return;
         boolean isNew = parentToChildren.computeIfAbsent(parent, k -> new LongOpenHashSet()).add(child);
         childToParents.computeIfAbsent(child, k -> new LongOpenHashSet()).add(parent);
-        if (isNew) bumpColorGraphVersion(); // 새 엣지만 버전 증가
+        if (isNew) bumpColorGraphVersion();
     }
 
     static boolean hasEdge(long parent, long child) {
@@ -207,28 +207,36 @@ final class ColorGraph {
         if (cols != null) {
             FrontierSearch.columnsByRoot.computeIfAbsent(survivor, k -> new LongOpenHashSet()).addAll(cols);
         }
-        // 엣지 맵의 loser 키 버킷만 survivor로 옮긴다. 반대편 맵에 남는 loser 역참조는
-        // 정리하지 않는다 - collectReachableBFS 등 소비 측이 이웃을 읽을 때 항상 resolve()로
-        // 정규화하므로(예: line ~280 `resolve(it.nextLong())`) stale 참조가 있어도 survivor로
-        // 환원되어 정합성엔 문제가 없다. 대신 병합마다 인접 노드 수(degree)에 비례해 반대편 맵까지
-        // remove+add하는 비용을 없애 mergeColors 핫패스(플러드필 루프에서 매우 자주 호출됨) 비용을 낮춘다.
-        migrateAdjacency(parentToChildren, loser, survivor);
-        migrateAdjacency(childToParents, loser, survivor);
+        // 반대편 맵에 남은 loser 역참조도 함께 정리해야 한다. 정리하지 않으면 죽은 참조가 쌓여서
+        // rescanCycles가 매번 도는 BFS 비용이 세션이 길어질수록 계속 늘어난다.
+        migrateDirection(parentToChildren, childToParents, loser, survivor);
+        migrateDirection(childToParents, parentToChildren, loser, survivor);
         colorParentPtr.put(loser, survivor);
     }
 
-    private static void migrateAdjacency(Long2ObjectOpenHashMap<LongOpenHashSet> adj, long loser, long survivor) {
-        LongOpenHashSet moved = adj.remove(loser);
-        if (moved == null || moved.isEmpty()) return;
-        LongOpenHashSet target = adj.computeIfAbsent(survivor, k -> new LongOpenHashSet());
-        LongIterator it = moved.iterator();
+    // v가 survivor와 같다면 둘 사이에 원래 직접 엣지가 있었다는 뜻이다. 병합 후엔 자기 자신을
+    // 향한 엣지가 되므로 제거만 하고 다시 넣지 않는다.
+    private static void migrateDirection(Long2ObjectOpenHashMap<LongOpenHashSet> ownAdj,
+                                          Long2ObjectOpenHashMap<LongOpenHashSet> otherAdj,
+                                          long loser, long survivor) {
+        LongOpenHashSet own = ownAdj.remove(loser);
+        if (own == null || own.isEmpty()) return;
+        LongOpenHashSet target = ownAdj.computeIfAbsent(survivor, k -> new LongOpenHashSet());
+        LongIterator it = own.iterator();
         while (it.hasNext()) {
             long v = it.nextLong();
             if (v != survivor) target.add(v);
+            LongOpenHashSet other = otherAdj.get(v);
+            if (other != null && other.remove(loser) && v != survivor) {
+                other.add(survivor);
+            }
         }
     }
 
-    // 무한 루프로 모든 사이클 해결 (deadline 없음 주의)
+    // deadline 없이 모든 사이클을 완전히 해결할 때까지 도는 무한 루프다. 이건 의도된 설계다.
+    // FrontierSearch.handleReach의 hasEdge 빠른 경로는 이 함수가 반환하는 시점엔 사이클이 전부
+    // 해결돼 있다는 전제에 기댄다. 여기서 중간에 끊으면 병합이 누락되고, 색이 계속 조각나면서
+    // actualColorCount가 폭증하게 된다.
     static void rescanCycles(long survivor) {
         survivor = resolve(survivor);
         long rescanStartNanos = System.nanoTime();
@@ -260,7 +268,6 @@ final class ColorGraph {
         }
     }
 
-    // 방향별 도달 가능 노드 수집 BFS
     static void collectReachableBFS(long start, Long2ObjectOpenHashMap<LongOpenHashSet> adj, LongOpenHashSet out) {
         start = resolve(start);
         LongArrayFIFOQueue q = scratchSeenQueue;

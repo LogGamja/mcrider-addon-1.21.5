@@ -171,8 +171,8 @@ final class MinimapRenderer {
     }
     private static final RebuildRect[] rebuildRects = new RebuildRect[3];
     private static int rebuildRectCount = 0;
-    private static int rebuildRectCursor = 0;      // 현재 처리 중인 사각형 인덱스
-    private static int rebuildRectLocalIndex = 0;  // 그 사각형 안에서의 진행도(픽셀 단위)
+    private static int rebuildRectCursor = 0;
+    private static int rebuildRectLocalIndex = 0;
 
     static {
         for (int i = 0; i < rebuildRects.length; i++) {
@@ -203,7 +203,6 @@ final class MinimapRenderer {
         int newOriginX = center.getX() - TEX_SIZE / 2;
         int newOriginZ = center.getZ() - TEX_SIZE / 2;
 
-        // 스크롤 재사용: 디버그 모드 아니고, 겹침 영역 존재할 때만 가능
         boolean canScroll = !MCRiderMinimap.isDebugColors()
                 && target != front
                 && front.originSet
@@ -224,7 +223,6 @@ final class MinimapRenderer {
             int destX0 = Math.max(0, -dx);
             int destZ0 = Math.max(0, -dz);
 
-            // 복사 사각형 등록 및 오프셋 저장
             RebuildRect copyRect = addRebuildRect(destX0, destZ0, overlapW, overlapH, true);
             if (copyRect != null) {
                 copyRect.copyDx = dx;
@@ -243,7 +241,7 @@ final class MinimapRenderer {
                 addRebuildRect(destX0, 0, overlapW, -dz, false);
             }
         } else {
-            // canScroll이 false인 모든 경우가 여기로 온다! 최초 빌드이거나 겹침이 없는 경우 전체 다시 계산
+            // 최초 빌드이거나 겹침이 없는 경우(canScroll=false) 전체 다시 계산
             target.image.fillRect(0, 0, TEX_SIZE, TEX_SIZE, 0);
             addRebuildRect(0, 0, TEX_SIZE, TEX_SIZE, false);
         }
@@ -450,7 +448,6 @@ final class MinimapRenderer {
         final double scaledPadding = padding * sizeFactor;
         final double scaledRadius = radius * sizeFactor;
 
-        // 미니맵 위치 옵션에 따른 렌더링
         final int position = MCRiderConfig.INSTANCE.useMinimap;
         final boolean isRight = position == 2 || position == 4 || position == 6;
         final int centerX = (int) Math.round(isRight
@@ -513,7 +510,6 @@ final class MinimapRenderer {
         final double rx = Math.cos(yawRad);
         final double rz = Math.sin(yawRad);
 
-        // 내 카트 아이콘 회전 보간용
         final float myKartYaw = MCRiderMain.hasTrackedSelfKartYaw()
                 ? MCRiderMain.getInterpolatedSelfKartYaw(tickDelta)
                 : getKartBodyYaw(MCRiderMain.getRidingPlayer(), tickDelta);
@@ -572,7 +568,6 @@ final class MinimapRenderer {
         }
     }
 
-    // 윤곽선 전용 텍스쳐
     private static final int SELF_MARKER_RING_PAD = 1;
     private static final int SELF_MARKER_RING_RADIUS = 1;
     private static Identifier selfMarkerRingIcon;

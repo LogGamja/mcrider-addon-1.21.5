@@ -26,7 +26,6 @@ final class FrontierSearch {
 
     static { cellColor.defaultReturnValue(NO_ID); }
 
-    // 예산
     static final int STAGING_BUDGET_PER_TICK = 1024;
     static final long STAGING_TIME_BUDGET_NANOS = 1_000_000L;
 
@@ -88,7 +87,7 @@ final class FrontierSearch {
     // rebuildActiveSet/rebuildSearchActiveSet이 공유하는 BFS 큐(매 틱 new 방지, 재진입 없어 안전)
     private static final LongArrayFIFOQueue subtreeQueue = new LongArrayFIFOQueue();
 
-    // root와 그 자손을 out에 추가 (out은 호출부가 clear)
+    // out은 호출부가 clear
     private static void collectColorSubtree(long root, LongOpenHashSet out) {
         if (root == NO_ID) return;
         LongArrayFIFOQueue q = subtreeQueue;
@@ -107,7 +106,6 @@ final class FrontierSearch {
         }
     }
 
-    // 두 LongOpenHashSet의 내용이 같은지 박싱 없이 비교
     private static boolean longSetsEqual(LongOpenHashSet a, LongOpenHashSet b) {
         if (a.size() != b.size()) return false;
         LongIterator it = a.iterator();
@@ -121,10 +119,11 @@ final class FrontierSearch {
     // diff만으로는 못 잡는 경우는 ColorGraph.absorbInto가 noteMergeSurvivor로 세워둔
     // searchActiveSetTouchedByMerge로 보완한다.
     private static boolean rebuildSearchActiveSet(long liveRoot) {
-        // 정상 상태에선 liveRoot == activeColor여서 rebuildActiveSet이 방금 같은 서브트리를 계산해 뒀다.
-        // 그 결과를 복사해 동일한 BFS를 두 번 도는 것을 피한다. (propagateActiveMembership의 직접
-        // add는 항상 버전 bump가 선행되거나 기존 엣지에 대한 no-op이므로, 버전이 같으면 activeSet은
-        // 정확히 subtree(activeColor)와 일치한다)
+        // liveRoot가 activeColor와 같은 정상 상태라면 rebuildActiveSet이 같은 서브트리를 방금
+        // 계산해 뒀으므로 그 결과를 복사해서 동일한 BFS를 두 번 도는 걸 피한다. 이 복사가 안전한
+        // 이유는 propagateActiveMembership이 activeSet에 직접 넣는 경우가 항상 버전 증가를
+        // 동반하거나 이미 있는 엣지에 대한 아무 동작도 하지 않는 경우뿐이라서, 버전이 같다면
+        // activeSet은 언제나 activeColor의 서브트리와 정확히 일치하기 때문이다.
         boolean recomputed = (activeSetCache.snapshotRoot == liveRoot
                 && activeSetCache.version == ColorGraph.colorGraphVersion)
                 ? searchActiveSetCache.recomputeFrom(liveRoot, searchActiveSet, activeSet)
@@ -143,7 +142,6 @@ final class FrontierSearch {
         boolean inProgress = false;
         private boolean pendingTrigger = false;
 
-        // 진행 중이 아니면 fill로 scratch를 채우고 드레인 시작
         void beginIfIdle(boolean trigger, LongArrayList scratch, Runnable fill) {
             pendingTrigger |= trigger;
             if (pendingTrigger && !inProgress) {
@@ -154,7 +152,6 @@ final class FrontierSearch {
             }
         }
 
-        // 예산 초과 시 index 위치에서 다음 틱에 이어감
         void drain(LongArrayList scratch, int sx, int sz, int maxRange, boolean containToActive, long deadline) {
             if (!inProgress) return;
             int sinceTimeCheck = 0;
@@ -186,7 +183,6 @@ final class FrontierSearch {
     private static final LongArrayList inactiveRevivalScratch = new LongArrayList();
     private static final ResumableDrain inactiveRevivalDrain = new ResumableDrain();
 
-    // searchActiveSet 변경 시 보류된 셀 재검사
     private static void reviveInactiveColorParked(int sx, int sz, int maxRange, boolean containToActive,
                                                   boolean searchActiveSetChanged, long deadline) {
         inactiveRevivalDrain.beginIfIdle(searchActiveSetChanged, inactiveRevivalScratch, () -> {
@@ -199,8 +195,9 @@ final class FrontierSearch {
     // 복구된 exile 셀 처리 재개 상태 (이미 로딩 확인됨)
     private static final ResumableDrain revivedProcessDrain = new ResumableDrain();
 
-    // exiledByChunk엔 CHUNK_NOT_LOADED(청크 로딩 필요)와 OUT_OF_RANGE(플레이어 접근 필요)가 섞여 있어 트리거는 둘 다 봐야 한다
-    // 위치는 청크 단위로만 비교. maxRange 여유상 청크
+    // exiledByChunk엔 CHUNK_NOT_LOADED(청크 로딩 필요)와 OUT_OF_RANGE(플레이어 접근 필요)가
+    // 섞여 있어서 트리거는 둘 다 봐야 한다. 위치는 청크 단위로만 비교해도 충분한데, maxRange에
+    // 여유가 있어 청크 단위 오차 정도는 문제가 되지 않기 때문이다.
     private static boolean chunkLoadedSinceLastDrain = false;
     private static int lastDrainChunkX = Integer.MIN_VALUE, lastDrainChunkZ = Integer.MIN_VALUE;
 
@@ -245,18 +242,15 @@ final class FrontierSearch {
         }
     }
 
-    // 색이 칠한 컬럼들을 전부 dirty 표시
     static void markColumnsDirtyForRoot(long root) {
         LongOpenHashSet cols = columnsByRoot.get(root);
         if (cols != null) dirtyColumns.addAll(cols);
     }
 
-    // 모든 컬럼 재도색 예약
     static void markAllColumnsDirty() {
         dirtyColumns.addAll(visitedColumns.keySet());
     }
 
-    // 부모가 활성이면 자식도 활성으로 편입
     private static void propagateActiveMembership(long parentRoot, long childRoot, boolean markDirty) {
         if (activeSet.contains(parentRoot)) {
             activeSet.add(childRoot);
@@ -282,7 +276,6 @@ final class FrontierSearch {
     private static long pendingActiveColorCandidate = NO_ID;
     private static int pendingActiveColorStreak = 0;
 
-    // 플레이어 앵커 셀로 활성 색 갱신
     static void updateActiveColorFromCell(long cell) {
         if (cell == NO_ID) return;
         long id = cellColor.get(cell);
@@ -304,7 +297,7 @@ final class FrontierSearch {
                     ? NO_ID
                     : ColorGraph.resolve(pendingActiveColorCandidate);
             if (candidate == resolvedPending) {
-                pendingActiveColorCandidate = resolvedPending; // 정규형으로 갱신
+                pendingActiveColorCandidate = resolvedPending;
                 pendingActiveColorStreak++;
             } else {
                 pendingActiveColorCandidate = candidate;
@@ -351,7 +344,6 @@ final class FrontierSearch {
         return curColor;
     }
 
-    // 플러드필 탐색
     static void floodFillWithVertical(BlockPos start, int maxRange, int updatePixel) {
         var world = MCRiderMinimap.client.world;
         if (world == null) return;
@@ -393,8 +385,6 @@ final class FrontierSearch {
 
         boolean stop = false;
 
-        // 다른 재개형 루프들과 동일하게 256회마다 한 번씩만 System.nanoTime()을 호출한다
-        int sinceTimeCheck = 0;
         while (!stop && !FrontierQueue.frontierByChunk.isEmpty()) {
             int n = FrontierQueue.sortChunkKeysByDistance(sx, sz);
 
@@ -404,7 +394,7 @@ final class FrontierSearch {
                 if (bucket == null) continue;
 
                 while (!bucket.isEmpty()) {
-                    if ((++sinceTimeCheck % 256) == 0 && FrontierQueue.deadlineReached(deadline)) {
+                    if (FrontierQueue.deadlineReached(deadline)) {
                         stop = true;
                         break;
                     }
@@ -434,9 +424,8 @@ final class FrontierSearch {
                         int nz = cz + d[1];
 
                         if (!BlockSearch.isChunkLoadedAt(nx, nz)) {
-                            // 로딩되지 않은 것은 이웃 청크라 그 청크 키로 park해야 그 이웃이 로딩되는 게 revive 조건.
-                            // 자기 청크로 걸면 이미 로딩된 상태라 매 틱 즉시 되살렸다가 다시 park하는 핑퐁.
-                            // 청크 로딩 경계나 낮은 렌더 거리에서 흔히 발생.
+                            // 이웃 청크 키로 park해야 그 청크 로딩이 revive 조건이 된다. 자기 청크로
+                            // 걸면 이미 로딩된 상태라 매 틱 즉시 되살렸다가 다시 park하는 핑퐁이 생긴다.
                             if (!parkedSelf) {
                                 FrontierQueue.park(curPacked, nx, nz, FrontierQueue.ParkReason.CHUNK_NOT_LOADED);
                                 parkedSelf = true;

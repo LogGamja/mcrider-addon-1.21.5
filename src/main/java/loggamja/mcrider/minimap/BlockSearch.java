@@ -108,7 +108,6 @@ final class BlockSearch {
         return true;
     }
 
-    // 호출부에서 미리 구한 air/wall 판정 재사용
     static int resolveTargetY(int nx, int cy, int nz, boolean baseIsAir, boolean baseIsWall,
                               boolean fromHasBlockAt2Meter, int bottomY) {
         if (!isAirAt(nx, cy + 1, nz)) return Integer.MIN_VALUE;
@@ -142,16 +141,14 @@ final class BlockSearch {
     private static final int LATERAL_BLOCKED = 1;
     private static final int LATERAL_UNKNOWN = 2;
 
-    // 호출부에서 미리 구한 로딩 여부 활용
     private static int lateralStateKnownLoaded(boolean loaded, int x, int y, int z) {
         if (!loaded) return LATERAL_UNKNOWN;
         return isAirAt(x, y, z) ? LATERAL_OPEN : LATERAL_BLOCKED;
     }
 
-    // 한 축의 폭 판정 (양쪽 측면)
     private static long axisResult(boolean loaded1, int x1, int z1, boolean loaded2, int x2, int z2, int y) {
         int s1 = lateralStateKnownLoaded(loaded1, x1, y, z1);
-        if (s1 == LATERAL_OPEN) return PASSAGE_OPEN; // 한쪽 열려있으면 결론 정함
+        if (s1 == LATERAL_OPEN) return PASSAGE_OPEN;
         int s2 = lateralStateKnownLoaded(loaded2, x2, y, z2);
         if (s2 == LATERAL_OPEN) return PASSAGE_OPEN;
         if (s1 == LATERAL_UNKNOWN) return packWorldXZ(x1, z1);
@@ -203,7 +200,7 @@ final class BlockSearch {
 
     static boolean canMoveBetween(int tx, int ty, int tz, int fx, int fy, int fz, int bottomY) {
         boolean baseIsAir = isAirAt(fx, ty, fz);
-        boolean baseIsWall = isWallGivenAir(baseIsAir, fx, ty, fz); // 역방향 못 감
+        boolean baseIsWall = isWallGivenAir(baseIsAir, fx, ty, fz);
         if (baseIsWall) return false;
         boolean tHasBlockAt2 = !isAirAt(tx, ty + 2, tz);
         int back = resolveTargetY(fx, ty, fz, baseIsAir, baseIsWall, tHasBlockAt2, bottomY);

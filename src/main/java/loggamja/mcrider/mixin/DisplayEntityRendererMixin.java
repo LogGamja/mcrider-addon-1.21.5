@@ -74,7 +74,6 @@ public class DisplayEntityRendererMixin {
         DisplayEntityRenderStateAccessor accessor = (DisplayEntityRenderStateAccessor) state;
         accessor.mcrider$setUuid(entity.getUuid());
 
-        // 엔티티별 pivotY 계산 (차량 탑승 여부로 판정)
         if (entity.hasVehicle()) {
             double pivotY = entity.getY() - entity.getRootVehicle().getY() - MCRiderSuspension.pivotYOffset;
             accessor.mcrider$setPivotY(pivotY);

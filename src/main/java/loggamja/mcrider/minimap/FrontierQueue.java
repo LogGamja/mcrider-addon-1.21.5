@@ -30,9 +30,8 @@ final class FrontierQueue {
     static long[] sortSnap = new long[0];
     static long[] sortPacked = new long[0];
 
-    // 청크 집합 변경 감지 (정렬 캐시 무효화)
+    // 청크 집합이 바뀔 때마다 증가 - sortChunkKeysByDistance가 이걸로 정렬 캐시 재사용 여부를 판단
     private static long chunkKeysVersion = 0;
-    // 정렬 결과 캐싱 (지난 정렬 재사용)
     private static long lastSortVersion = -1;
     private static int lastSortSx = Integer.MIN_VALUE, lastSortSz = Integer.MIN_VALUE;
     private static int lastSortN = 0;
@@ -69,7 +68,7 @@ final class FrontierQueue {
         if (bucket == null) {
             bucket = new LongArrayList(8);
             frontierByChunk.put(chunkKey, bucket);
-            chunkKeysVersion++; // 실제로 새 청크가 들어왔을 때만
+            chunkKeysVersion++;
         }
         bucket.add(cell);
     }
@@ -95,13 +94,11 @@ final class FrontierQueue {
         }
     }
 
-    // 편의 오버로드: COLOR_INACTIVE 전용 (호출부 간결함)
     static void parkInactiveColor(long packedPos) {
         park(packedPos, 0, 0, ParkReason.COLOR_INACTIVE);
     }
 
-    // searchActiveSet이 실제로 재계산됐을 때만 호출된다. 지금까지 색이 안 맞아 보류됐던 셀을
-    // 전부 꺼내 out에 담고 저장소를 비운다 - 호출부가 다시 activeColorOrPark로 재검사한다.
+    // 보류됐던 셀을 전부 꺼내 out에 담고 비운다 - 호출부가 activeColorOrPark로 재검사한다
     static void reviveInactiveColorParked(LongArrayList out) {
         if (inactiveColorParked.isEmpty()) return;
         LongIterator it = inactiveColorParked.iterator();
@@ -109,7 +106,6 @@ final class FrontierQueue {
         inactiveColorParked.clear();
     }
 
-    // 청크 거리순 정렬 (캐싱)
     static int sortChunkKeysByDistance(int sx, int sz) {
         if (chunkKeysVersion == lastSortVersion && sx == lastSortSx && sz == lastSortSz) {
             return lastSortN;
@@ -136,7 +132,6 @@ final class FrontierQueue {
         return n;
     }
 
-    // 범위 내 보류 셀 복구 (예산 분산)
     static boolean drainExiledWithinRange(int sx, int sz, int maxRange, long deadline) {
         revivedScratch.clear();
         boolean timedOut = false;
@@ -180,7 +175,7 @@ final class FrontierQueue {
         exiledByChunk.clear();
         inactiveColorParked.clear();
         revivedScratch.clear();
-        chunkKeysVersion++; // 캐시된 정렬 결과를 무효화
+        chunkKeysVersion++;
         lastSortVersion = -1;
     }
 }
