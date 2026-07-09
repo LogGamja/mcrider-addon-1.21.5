@@ -55,6 +55,10 @@ public class MCRiderMinimap implements ClientModInitializer {
         if (!MCRiderMain.isRidingKart) return;
         if (client.player == null || client.world == null) return;
 
+        // 벤치마크: early-return과 무관하게 "실제로 이 모드가 살아있는 틱"마다 1회 호출해서
+        // 매 DUMP_EVERY_TICKS 틱마다 누적된 통계를 로그로 요약해서 찍는다.
+        MCRiderBenchmark.onTickEnd(() -> (long) ColorGraph.actualColorCount);
+
         if (client.world != lastWorld) {
             clearAllMap();
         }
@@ -76,14 +80,20 @@ public class MCRiderMinimap implements ClientModInitializer {
         BlockPos start = MCRiderMain.getRidingPlayer().getBlockPos().up();
 
         int searchRange = (int) ((MinimapRenderer.maxDist + playerMargin * 2) * 2);
+
+        long searchStart = MCRiderBenchmark.begin();
         FrontierSearch.floodFillWithVertical(start, searchRange, FrontierSearch.STAGING_BUDGET_PER_TICK);
+        MCRiderBenchmark.end("search(per-tick)", searchStart, FrontierSearch.lastCellsProcessed);
 
         // floodFill, rebuildActiveSet, ensureOriginFor, repaintDirtyColumns 순서를 지켜야 한다.
         // rebuildActiveSet은 colorGraphVersion을 캐시 키로 쓰므로 floodFill이 그래프를 실제로 바꿨을 때만 재계산이 일어난다.
         FrontierSearch.rebuildActiveSet();
 
         MinimapRenderer.ensureOriginFor(start);
+
+        long paintStart = MCRiderBenchmark.begin();
         MinimapRenderer.repaintDirtyColumns(start);
+        MCRiderBenchmark.end("paint(per-tick)", paintStart, MinimapRenderer.lastColumnsPainted);
     }
     public static void clearAllMap() {
         lastWorld = null;

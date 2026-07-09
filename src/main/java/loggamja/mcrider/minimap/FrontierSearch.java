@@ -29,6 +29,10 @@ final class FrontierSearch {
     static final int STAGING_BUDGET_PER_TICK = 1024;
     static final long STAGING_TIME_BUDGET_NANOS = 1_000_000L;
 
+    // 벤치마크: floodFillWithVertical 1회 호출에서 실제로 4방향 확장 작업을 마친 셀 수.
+    // 매 호출 시작 시 0으로 리셋된다(MCRiderBenchmark.end 호출 전에 읽어가는 값).
+    static int lastCellsProcessed = 0;
+
     // 히스테리시스: 경계에서 흔들리는 색 전환 방지
     static final int ACTIVE_COLOR_SWITCH_STREAK = 5;
 
@@ -348,6 +352,7 @@ final class FrontierSearch {
     }
 
     static void floodFillWithVertical(BlockPos start, int maxRange, int cellBudget) {
+        lastCellsProcessed = 0;
         var world = MCRiderMinimap.client.world;
         if (world == null) return;
 
@@ -462,6 +467,7 @@ final class FrontierSearch {
                         handleReach(cx, cy, cz, curColor, nx, ty, nz, twoWay, sx, sz, maxRange);
                     }
 
+                    lastCellsProcessed++;
                     if (--cellBudget <= 0) {
                         stop = true;
                         break;

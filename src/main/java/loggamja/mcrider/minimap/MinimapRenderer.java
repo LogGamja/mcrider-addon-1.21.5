@@ -160,6 +160,9 @@ final class MinimapRenderer {
     private static final long REPAINT_TIME_BUDGET_NANOS = 2_000_000L;
     private static final int REPAINT_HARD_CAP_PER_TICK = 262_144;
 
+    // 벤치마크: repaintDirtyColumns 1회 호출에서 실제로 그려진 컬럼 수. 호출마다 리셋된다.
+    static int lastColumnsPainted = 0;
+
     private static TextureBuffer rebuildTarget = null;
     private static boolean rebuildInProgress = false;
 
@@ -331,6 +334,7 @@ final class MinimapRenderer {
         return dx * dx + dz * dz <= r * r;
     }
     static void repaintDirtyColumns(BlockPos start) {
+        lastColumnsPainted = 0;
         if (FrontierSearch.dirtyColumns.isEmpty() || !front.originSet) return;
         boolean mirrorToBack = rebuildInProgress && rebuildTarget == back;
 
@@ -349,6 +353,7 @@ final class MinimapRenderer {
                 if (mirrorToBack) back.plotColumn(wx, wz);
                 dirtyIt.remove();
                 hardCap--;
+                lastColumnsPainted++;
             }
             if ((++sinceTimeCheck & 0xFF) == 0 && FrontierQueue.deadlineReached(repaintDeadline)) {
                 timedOut = true;
@@ -364,6 +369,7 @@ final class MinimapRenderer {
                 if (mirrorToBack) back.plotColumn(wx, wz);
                 dirtyIt.remove();
                 hardCap--;
+                lastColumnsPainted++;
                 if ((++sinceTimeCheck & 0xFF) == 0 && FrontierQueue.deadlineReached(repaintDeadline)) break;
             }
         }
