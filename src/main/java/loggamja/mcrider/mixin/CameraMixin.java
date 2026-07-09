@@ -24,7 +24,7 @@ public class CameraMixin {
 
     @Shadow private Quaternionf rotation; // final 이라도 객체 자체는 변경 가능
 
-    // --- 카메라 롤 지수 평활(EMA) 상태 ---
+    // 카메라 롤 지수 평활(EMA) 상태
     @Unique private long mcrider$lastTime = 0L;
     @Unique private float mcrider$smoothRoll = 0f;
 

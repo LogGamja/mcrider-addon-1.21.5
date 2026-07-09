@@ -167,12 +167,12 @@ final class MinimapRenderer {
     private static final class RebuildRect {
         int x, z, w, h;
         boolean isCopy;
-        int copyDx, copyDz;  // 복사 사각형 전용: dst -> src 오프셋
+        int copyDx, copyDz;  // 복사 사각형 전용: dst 기준 src 오프셋
     }
     private static final RebuildRect[] rebuildRects = new RebuildRect[3];
     private static int rebuildRectCount = 0;
-    private static int rebuildRectCursor = 0;
-    private static int rebuildRectLocalIndex = 0;
+    private static int rebuildRectCursor = 0;      // 현재 처리 중인 사각형 인덱스
+    private static int rebuildRectLocalIndex = 0;  // 그 사각형 안에서의 진행도(픽셀 단위)
 
     static {
         for (int i = 0; i < rebuildRects.length; i++) {
@@ -203,6 +203,7 @@ final class MinimapRenderer {
         int newOriginX = center.getX() - TEX_SIZE / 2;
         int newOriginZ = center.getZ() - TEX_SIZE / 2;
 
+        // 스크롤 재사용: 디버그 모드 아니고, 겹침 영역 존재할 때만 가능
         boolean canScroll = !MCRiderMinimap.isDebugColors()
                 && target != front
                 && front.originSet
@@ -223,6 +224,7 @@ final class MinimapRenderer {
             int destX0 = Math.max(0, -dx);
             int destZ0 = Math.max(0, -dz);
 
+            // 복사 사각형 등록 및 오프셋 저장
             RebuildRect copyRect = addRebuildRect(destX0, destZ0, overlapW, overlapH, true);
             if (copyRect != null) {
                 copyRect.copyDx = dx;
@@ -286,17 +288,16 @@ final class MinimapRenderer {
             rebuildRectLocalIndex = 0;
         }
 
-        if (rebuildRectCursor >= rebuildRectCount) {
-            rebuildInProgress = false;
-            rebuildTarget.markAllDirty();
-            if (rebuildTarget == back) {
-                swapBuffers();
-            }
-            rebuildTarget = null;
-            rebuildRectCount = 0;
-            rebuildRectCursor = 0;
-            rebuildRectLocalIndex = 0;
+        // 여기 도달했다는 건 위 while이 return이 아니라 조건 종료로 빠져나왔다는 뜻이므로 모든 사각형 처리가 끝난 상태다
+        rebuildInProgress = false;
+        rebuildTarget.markAllDirty();
+        if (rebuildTarget == back) {
+            swapBuffers();
         }
+        rebuildTarget = null;
+        rebuildRectCount = 0;
+        rebuildRectCursor = 0;
+        rebuildRectLocalIndex = 0;
     }
 
     private static void swapBuffers() {
@@ -448,6 +449,7 @@ final class MinimapRenderer {
         final double scaledPadding = padding * sizeFactor;
         final double scaledRadius = radius * sizeFactor;
 
+        // 미니맵 위치 옵션에 따른 렌더링
         final int position = MCRiderConfig.INSTANCE.useMinimap;
         final boolean isRight = position == 2 || position == 4 || position == 6;
         final int centerX = (int) Math.round(isRight
@@ -510,6 +512,7 @@ final class MinimapRenderer {
         final double rx = Math.cos(yawRad);
         final double rz = Math.sin(yawRad);
 
+        // 내 카트 아이콘 회전 보간용
         final float myKartYaw = MCRiderMain.hasTrackedSelfKartYaw()
                 ? MCRiderMain.getInterpolatedSelfKartYaw(tickDelta)
                 : getKartBodyYaw(MCRiderMain.getRidingPlayer(), tickDelta);
@@ -568,6 +571,7 @@ final class MinimapRenderer {
         }
     }
 
+    // 윤곽선 전용 텍스쳐
     private static final int SELF_MARKER_RING_PAD = 1;
     private static final int SELF_MARKER_RING_RADIUS = 1;
     private static Identifier selfMarkerRingIcon;

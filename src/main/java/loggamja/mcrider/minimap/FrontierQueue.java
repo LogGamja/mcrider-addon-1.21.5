@@ -30,7 +30,7 @@ final class FrontierQueue {
     static long[] sortSnap = new long[0];
     static long[] sortPacked = new long[0];
 
-    // 청크 집합이 바뀔 때마다 증가 - sortChunkKeysByDistance가 이걸로 정렬 캐시 재사용 여부를 판단
+    // 청크 집합이 바뀔 때마다 증가한다. sortChunkKeysByDistance가 이 값으로 정렬 캐시를 재사용할지 판단한다.
     private static long chunkKeysVersion = 0;
     private static long lastSortVersion = -1;
     private static int lastSortSx = Integer.MIN_VALUE, lastSortSz = Integer.MIN_VALUE;
@@ -98,7 +98,8 @@ final class FrontierQueue {
         park(packedPos, 0, 0, ParkReason.COLOR_INACTIVE);
     }
 
-    // 보류됐던 셀을 전부 꺼내 out에 담고 비운다 - 호출부가 activeColorOrPark로 재검사한다
+    // searchActiveSet이 실제로 재계산됐을 때만 호출해야 한다.
+    // 보류됐던 셀을 전부 꺼내 out에 담고 저장소를 비우며 호출부가 activeColorOrPark로 다시 검사하는 것까지가 한 세트
     static void reviveInactiveColorParked(LongArrayList out) {
         if (inactiveColorParked.isEmpty()) return;
         LongIterator it = inactiveColorParked.iterator();

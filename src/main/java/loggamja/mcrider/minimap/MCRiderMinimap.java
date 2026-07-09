@@ -78,7 +78,8 @@ public class MCRiderMinimap implements ClientModInitializer {
         int searchRange = (int) ((MinimapRenderer.maxDist + playerMargin * 2) * 2);
         FrontierSearch.floodFillWithVertical(start, searchRange, FrontierSearch.STAGING_BUDGET_PER_TICK);
 
-        // floodFill이 그래프를 바꿨을 때만 colorGraphVersion이 올라 아래가 재계산됨(그 외엔 캐시 유효)
+        // floodFill, rebuildActiveSet, ensureOriginFor, repaintDirtyColumns 순서를 지켜야 한다.
+        // rebuildActiveSet은 colorGraphVersion을 캐시 키로 쓰므로 floodFill이 그래프를 실제로 바꿨을 때만 재계산이 일어난다.
         FrontierSearch.rebuildActiveSet();
 
         MinimapRenderer.ensureOriginFor(start);
