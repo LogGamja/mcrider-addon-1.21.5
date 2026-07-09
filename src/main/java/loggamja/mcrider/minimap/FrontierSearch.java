@@ -201,6 +201,10 @@ final class FrontierSearch {
     private static boolean chunkLoadedSinceLastDrain = false;
     private static int lastDrainChunkX = Integer.MIN_VALUE, lastDrainChunkZ = Integer.MIN_VALUE;
 
+    // 이전 drainExiledWithinRange 호출이 deadline에 걸려 exiledByChunk를 다 못 훑었으면 true.
+    // chunkMoved나 chunkLoadedSinceLastDrain 같은 새 트리거가 없어도 다음 틱에 스캔을 재시도해야 한다.
+    private static boolean exiledScanTimedOut = false;
+
     // ClientChunkEvents.CHUNK_LOAD 훅(MCRiderMinimap)에서 호출
     // 실제 드레인은 다음 floodFillWithVertical 호출(다음 틱)에서 이 신호를 소비해 처리한다
     static void notifyChunkLoaded() {
@@ -210,7 +214,7 @@ final class FrontierSearch {
     private static void processRevivedExiledCells(int sx, int sz, int maxRange, boolean containToActive, long deadline) {
         int chunkX = sx >> 4, chunkZ = sz >> 4;
         boolean chunkMoved = chunkX != lastDrainChunkX || chunkZ != lastDrainChunkZ;
-        boolean trigger = chunkMoved || chunkLoadedSinceLastDrain;
+        boolean trigger = chunkMoved || chunkLoadedSinceLastDrain || exiledScanTimedOut;
         if (trigger) {
             // beginIfIdle 내부의 pendingTrigger가 이 사실을 래치해두므로(진행 중이라 이번 틱에
             // 못 써도 다음 유휴 틱에 소비됨) 여기서 바로 리셋해도 신호가 유실되지 않는다
@@ -219,7 +223,7 @@ final class FrontierSearch {
             chunkLoadedSinceLastDrain = false;
         }
         revivedProcessDrain.beginIfIdle(trigger, FrontierQueue.revivedScratch,
-                () -> FrontierQueue.drainExiledWithinRange(sx, sz, maxRange, deadline));
+                () -> exiledScanTimedOut = FrontierQueue.drainExiledWithinRange(sx, sz, maxRange, deadline));
         revivedProcessDrain.drain(FrontierQueue.revivedScratch, sx, sz, maxRange, containToActive, deadline);
     }
 
@@ -253,8 +257,7 @@ final class FrontierSearch {
 
     private static void propagateActiveMembership(long parentRoot, long childRoot, boolean markDirty) {
         if (activeSet.contains(parentRoot)) {
-            activeSet.add(childRoot);
-            if (markDirty) markColumnsDirtyForRoot(childRoot);
+            if (activeSet.add(childRoot) && markDirty) markColumnsDirtyForRoot(childRoot);
         }
         if (searchActiveSet.contains(parentRoot)) {
             boolean newlyAdded = searchActiveSet.add(childRoot);
@@ -312,7 +315,7 @@ final class FrontierSearch {
         }
     }
 
-    // 앵커 셀로부터 플레이어 셀 해석 (중복 호출 회피)
+    // anchor가 실제로 칠해진 셀일 때만 플레이어 셀로 인정한다
     private static long resolvePlayerCellFromAnchor(long anchor) {
         if (anchor == NO_ID) return NO_ID;
         if (cellColor.get(anchor) == NO_ID) return NO_ID;
@@ -344,7 +347,7 @@ final class FrontierSearch {
         return curColor;
     }
 
-    static void floodFillWithVertical(BlockPos start, int maxRange, int updatePixel) {
+    static void floodFillWithVertical(BlockPos start, int maxRange, int cellBudget) {
         var world = MCRiderMinimap.client.world;
         if (world == null) return;
 
@@ -355,8 +358,7 @@ final class FrontierSearch {
         if (anchorCell == NO_ID) return;
         int sy = BlockPos.unpackLongY(anchorCell);
 
-        long startCell = BlockPos.asLong(sx, sy, sz);
-        if (cellColor.get(startCell) == NO_ID && BlockSearch.isStandable(sx, sy, sz, false)) {
+        if (cellColor.get(anchorCell) == NO_ID && BlockSearch.isStandable(sx, sy, sz, false)) {
             boolean seedIsNarrow = false;
             if (MCRiderMinimap.EXCLUDE_NARROW_PATHS) {
                 // 미로딩 청크는 NARROW로 취급해 시딩 보류 (다음 틱 재시도)
@@ -366,7 +368,7 @@ final class FrontierSearch {
             if (!seedIsNarrow) {
                 long c = ColorGraph.newColor(NO_ID);
                 paintCell(sx, sy, sz, c);
-                FrontierQueue.push(startCell, sx, sz);
+                FrontierQueue.push(anchorCell, sx, sz);
             }
         }
         long playerCell = resolvePlayerCellFromAnchor(anchorCell);
@@ -460,7 +462,7 @@ final class FrontierSearch {
                         handleReach(cx, cy, cz, curColor, nx, ty, nz, twoWay, sx, sz, maxRange);
                     }
 
-                    if (--updatePixel <= 0) {
+                    if (--cellBudget <= 0) {
                         stop = true;
                         break;
                     }
@@ -559,6 +561,7 @@ final class FrontierSearch {
         inactiveRevivalDrain.reset();
         revivedProcessDrain.reset();
         chunkLoadedSinceLastDrain = false;
+        exiledScanTimedOut = false;
         lastDrainChunkX = Integer.MIN_VALUE;
         lastDrainChunkZ = Integer.MIN_VALUE;
         BlockSearch.invalidateChunkCache();

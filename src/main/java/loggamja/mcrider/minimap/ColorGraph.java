@@ -35,6 +35,7 @@ final class ColorGraph {
 
     static {
         colorParentPtr.defaultReturnValue(NO_ID);
+        colorBirth.defaultReturnValue(Integer.MAX_VALUE);
     }
 
     static void bumpColorGraphVersion() {

@@ -49,7 +49,7 @@ final class MinimapRenderer {
 
     static final int REANCHOR_MARGIN = (int) Math.ceil(maxDist * SQRT2) + 16;
     private static final int VISITED_COLOR = 0xBBCCCCCC;
-    private static final int OVERLAP_COLOR = 0xFFFFFFFF;
+    private static final int OVERLAP_COLOR = 0xCCDDDDDD;
 
     private static final float IMAGE_CORRECTION_TRICK = 0.001f;
     private static final double RIDER_ICON_SIZE = 6 * LEGACY_GUI_SCALE_BASIS;
@@ -205,7 +205,6 @@ final class MinimapRenderer {
 
         // 스크롤 재사용: 디버그 모드 아니고, 겹침 영역 존재할 때만 가능
         boolean canScroll = !MCRiderMinimap.isDebugColors()
-                && target != front
                 && front.originSet
                 && Math.abs(newOriginX - front.originX) < TEX_SIZE
                 && Math.abs(newOriginZ - front.originZ) < TEX_SIZE;
