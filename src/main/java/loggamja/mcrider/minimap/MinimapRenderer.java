@@ -83,7 +83,8 @@ final class MinimapRenderer {
 
         void markPixelDirty(int tx, int tz) {
             if (tx < 0 || tx >= TEX_SIZE || tz < 0 || tz >= TEX_SIZE) return;
-            dirtyTiles.add(tileKey(tx / TILE_SIZE, tz / TILE_SIZE));
+            // 이미 전체 업로드가 예약돼 있으면 타일 단위 추적은 버려질 뿐이라 누적할 필요가 없다.
+            if (!uploadWholeTexture) dirtyTiles.add(tileKey(tx / TILE_SIZE, tz / TILE_SIZE));
             textureDirty = true;
         }
 
@@ -140,6 +141,8 @@ final class MinimapRenderer {
                 texture = null;
             }
             dirtyTiles.clear();
+            uploadWholeTexture = false;
+            textureDirty = false;
             originSet = false;
         }
     }
@@ -179,8 +182,8 @@ final class MinimapRenderer {
         }
     }
 
-    private static void addRebuildRect(int x, int z, int w, int h, boolean isCopy) {
-        if (w <= 0 || h <= 0) return;
+    private static RebuildRect addRebuildRect(int x, int z, int w, int h, boolean isCopy) {
+        if (w <= 0 || h <= 0) return null;
         RebuildRect rect = rebuildRects[rebuildRectCount];
         rect.x = x;
         rect.z = z;
@@ -188,6 +191,7 @@ final class MinimapRenderer {
         rect.h = h;
         rect.isCopy = isCopy;
         rebuildRectCount++;
+        return rect;
     }
 
     private static void rebuildTexture(BlockPos center) {
@@ -227,9 +231,11 @@ final class MinimapRenderer {
             int destZ0 = Math.max(0, -dz);
 
             // 복사 사각형 등록 및 오프셋 저장
-            addRebuildRect(destX0, destZ0, overlapW, overlapH, true);
-            rebuildRects[rebuildRectCount - 1].copyDx = dx;
-            rebuildRects[rebuildRectCount - 1].copyDz = dz;
+            RebuildRect copyRect = addRebuildRect(destX0, destZ0, overlapW, overlapH, true);
+            if (copyRect != null) {
+                copyRect.copyDx = dx;
+                copyRect.copyDz = dz;
+            }
 
             // 겹치지 않는 부분만 L자(세로 띠 + 가로 띠)로 정확히, 중복 없이 나눠 계산 대상에 넣는다.
             if (dx > 0) {
@@ -243,7 +249,9 @@ final class MinimapRenderer {
                 addRebuildRect(destX0, 0, overlapW, -dz, false);
             }
         } else {
-            // 겹침이 전혀 없는 경우(순간이동 등)만 여기로 온다 — 어쩔 수 없이 전체를 새로 계산한다.
+            // canScroll이 false인 모든 경우가 여기로 온다: 최초 빌드(origin 미설정), 디버그 모드의
+            // 모든 재앵커(스크롤 재사용을 아예 안 씀), 혹은 겹침이 전혀 없는 순간이동. 셋 다 전체를
+            // 새로 계산하는 수밖에 없다 — 특히 디버그 모드는 재앵커마다 매번 이 경로를 탄다.
             target.image.fillRect(0, 0, TEX_SIZE, TEX_SIZE, 0);
             addRebuildRect(0, 0, TEX_SIZE, TEX_SIZE, false);
         }
@@ -262,15 +270,17 @@ final class MinimapRenderer {
     private static void continueRebuildIfInProgress() {
         if (!rebuildInProgress) return;
         final long deadline = System.nanoTime() + REPAINT_TIME_BUDGET_NANOS;
-        int budget = REPAINT_HARD_CAP_PER_TICK;
         int sinceTimeCheck = 0;
 
-        while (budget > 0 && rebuildRectCursor < rebuildRectCount) {
+        // 이 루프의 총 작업량은 rebuildRects들의 넓이 합(최대 TEX_SIZE²)으로 이미 자연스럽게
+        // 유한하므로 REPAINT_HARD_CAP_PER_TICK 같은 별도 상한은 여기선 의미가 없다(도달 전에
+        // 항상 deadline이나 작업 완료로 먼저 끝남). deadline 검사만으로 다음 틱 이어가기를 보장한다.
+        while (rebuildRectCursor < rebuildRectCount) {
             RebuildRect rect = rebuildRects[rebuildRectCursor];
             int w = rect.w;
             int total = w * rect.h;
 
-            while (rebuildRectLocalIndex < total && budget > 0) {
+            while (rebuildRectLocalIndex < total) {
                 int lx = rebuildRectLocalIndex % w;
                 int lz = rebuildRectLocalIndex / w;
                 if (rect.isCopy) {
@@ -284,13 +294,10 @@ final class MinimapRenderer {
                     rebuildTarget.plotColumn(rebuildTarget.originX + rect.x + lx, rebuildTarget.originZ + rect.z + lz);
                 }
                 rebuildRectLocalIndex++;
-                budget--;
                 if ((++sinceTimeCheck & 0xFF) == 0 && FrontierQueue.deadlineReached(deadline)) return; // 다음 틱에 이어서
             }
-            if (rebuildRectLocalIndex >= total) {
-                rebuildRectCursor++;
-                rebuildRectLocalIndex = 0;
-            }
+            rebuildRectCursor++;
+            rebuildRectLocalIndex = 0;
         }
 
         if (rebuildRectCursor >= rebuildRectCount) {
@@ -592,42 +599,42 @@ final class MinimapRenderer {
         selfMarkerRingReady = true;
         try (InputStream in = MinimapRenderer.class.getResourceAsStream("/assets/mcrider-official/textures/hud/arrow_icon.png")) {
             if (in == null) return;
-            NativeImage src = NativeImage.read(in);
-            final int sw = src.getWidth();
-            final int sh = src.getHeight();
-            final int pad = SELF_MARKER_RING_PAD;
-            final int pw = sw + pad * 2;
-            final int ph = sh + pad * 2;
-            final int r = SELF_MARKER_RING_RADIUS;
+            try (NativeImage src = NativeImage.read(in)) {
+                final int sw = src.getWidth();
+                final int sh = src.getHeight();
+                final int pad = SELF_MARKER_RING_PAD;
+                final int pw = sw + pad * 2;
+                final int ph = sh + pad * 2;
+                final int r = SELF_MARKER_RING_RADIUS;
 
-            NativeImage ring = new NativeImage(NativeImage.Format.RGBA, pw, ph, false);
-            ring.fillRect(0, 0, pw, ph, 0);
-            for (int y = 0; y < ph; y++) {
-                for (int x = 0; x < pw; x++) {
-                    if (isOpaque(src, x - pad, y - pad, sw, sh)) {
-                        continue;
-                    }
-                    boolean dilated = false;
-                    outer:
-                    for (int dy = -r; dy <= r; dy++) {
-                        for (int dx = -r; dx <= r; dx++) {
-                            if (dx * dx + dy * dy > r * r + 0.5) continue;
-                            if (isOpaque(src, x - pad + dx, y - pad + dy, sw, sh)) {
-                                dilated = true;
-                                break outer;
+                NativeImage ring = new NativeImage(NativeImage.Format.RGBA, pw, ph, false);
+                ring.fillRect(0, 0, pw, ph, 0);
+                for (int y = 0; y < ph; y++) {
+                    for (int x = 0; x < pw; x++) {
+                        if (isOpaque(src, x - pad, y - pad, sw, sh)) {
+                            continue;
+                        }
+                        boolean dilated = false;
+                        outer:
+                        for (int dy = -r; dy <= r; dy++) {
+                            for (int dx = -r; dx <= r; dx++) {
+                                if (dx * dx + dy * dy > r * r + 0.5) continue;
+                                if (isOpaque(src, x - pad + dx, y - pad + dy, sw, sh)) {
+                                    dilated = true;
+                                    break outer;
+                                }
                             }
                         }
+                        if (dilated) ring.setColorArgb(x, y, 0xFF000000);
                     }
-                    if (dilated) ring.setColorArgb(x, y, 0xFF000000);
                 }
-            }
-            src.close();
 
-            selfMarkerRingTexSize = pw;
-            selfMarkerRingScale = (float) pw / sw;
-            selfMarkerRingIcon = Identifier.of("mcrider-official", "generated/self_marker_ring");
-            NativeImageBackedTexture tex = new NativeImageBackedTexture(() -> "mcrider-self-marker-ring", ring);
-            MinecraftClient.getInstance().getTextureManager().registerTexture(selfMarkerRingIcon, tex);
+                selfMarkerRingTexSize = pw;
+                selfMarkerRingScale = (float) pw / sw;
+                selfMarkerRingIcon = Identifier.of("mcrider-official", "generated/self_marker_ring");
+                NativeImageBackedTexture tex = new NativeImageBackedTexture(() -> "mcrider-self-marker-ring", ring);
+                MinecraftClient.getInstance().getTextureManager().registerTexture(selfMarkerRingIcon, tex);
+            }
         } catch (Exception e) {
             LOGGER.error("[MCRider] 자기 마커 윤곽선 텍스처 생성에 실패했습니다.", e);
         }

@@ -6,6 +6,7 @@ import it.unimi.dsi.fastutil.longs.LongArrayList;
 import it.unimi.dsi.fastutil.longs.LongIterator;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectIterator;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 
 // 활성 프론티어(청크별 대기 셀)과 exile(보류된 셀) 관리
@@ -158,11 +159,27 @@ final class FrontierQueue {
             int chunkZ = ChunkPos.getPackedZ(chunkKey);
             if (taxiDistanceFromChunkToPos(chunkX, chunkZ, sx, sz) <= maxRange
                     && MCRiderMinimap.client.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
+                // 청크는 범위 안이지만(가장 가까운 변 기준) 청크 코너 쪽 셀은 여전히 maxRange
+                // 밖일 수 있다. 그런 셀까지 되살리면 곧바로 enqueue의 셀 단위 거리 재검사에서
+                // 다시 OUT_OF_RANGE로 park되어 경계 청크 전체가 매 틱 revive/park를 반복한다.
+                // 여기서 셀 단위로 한 번 더 걸러 진짜 범위 안인 것만 꺼내고, 나머지는 그대로 남긴다.
                 LongArrayList pending = e.getValue();
+                int keep = 0;
                 for (int i = 0, n = pending.size(); i < n; i++) {
-                    revivedScratch.add(pending.getLong(i));
+                    long cell = pending.getLong(i);
+                    int cx = BlockPos.unpackLongX(cell);
+                    int cz = BlockPos.unpackLongZ(cell);
+                    if (taxiDistance2D(cx, cz, sx, sz) <= maxRange) {
+                        revivedScratch.add(cell);
+                    } else {
+                        pending.set(keep++, cell);
+                    }
                 }
-                exiledIt.remove();
+                if (keep == 0) {
+                    exiledIt.remove();
+                } else {
+                    pending.size(keep);
+                }
             }
         }
         return timedOut;
