@@ -131,11 +131,11 @@ final class MinimapRenderer {
 
         void close() {
             if (texture != null) {
-                texture.close();
+                MCRiderMinimap.client.getTextureManager().destroyTexture(id);
                 texture = null;
-            } 
+            }
             else if (image != null) {
-                // 이중 close 방지
+                // 이중 close 방지: NativeImageBackedTexture.close가 내부 image도 함께 닫기 때문
                 image.close();
             }
             image = null;
@@ -325,48 +325,24 @@ final class MinimapRenderer {
         continueRebuildIfInProgress();
     }
 
-    private static boolean isInCurrentView(int worldX, int worldZ, int px, int pz) {
-        double dx = worldX - px;
-        double dz = worldZ - pz;
-        double r = maxDist * SQRT2 + 8;
-        return dx * dx + dz * dz <= r * r;
-    }
-    static void repaintDirtyColumns(BlockPos start) {
+    // 뷰 거리와 무관하게 단일 패스로 처리하여 deadline stall을 방지한다.
+    static void repaintDirtyColumns() {
         if (FrontierSearch.dirtyColumns.isEmpty() || !front.originSet) return;
         boolean mirrorToBack = rebuildInProgress && rebuildTarget == back;
 
-        int px = start.getX(), pz = start.getZ();
         final long repaintDeadline = System.nanoTime() + REPAINT_TIME_BUDGET_NANOS;
         int hardCap = REPAINT_HARD_CAP_PER_TICK;
         int sinceTimeCheck = 0;
 
         LongIterator dirtyIt = FrontierSearch.dirtyColumns.iterator();
-        boolean timedOut = false;
-        while (dirtyIt.hasNext() && hardCap > 0 && !timedOut) {
+        while (dirtyIt.hasNext() && hardCap > 0) {
             long key = dirtyIt.nextLong();
             int wx = FrontierSearch.unpackColumnX(key), wz = FrontierSearch.unpackColumnZ(key);
-            if (isInCurrentView(wx, wz, px, pz)) {
-                front.plotColumn(wx, wz);
-                if (mirrorToBack) back.plotColumn(wx, wz);
-                dirtyIt.remove();
-                hardCap--;
-            }
-            if ((++sinceTimeCheck & 0xFF) == 0 && FrontierQueue.deadlineReached(repaintDeadline)) {
-                timedOut = true;
-            }
-        }
-
-        if (!timedOut) {
-            dirtyIt = FrontierSearch.dirtyColumns.iterator();
-            while (dirtyIt.hasNext() && hardCap > 0) {
-                long key = dirtyIt.nextLong();
-                int wx = FrontierSearch.unpackColumnX(key), wz = FrontierSearch.unpackColumnZ(key);
-                front.plotColumn(wx, wz);
-                if (mirrorToBack) back.plotColumn(wx, wz);
-                dirtyIt.remove();
-                hardCap--;
-                if ((++sinceTimeCheck & 0xFF) == 0 && FrontierQueue.deadlineReached(repaintDeadline)) break;
-            }
+            front.plotColumn(wx, wz);
+            if (mirrorToBack) back.plotColumn(wx, wz);
+            dirtyIt.remove();
+            hardCap--;
+            if ((++sinceTimeCheck & 0xFF) == 0 && FrontierQueue.deadlineReached(repaintDeadline)) break;
         }
     }
 

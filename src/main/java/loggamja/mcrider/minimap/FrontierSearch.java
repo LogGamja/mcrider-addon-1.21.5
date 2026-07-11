@@ -115,7 +115,8 @@ final class FrontierSearch {
         updateActiveColorFromCell(playerCell);
         rebuildActiveSet();
 
-        // 앵커 풀림 틱에는 이전 필터 유지 (파킹 셀 낭비 방지)
+        // 앵커 미해결 틱엔 색이 불확실하므로 필터를 끈다. 불확실한 필터로 park했다가
+        // 다음 틱에 되살리는 낭비(핑퐁) 방지. searchActiveSet은 재계산 없이 그대로 둔다.
         final boolean containToActive = playerCell != NO_ID;
         boolean searchActiveSetChanged = containToActive
                 && rebuildSearchActiveSet(ColorGraph.resolve(cellColor.get(playerCell)));
@@ -360,6 +361,15 @@ final class FrontierSearch {
 
     // 새 트리거 없어도 다음 틱에 재시도해야 한다
     private static boolean exiledScanTimedOut = false;
+    
+    // beginIfIdle의 fill 콜백 비캡처 람다화
+    private static int revivedDrainSx, revivedDrainSz, revivedDrainMaxRange;
+    private static long revivedDrainDeadline;
+
+    private static void fillRevivedDrain() {
+        exiledScanTimedOut = FrontierQueue.drainExiledWithinRange(
+            revivedDrainSx, revivedDrainSz, revivedDrainMaxRange, revivedDrainDeadline);
+    }
 
     private static void processRevivedExiledCells(int sx, int sz, int maxRange, boolean containToActive, long deadline) {
         int chunkX = sx >> 4, chunkZ = sz >> 4;
@@ -371,8 +381,11 @@ final class FrontierSearch {
             lastDrainChunkZ = chunkZ;
             chunkLoadedSinceLastDrain = false;
         }
-        revivedProcessDrain.beginIfIdle(trigger, FrontierQueue.revivedScratch,
-                () -> exiledScanTimedOut = FrontierQueue.drainExiledWithinRange(sx, sz, maxRange, deadline));
+        revivedDrainSx = sx;
+        revivedDrainSz = sz;
+        revivedDrainMaxRange = maxRange;
+        revivedDrainDeadline = deadline;
+        revivedProcessDrain.beginIfIdle(trigger, FrontierQueue.revivedScratch, FrontierSearch::fillRevivedDrain);
         revivedProcessDrain.drain(FrontierQueue.revivedScratch, sx, sz, maxRange, containToActive, deadline);
     }
 
@@ -456,6 +469,8 @@ final class FrontierSearch {
         return curColor;
     }
 
+    // 전제: 이 호출 전에 addEdge가 이미 colorGraphVersion을 올려뒀어야 한다.
+    // 그래야 activeSet에 대한 아래의 직접 수정이 SubtreeCache의 버전 캐시와 계속 일치한다.
     private static void propagateActiveMembership(long parentRoot, long childRoot, boolean markDirty) {
         if (activeSet.contains(parentRoot)) {
             if (activeSet.add(childRoot) && markDirty) markColumnsDirtyForRoot(childRoot);
@@ -518,7 +533,7 @@ final class FrontierSearch {
 
         if (MCRiderMinimap.EXCLUDE_NARROW_PATHS) {
             long narrow = BlockSearch.isNarrowPassageInRange(nx, cy, ty, nz, d[0], d[1]);
-            if (narrow != BlockSearch.PASSAGE_OPEN && narrow != BlockSearch.PASSAGE_NARROW) {
+            if (!BlockSearch.isPassageResultResolved(narrow)) {
                 // "좁음 확정"이 아니라 "이웃 청크 미로딩"일 수 있어 곧장 막지 않고, 그 청크가 로딩될 때까지 보류한다.
                 if (!parkedSelf) {
                     int unknownX = (int) (narrow >> 32);
@@ -594,18 +609,26 @@ final class FrontierSearch {
         ys.add(y);
         long root = ColorGraph.resolve(color);
         columnsByRoot.computeIfAbsent(root, k -> new LongOpenHashSet()).add(colKey);
-        dirtyColumns.add(colKey); // 디버그 모드도 dirty 경로 필요 (back 리빌드 중 동기화)
+        dirtyColumns.add(colKey);
     }
-
-    // 안 지우면 그 자리가 "solid"이면서 "칠해진 셀"로도 남아 같은 컬럼에 Y가 두 개 생긴다.
     private static void eraseCellIfPainted(int x, int y, int z) {
         long cell = BlockPos.asLong(x, y, z);
-        if (cellColor.remove(cell) == NO_ID) return;
+        long removedColor = cellColor.remove(cell);
+        if (removedColor == NO_ID) return;
         long colKey = packColumn(x, z);
         IntOpenHashSet ys = visitedColumns.get(colKey);
         if (ys != null) {
             ys.remove(y);
-            if (ys.isEmpty()) visitedColumns.remove(colKey);
+            if (ys.isEmpty()) {
+                visitedColumns.remove(colKey);
+                // columnsByRoot에서 죽은 colKey 걷어내기
+                long root = ColorGraph.resolve(removedColor);
+                LongOpenHashSet cols = columnsByRoot.get(root);
+                if (cols != null) {
+                    cols.remove(colKey);
+                    if (cols.isEmpty()) columnsByRoot.remove(root);
+                }
+            }
         }
         dirtyColumns.add(colKey);
     }

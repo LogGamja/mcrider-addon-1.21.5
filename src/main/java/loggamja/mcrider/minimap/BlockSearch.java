@@ -17,7 +17,7 @@ import java.util.function.Predicate;
 // narrow 통로 판정 규칙 (isNarrowPassage / isNarrowPassageInRange)
 // 규칙1: 마주보는 두 방향 중 하나라도 open이면 통로는 open, 둘 다 막히면 narrow
 // 규칙2: 한 방향이 open이려면 현재 칸과 뒷칸이 둘 다 air여야 한다
-// 규칙3: 규칙2의 판정을 이 행뿐 아니라 한 칸 아래 행에도 적용해야 open이다
+// 규칙3: 낙하 경로에서는 한 칸 아래도 봐야 open이다.
 // 규칙4: rear(규칙2)는 가로 이동을 밟은 진입 행(cy)에서만 쓴다
 
 final class BlockSearch {
@@ -43,15 +43,19 @@ final class BlockSearch {
     private static long packWorldXZ(int x, int z) {
         return ((long) x << 32) | (z & 0xFFFFFFFFL);
     }
-    // OPEN/NARROW/ALL_LATERAL_LOADED는 sentinel. 그 외 값은 미로딩 청크 좌표
+    // OPEN/NARROW/ALL_LATERAL_LOADED는 sentinel. 그 외 값은 미로딩 청크를 가리키는 실제 블록 좌표
     static final long PASSAGE_OPEN = packWorldXZ(0, Integer.MIN_VALUE);
     static final long PASSAGE_NARROW = packWorldXZ(0, Integer.MIN_VALUE + 1);
     static final long ALL_LATERAL_LOADED = packWorldXZ(0, Integer.MIN_VALUE + 2);
 
-    // LATERAL_OPEN/BLOCKED는 sentinel. 그 외 값은 미확정의 원인이 된 실제 미로딩 청크 좌표다.
+    // LATERAL_OPEN/BLOCKED는 sentinel. 그 외 값은 미확정의 원인이 된, 미로딩 청크를 가리키는 실제 블록 좌표다.
     // axisResult가 그대로 돌려줘야 park가 진짜 로딩 안 된 청크에 걸린다.
     private static final long LATERAL_OPEN = packWorldXZ(0, Integer.MIN_VALUE + 3);
     private static final long LATERAL_BLOCKED = packWorldXZ(0, Integer.MIN_VALUE + 4);
+
+    static boolean isPassageResultResolved(long v) {
+        return v == PASSAGE_OPEN || v == PASSAGE_NARROW;
+    }
 
     static void invalidateChunkCache() {
         java.util.Arrays.fill(cacheKeys, Long.MIN_VALUE);

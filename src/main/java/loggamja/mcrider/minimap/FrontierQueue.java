@@ -1,11 +1,9 @@
 package loggamja.mcrider.minimap;
 
-import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
 import it.unimi.dsi.fastutil.longs.LongIterator;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
-import it.unimi.dsi.fastutil.objects.ObjectIterator;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 
@@ -132,23 +130,38 @@ final class FrontierQueue {
         return n;
     }
 
+    // 패스 중간에 타임아웃되면 다음 호출은 스냅샷의 이어지는 인덱스부터 재개한다.
+    // 패스를 완주해야만(끝까지 돌아야만) index를 0으로 되돌려 새 스냅샷을 뜬다.
+    // 그래야 스캔 도중 park()가 새 청크를 추가해도 진행 중인 패스가 앞부분만 반복하며 굶지 않는다.
+    private static long[] exiledScanKeys = new long[0];
+    private static int exiledScanLen = 0;
+    private static int exiledScanIndex = 0;
+
     static boolean drainExiledWithinRange(int sx, int sz, int maxRange, long deadline) {
         revivedScratch.clear();
-        boolean timedOut = false;
-        ObjectIterator<Long2ObjectMap.Entry<LongArrayList>> exiledIt = exiledByChunk.long2ObjectEntrySet().iterator();
-        while (exiledIt.hasNext()) {
-            if (deadlineReached(deadline)) {
-                timedOut = true;
-                break;
-            }
-            Long2ObjectMap.Entry<LongArrayList> e = exiledIt.next();
-            long chunkKey = e.getLongKey();
+        if (exiledScanIndex == 0) {
+            int n = exiledByChunk.size();
+            if (exiledScanKeys.length < n) exiledScanKeys = new long[n];
+            int idx = 0;
+            LongIterator keyIt = exiledByChunk.keySet().iterator();
+            while (keyIt.hasNext()) exiledScanKeys[idx++] = keyIt.nextLong();
+            exiledScanLen = idx;
+        }
+
+        while (exiledScanIndex < exiledScanLen) {
+            if (deadlineReached(deadline)) return true; // 다음 호출에서 이 인덱스부터 재개
+
+            long chunkKey = exiledScanKeys[exiledScanIndex];
+            exiledScanIndex++;
+
+            LongArrayList pending = exiledByChunk.get(chunkKey);
+            if (pending == null || pending.isEmpty()) continue; // 스냅샷 이후 이미 소진/제거됨
+
             int chunkX = ChunkPos.getPackedX(chunkKey);
             int chunkZ = ChunkPos.getPackedZ(chunkKey);
             if (taxiDistanceFromChunkToPos(chunkX, chunkZ, sx, sz) <= maxRange
                     && MCRiderMinimap.client.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
                 // 청크 코너 셀도 거리 재검사 (park/revive 반복 회피)
-                LongArrayList pending = e.getValue();
                 int keep = 0;
                 for (int i = 0, n = pending.size(); i < n; i++) {
                     long cell = pending.getLong(i);
@@ -161,13 +174,15 @@ final class FrontierQueue {
                     }
                 }
                 if (keep == 0) {
-                    exiledIt.remove();
+                    exiledByChunk.remove(chunkKey);
                 } else {
                     pending.size(keep);
                 }
             }
         }
-        return timedOut;
+
+        exiledScanIndex = 0; // 패스 완주. 다음 호출은 새 스냅샷으로 시작
+        return false;
     }
 
     static void reset() {
@@ -177,5 +192,7 @@ final class FrontierQueue {
         revivedScratch.clear();
         chunkKeysVersion++;
         lastSortVersion = -1;
+        exiledScanIndex = 0;
+        exiledScanLen = 0;
     }
 }
