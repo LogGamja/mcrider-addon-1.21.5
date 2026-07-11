@@ -88,6 +88,26 @@ final class ColorGraph {
         return kids != null && kids.contains(child);
     }
 
+    // 셀이 없어진 색을 부모로 흡수해 유령 노드 누적을 막는다 (부모 없으면 스킵, 극소수라 유한 누적).
+    // 나머지 부모 엣지도 survivor로 이전되며 새 사이클이 생길 수 있어 rescanCycles로 정리한다.
+    // 호출부(FrontierSearch.eraseCellIfPainted)가 이 root의 셀이 완전히 사라졌음을 확인한 뒤에만 불러야 한다.
+    static void noteCellErased(long root) {
+        LongOpenHashSet parents = childToParents.get(root);
+        if (parents == null || parents.isEmpty()) return;
+        // 첫 후보가 자기참조(resolve==root)로 판명되면 나머지 후보도 순회해 진짜 부모를 찾는다.
+        long parent = root;
+        LongIterator it = parents.iterator();
+        while (it.hasNext()) {
+            long candidate = resolve(it.nextLong());
+            if (candidate != root) { parent = candidate; break; }
+        }
+        if (parent == root) return;
+        absorbInto(root, parent);
+        if (FrontierSearch.activeColor == root) FrontierSearch.activeColor = parent;
+        bumpColorGraphVersion();
+        rescanCycles(parent);
+    }
+
     private static final LongOpenHashSet scratchGroup = new LongOpenHashSet();
     private static final LongOpenHashSet scratchReachable = new LongOpenHashSet();
     private static final LongArrayFIFOQueue scratchReachQueue = new LongArrayFIFOQueue();
@@ -131,8 +151,8 @@ final class ColorGraph {
             FrontierSearch.activeColor = survivor;
         }
 
-        // 불변식: mergeColors는 항상 rescanCycles(do-while)로 끝나므로 모든 사이클이 완전히 해결됨.
-        // 따라서 FrontierSearch.hasEdge 스킵이 안전한 상태가 됨.
+        // mergeColors는 항상 rescanCycles로 끝나며 모든 사이클을 완전히 해결한다.
+        // handleReach의 hasEdge 빠른 경로가 이를 전제한다.
         rescanCycles(survivor);
     }
 
@@ -208,15 +228,13 @@ final class ColorGraph {
         if (cols != null) {
             FrontierSearch.columnsByRoot.computeIfAbsent(survivor, k -> new LongOpenHashSet()).addAll(cols);
         }
-        // 반대편 맵에 남은 loser 역참조도 함께 정리해야 한다. 정리하지 않으면 죽은 참조가 쌓여서
-        // rescanCycles가 매번 도는 BFS 비용이 세션이 길어질수록 계속 늘어난다.
+        // 역참조를 정리하지 않으면 죽은 참조가 쌓여 rescanCycles의 BFS 비용이 세션이 길어질수록 커진다.
         migrateDirection(parentToChildren, childToParents, loser, survivor);
         migrateDirection(childToParents, parentToChildren, loser, survivor);
         colorParentPtr.put(loser, survivor);
     }
 
-    // v가 survivor와 같다면 둘 사이에 원래 직접 엣지가 있었다는 뜻이다. 병합 후엔 자기 자신을
-    // 향한 엣지가 되므로 제거만 하고 다시 넣지 않는다.
+    // v==survivor면 병합 후 자기 자신을 향한 엣지가 되므로 추가하지 않고 제거만 한다.
     private static void migrateDirection(Long2ObjectOpenHashMap<LongOpenHashSet> ownAdj,
                                           Long2ObjectOpenHashMap<LongOpenHashSet> otherAdj,
                                           long loser, long survivor) {
