@@ -165,7 +165,7 @@ final class MinimapRenderer {
     private static TextureBuffer rebuildTarget = null;
     private static boolean rebuildInProgress = false;
 
-    // 재앵커 스크롤 재사용: 겹침 영역은 복사, 새 영역은 재계산. 복사도 예산 큐로 여러 틱에 분산.
+    // 재앵커 스크롤 재사용: 겹침 영역은 복사, 새 영역은 재계산. 복사도 예산 큐로 여러 틱에 분산한다.
     private static final class RebuildRect {
         int x, z, w, h;
         boolean isCopy;
@@ -205,7 +205,7 @@ final class MinimapRenderer {
         int newOriginX = center.getX() - TEX_SIZE / 2;
         int newOriginZ = center.getZ() - TEX_SIZE / 2;
 
-        // 스크롤 재사용: 디버그 모드 아니고, 겹침 영역 존재할 때만 가능
+        // 스크롤 재사용 가능 여부
         boolean canScroll = !MCRiderMinimap.isDebugColors()
                 && front.originSet
                 && Math.abs(newOriginX - front.originX) < TEX_SIZE
@@ -244,7 +244,7 @@ final class MinimapRenderer {
                 addRebuildRect(destX0, 0, overlapW, -dz, false);
             }
         } else {
-            // 최초 빌드이거나 겹침이 없는 경우(canScroll=false) 전체 다시 계산
+            // canScroll=false면 전체 재계산
             target.image.fillRect(0, 0, TEX_SIZE, TEX_SIZE, 0);
             addRebuildRect(0, 0, TEX_SIZE, TEX_SIZE, false);
         }
@@ -276,7 +276,7 @@ final class MinimapRenderer {
                 if (rect.isCopy) {
                     int tx = rect.x + lx;
                     int tz = rect.z + lz;
-                    // onTickStart 순서상 dirty 마킹이 완료됨. 재빌드 중 dirty는 mirrorToBack으로 동기화
+                    // dirty 마킹이 onTickStart에서 이미 완료됨. 재빌드 중 변경은 mirrorToBack으로 동기화한다.
                     int argb = front.image.getColorArgb(tx + rect.copyDx, tz + rect.copyDz);
                     rebuildTarget.image.setColorArgb(tx, tz, argb);
                 } else {
@@ -289,7 +289,7 @@ final class MinimapRenderer {
             rebuildRectLocalIndex = 0;
         }
 
-        // 여기 도달했다는 건 위 while이 return이 아니라 조건 종료로 빠져나왔다는 뜻이므로 모든 사각형 처리가 끝난 상태다
+        // while이 return이 아닌 조건 종료로 빠져나왔다는 뜻이므로 모든 사각형 처리가 끝난 상태다
         rebuildInProgress = false;
         rebuildTarget.markAllDirty();
         if (rebuildTarget == back) {
@@ -307,8 +307,7 @@ final class MinimapRenderer {
         back = tmp;
     }
 
-    // 재앵커가 필요하면 텍스처를 재생성한다. 이미 재빌드 중이면 새로 트리거하지 않는다
-    // front 원점은 스왑 전까지 안 바뀌므로 안 그러면 플레이어가 계속 움직이는 동안 매 틱 재트리거되어 영원히 안 끝난다.
+    // 재앵커 필요 시 텍스처 재생성. front 원점은 스왑 전까지 안 바뀌므로 중복 트리거 방지된다.
     static void ensureOriginFor(BlockPos start) {
         front.ensure();
         if (!rebuildInProgress) {
@@ -478,7 +477,7 @@ final class MinimapRenderer {
         final float u0 = (float) Math.max(0, Math.min(TEX_SIZE - texRegion, p.x - front.originX - texRegion / 2.0));
         final float v0 = (float) Math.max(0, Math.min(TEX_SIZE - texRegion, p.z - front.originZ - texRegion / 2.0));
 
-        // try finally로 disableScissor 보장 (누락되면 GL scissor가 다음 프레임까지 적용되어 화면 클리핑)
+        // scissor 누락 시 GL scissor가 다음 프레임까지 적용되어 화면 클리핑 발생. try-finally로 보장한다.
         context.enableScissor(viewX1, viewY1, viewX2, viewY2);
         try {
             MatrixStack matrices = context.getMatrices();
@@ -558,7 +557,7 @@ final class MinimapRenderer {
         return player.getYaw(tickDelta);
     }
     private static void drawSelfMarker(DrawContext context, float cx, float cy, float size, float rotationDeg) {
-        // try finally로 pop 보장 (누락되면 이후 HUD가 잘못된 위치/회전으로 그려짐)
+        // pop 누락 시 이후 HUD가 잘못된 위치/회전으로 렌더링. try-finally로 보장한다.
         MatrixStack matrices = context.getMatrices();
         matrices.push();
         try {

@@ -39,7 +39,7 @@ final class BlockSearch {
     private static final Chunk[] cacheChunks = new Chunk[CHUNK_CACHE_SLOTS];
     private static final BlockPos.Mutable MUTABLE = new BlockPos.Mutable();
 
-    // 좌표 두 개를 long 하나로 압축 (narrow/가짜 블록 판정에서 "미확정 + 로딩 필요한 청크" 반환용)
+    // narrow/가짜 블록 판정에서 "미확정 + 로딩 필요한 청크" 반환용
     private static long packWorldXZ(int x, int z) {
         return ((long) x << 32) | (z & 0xFFFFFFFFL);
     }
@@ -48,9 +48,8 @@ final class BlockSearch {
     static final long PASSAGE_NARROW = packWorldXZ(0, Integer.MIN_VALUE + 1);
     static final long ALL_LATERAL_LOADED = packWorldXZ(0, Integer.MIN_VALUE + 2);
 
-    // LATERAL_OPEN/BLOCKED는 sentinel. 그 외 값(threeStateIfLoaded가 만드는)은 "이 칸이 속한
-    // 미로딩 청크 좌표" 그 자체다 — 어떤 구체적인 칸이 미확정의 원인인지 축(axisResult)까지 그대로
-    // 들고 올라가기 위함이다 (park를 실제로 안 로딩된 청크에 걸기 위해 필요, 아래 axisResult 참고).
+    // LATERAL_OPEN/BLOCKED는 sentinel. 그 외 값은 미확정의 원인이 된 실제 미로딩 청크 좌표다.
+    // axisResult가 그대로 돌려줘야 park가 진짜 로딩 안 된 청크에 걸린다.
     private static final long LATERAL_OPEN = packWorldXZ(0, Integer.MIN_VALUE + 3);
     private static final long LATERAL_BLOCKED = packWorldXZ(0, Integer.MIN_VALUE + 4);
 
@@ -87,7 +86,7 @@ final class BlockSearch {
         if (isAirAt(x, y, z) && isAirAt(x, y - 1, z)) return false;
         return true;
     }
-    // twoWay(양방향 연결) 판정: 목적지에서 출발지로 되짚어가도 같은 fy로 돌아오는지 확인
+    // twoWay(양방향 연결) 판정
     static boolean canMoveBetween(int tx, int ty, int tz, int fx, int fy, int fz, int bottomY) {
         boolean baseIsAir = isAirAt(fx, ty, fz);
         boolean baseIsWall = isWallIfNotAir(baseIsAir, fx, ty, fz);
@@ -100,7 +99,7 @@ final class BlockSearch {
     static boolean isWallIfNotAir(boolean baseIsAir, int x, int y, int z) {
         return !baseIsAir && isBlockAt(isWall, x, y, z);
     }
-    // (nx, cy, nz)로 이동 시 실제 착지 y를 계산 (도달 불가면 Integer.MIN_VALUE)
+    // 도달 불가면 Integer.MIN_VALUE
     static int resolveTargetY(int nx, int cy, int nz, boolean baseIsAir, boolean baseIsWall, boolean fromHasBlockAt2Meter, int bottomY) {
         if (!isAirAt(nx, cy + 1, nz)) return Integer.MIN_VALUE;
         if (!baseIsAir) {
@@ -129,7 +128,7 @@ final class BlockSearch {
         fakeBlocks.clear();
     }
 
-    // 고립 구덩이 판정: 수평 4면 중 3면 이상 막힘, 또는 진행 방향(dx,dz) 앞뒤가 모두 막히면 true
+    // 수평 4면 중 3면 이상 막힘, 또는 진행 방향(dx,dz) 앞뒤가 모두 막히면 true
     static boolean isIsolatedPit(int nx, int ty, int nz, int dx, int dz) {
         int blockedSides = 0;
         boolean frontBlocked = false, backBlocked = false;
@@ -142,7 +141,7 @@ final class BlockSearch {
         }
         return blockedSides >= 3 || (frontBlocked && backBlocked);
     }
-    // isIsolatedPit이 살펴볼 4면의 청크가 전부 로딩됐는지 확인 (미로딩 시 그 좌표 반환)
+    // isIsolatedPit이 확인할 4면과 같은 좌표를 미리 확인한다
     static long firstUnloadedLateralChunk(int nx, int nz) {
         for (int[] pd : DIRECTIONS) {
             int ux = nx + pd[0], uz = nz + pd[1];
@@ -176,7 +175,7 @@ final class BlockSearch {
     private static boolean isChunkLoadedNear(int x, int z, int centerChunkX, int centerChunkZ, boolean centerLoaded) {
         return (x >> 4) == centerChunkX && (z >> 4) == centerChunkZ ? centerLoaded : isChunkLoadedAt(x, z);
     }
-    // 낙하 경로(cy→ty) 전체에 규칙 적용. 플레이어가 1칸은 못 들어간다고 가정
+    // 낙하 경로(cy->ty) 전체에 규칙 적용. 플레이어가 1칸은 못 들어간다고 가정
     static long isNarrowPassageInRange(int nx, int cy, int ty, int nz, int dx, int dz) {
         if (ty >= cy) return isNarrowPassage(nx, ty, nz, dx, dz);
 
@@ -191,7 +190,6 @@ final class BlockSearch {
         int x3r = x3 - dx, z3r = z3 - dz;
         int x4r = x4 - dx, z4r = z4 - dz;
 
-        // 청크 로드 여부 캐시
         int centerChunkX = nx >> 4, centerChunkZ = nz >> 4;
         boolean centerLoaded = isChunkLoadedAt(nx, nz);
         boolean zMinusLoaded = isChunkLoadedNear(x1, z1, centerChunkX, centerChunkZ, centerLoaded);
@@ -224,11 +222,7 @@ final class BlockSearch {
         return sawUnknown ? unknownResult : PASSAGE_OPEN;
     }
 
-    // narrow 판정 체인: axisResult(규칙1), checkTwoSideOpen(규칙3), checkOneSideOpen(규칙2), threeStateIfLoaded 체인 전체가 long을 주고받는다
-    // OPEN/BLOCKED가 아니면 그 값 자체가 "미확정 원인인 실제 미로딩 청크 좌표"이기 때문
-    // side1이 OPEN이 아니면 그대로 반환하기만 하면 되므로 axisResult에서 좌표를 다시 조립할 필요가 없다
-
-    // 규칙1
+    // narrow 판정 체인: axisResult(규칙1) -> checkTwoSideOpen(규칙3) -> checkOneSideOpen(규칙2) -> threeStateIfLoaded
     private static long axisResult(boolean loaded1, int x1, int z1, boolean loaded1r, int x1r, int z1r,
                                     boolean loaded2, int x2, int z2, boolean loaded2r, int x2r, int z2r,
                                     boolean useRear, int y, int belowY) {
