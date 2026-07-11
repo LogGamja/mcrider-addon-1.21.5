@@ -316,9 +316,13 @@ final class ColorGraph {
 
     static void reset() {
         colorParentPtr.clear();
+        colorParentPtr.trim();
         childToParents.clear();
+        childToParents.trim();
         parentToChildren.clear();
+        parentToChildren.trim();
         colorBirth.clear();
+        colorBirth.trim();
         nextColorId = 0;
         birthCounter = 0;
         colorGraphVersion = 0;

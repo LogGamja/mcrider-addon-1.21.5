@@ -12,6 +12,7 @@ import net.minecraft.util.math.ChunkPos;
 final class FrontierQueue {
     private FrontierQueue() {}
 
+    // park()의 동작은 reason이 아닌 호출자가 넘기는 좌표에 따른다
     enum ParkReason {
         CHUNK_NOT_LOADED,
         OUT_OF_RANGE,
@@ -60,6 +61,7 @@ final class FrontierQueue {
         return bucket;
     }
 
+    // getOrCreateBucket을 안 쓰는 이유: frontierByChunk에 새 키가 생길 때마다 chunkKeysVersion을 올려야 한다.
     static void push(long cell, int cx, int cz) {
         long chunkKey = ChunkPos.toLong(cx >> 4, cz >> 4);
         LongArrayList bucket = frontierByChunk.get(chunkKey);
@@ -138,7 +140,6 @@ final class FrontierQueue {
     private static int exiledScanIndex = 0;
 
     static boolean drainExiledWithinRange(int sx, int sz, int maxRange, long deadline) {
-        // ResumableDrain 계약상 이 시점의 revivedScratch는 항상 비어 있어야 한다
         revivedScratch.clear();
         if (exiledScanIndex == 0) {
             int n = exiledByChunk.size();
@@ -188,7 +189,9 @@ final class FrontierQueue {
 
     static void reset() {
         frontierByChunk.clear();
+        frontierByChunk.trim();
         exiledByChunk.clear();
+        exiledByChunk.trim();
 
         inactiveColorParked.clear();
         inactiveColorParked.trim();

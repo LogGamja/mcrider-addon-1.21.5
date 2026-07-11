@@ -137,8 +137,8 @@ final class MinimapRenderer {
             else if (image != null) {
                 // 이중 close 방지: NativeImageBackedTexture.close가 내부 image도 함께 닫기 때문
                 image.close();
-                image = null;
             }
+            image = null;
 
             dirtyTiles.clear();
             uploadWholeTexture = false;

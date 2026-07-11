@@ -176,12 +176,15 @@ final class FrontierSearch {
 
     static void reset() {
         cellColor.clear();
+        cellColor.trim();
         visitedColumns.clear();
+        visitedColumns.trim();
 
         dirtyColumns.clear();
         dirtyColumns.trim();
 
         columnsByRoot.clear();
+        columnsByRoot.trim();
         BlockSearch.clearFakeBlocks();
         FrontierQueue.reset();
         activeColor = NO_ID;
