@@ -177,21 +177,34 @@ final class FrontierSearch {
     static void reset() {
         cellColor.clear();
         visitedColumns.clear();
+
         dirtyColumns.clear();
+        dirtyColumns.trim();
+
         columnsByRoot.clear();
         BlockSearch.clearFakeBlocks();
         FrontierQueue.reset();
         activeColor = NO_ID;
+
         activeSet.clear();
+        activeSet.trim();
+
         activeSetCache.reset();
+
         searchActiveSet.clear();
+        searchActiveSet.trim();
+
         searchActiveSetCache.reset();
         searchActiveSetTouchedByMerge = false;
         pendingActiveColorCandidate = NO_ID;
         pendingActiveColorStreak = 0;
+
         inactiveRevivalScratch.clear();
+        inactiveRevivalScratch.trim();
+
         inactiveRevivalDrain.reset();
         revivedProcessDrain.reset();
+
         chunkLoadedSinceLastDrain = false;
         exiledScanTimedOut = false;
         lastDrainChunkX = Integer.MIN_VALUE;

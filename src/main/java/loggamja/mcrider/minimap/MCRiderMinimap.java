@@ -63,7 +63,7 @@ public class MCRiderMinimap implements ClientModInitializer {
         }
         lastWorld = client.world;
 
-        if (ColorGraph.actualColorCount >= 5000) {
+        if (ColorGraph.actualColorCount >= 2500) {
             LOGGER.warn("[MCRider] Minimap color limit exceeded ({}), resetting map.", ColorGraph.actualColorCount);
             clearAllMap();
             lastWorld = client.world;

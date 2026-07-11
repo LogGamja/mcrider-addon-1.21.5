@@ -189,11 +189,20 @@ final class FrontierQueue {
     static void reset() {
         frontierByChunk.clear();
         exiledByChunk.clear();
+
         inactiveColorParked.clear();
+        inactiveColorParked.trim();
+
         revivedScratch.clear();
+        revivedScratch.trim();
+
         chunkKeysVersion++;
         lastSortVersion = -1;
         exiledScanIndex = 0;
         exiledScanLen = 0;
+
+        sortSnap = new long[0];
+        sortPacked = new long[0];
+        exiledScanKeys = new long[0];
     }
 }
