@@ -43,10 +43,10 @@ public class MCRiderMinimap implements ClientModInitializer {
 
         ClientChunkEvents.CHUNK_UNLOAD.register((world, chunk) ->
                 BlockSearch.invalidateChunkCacheAt(chunk.getPos().x, chunk.getPos().z));
-        // CHUNK_NOT_LOADED로 보류된 셀 복구용. 청크 교체(재전송)로 인스턴스가 바뀔 수 있어 캐시도 같이 무효화한다.
+        // CHUNK_NOT_LOADED로 보류된 셀 복구용
         ClientChunkEvents.CHUNK_LOAD.register((world, chunk) -> {
             BlockSearch.invalidateChunkCacheAt(chunk.getPos().x, chunk.getPos().z);
-            FrontierSearch.notifyChunkLoaded();
+            FrontierSearch.notifyChunkLoaded(); // 청크 교체(재전송)로 인스턴스가 바뀔 수 있어 캐시도 같이 무효화
         });
     }
     private static World lastWorld = null;
@@ -80,7 +80,7 @@ public class MCRiderMinimap implements ClientModInitializer {
         final int playerMargin = 5;
         BlockPos start = MCRiderMain.getRidingPlayer().getBlockPos().up();
 
-        int searchRange = (int) ((MinimapRenderer.maxDist + playerMargin * 2) * 2);
+        int searchRange = (int) ((MinimapRenderer.MAX_DIST + playerMargin * 2) * 2);
         FrontierSearch.floodFillWithVertical(start, searchRange, FrontierSearch.STAGING_BUDGET_PER_TICK);
 
         // floodFill, rebuildActiveSet, ensureOriginFor, repaintDirtyColumns 순서를 지켜야 한다.

@@ -35,19 +35,19 @@ final class MinimapRenderer {
     private static final Logger LOGGER = LoggerFactory.getLogger("mcrider");
 
     private static final double LEGACY_GUI_SCALE_BASIS = 4.0;
-    private static final int padding = (int) Math.round(10 * LEGACY_GUI_SCALE_BASIS);
-    private static final int baseRadius = (int) Math.round(50 * LEGACY_GUI_SCALE_BASIS);
+    private static final int PADDING = (int) Math.round(10 * LEGACY_GUI_SCALE_BASIS);
+    private static final int BASE_RADIUS = (int) Math.round(50 * LEGACY_GUI_SCALE_BASIS);
 
-    static final double baseDist = 60;
-    private static final double uiScale = 0.75;
-    static final double distScale = 1;
-    private static final int radius = (int) Math.round(baseRadius * uiScale);
-    static final double maxDist = baseDist * distScale;
+    static final double BASE_DIST = 60;
+    private static final double UI_SCALE = 0.75;
+    static final double DIST_SCALE = 1;
+    private static final int RADIUS = (int) Math.round(BASE_RADIUS * UI_SCALE);
+    static final double MAX_DIST = BASE_DIST * DIST_SCALE;
 
     private static final int TEX_SIZE = 512;
     private static final double SQRT2 = Math.sqrt(2.0);
 
-    static final int REANCHOR_MARGIN = (int) Math.ceil(maxDist * SQRT2) + 16;
+    static final int REANCHOR_MARGIN = (int) Math.ceil(MAX_DIST * SQRT2) + 16;
     private static final int VISITED_COLOR = 0xB0F0F0F0;
     private static final int OVERLAP_COLOR = 0xE3F0F0F0;
 
@@ -424,8 +424,8 @@ final class MinimapRenderer {
         final double sizeFactor = getSizeFactor(client);
         final int screenWidth = client.getWindow().getScaledWidth();
         final int screenHeight = client.getWindow().getScaledHeight();
-        final double scaledPadding = padding * sizeFactor;
-        final double scaledRadius = radius * sizeFactor;
+        final double scaledPadding = PADDING * sizeFactor;
+        final double scaledRadius = RADIUS * sizeFactor;
 
         // 미니맵 위치 옵션에 따른 렌더링
         final int position = MCRiderConfig.INSTANCE.useMinimap;
@@ -449,8 +449,8 @@ final class MinimapRenderer {
         final float yawDeg = client.gameRenderer.getCamera().getYaw();
         final Vec3d p = MCRiderMain.getRidingPlayer().getCameraPosVec(tickDelta);
 
-        final double blockToScreen = scaledRadius / maxDist;
-        final int texRegion = 2 * (int) Math.ceil(maxDist * SQRT2);
+        final double blockToScreen = scaledRadius / MAX_DIST;
+        final int texRegion = 2 * (int) Math.ceil(MAX_DIST * SQRT2);
         final int drawSize = (int) Math.round(texRegion * blockToScreen);
         final float u0 = (float) Math.max(0, Math.min(TEX_SIZE - texRegion, p.x - front.originX - texRegion / 2.0));
         final float v0 = (float) Math.max(0, Math.min(TEX_SIZE - texRegion, p.z - front.originZ - texRegion / 2.0));
@@ -514,7 +514,7 @@ final class MinimapRenderer {
             final double localForward = dx * fx + dz * fz;
             final double localRight = dx * rx + dz * rz;
 
-            if (Math.abs(localForward) > maxDist || Math.abs(localRight) > maxDist) continue;
+            if (Math.abs(localForward) > MAX_DIST || Math.abs(localRight) > MAX_DIST) continue;
 
             final float dotX = (float) (centerX - localRight * scale);
             final float dotY = (float) (centerY - localForward * scale);
@@ -563,9 +563,12 @@ final class MinimapRenderer {
 
     private static void ensureSelfMarkerRing() {
         if (selfMarkerRingReady) return;
-        selfMarkerRingReady = true;
         try (InputStream in = MinimapRenderer.class.getResourceAsStream("/assets/mcrider-official/textures/hud/arrow_icon.png")) {
-            if (in == null) return;
+            if (in == null) {
+                // jar에 포함된 리소스는 런타임에 생기지 않으므로 재시도하지 않는다
+                selfMarkerRingReady = true;
+                return;
+            }
             try (NativeImage src = NativeImage.read(in)) {
                 final int sw = src.getWidth();
                 final int sh = src.getHeight();
@@ -596,11 +599,13 @@ final class MinimapRenderer {
                     }
                 }
 
+                Identifier ringId = Identifier.of("mcrider-official", "generated/self_marker_ring");
+                NativeImageBackedTexture tex = new NativeImageBackedTexture(() -> "mcrider-self-marker-ring", ring);
+                MinecraftClient.getInstance().getTextureManager().registerTexture(ringId, tex);
                 selfMarkerRingTexSize = pw;
                 selfMarkerRingScale = (float) pw / sw;
-                selfMarkerRingIcon = Identifier.of("mcrider-official", "generated/self_marker_ring");
-                NativeImageBackedTexture tex = new NativeImageBackedTexture(() -> "mcrider-self-marker-ring", ring);
-                MinecraftClient.getInstance().getTextureManager().registerTexture(selfMarkerRingIcon, tex);
+                selfMarkerRingIcon = ringId;
+                selfMarkerRingReady = true;
             }
         } catch (Exception e) {
             LOGGER.error("[MCRider] 자기 마커 윤곽선 텍스처 생성에 실패했습니다.", e);
