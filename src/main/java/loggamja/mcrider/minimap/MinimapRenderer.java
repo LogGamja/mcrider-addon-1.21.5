@@ -164,6 +164,7 @@ final class MinimapRenderer {
 
     private static TextureBuffer rebuildTarget = null;
     private static boolean rebuildInProgress = false;
+    private static boolean rebuildTargetFullyStale = false;
 
     // 재앵커 스크롤 재사용: 겹침 영역은 복사, 새 영역은 재계산. 복사도 예산 큐로 여러 틱에 분산한다.
     private static final class RebuildRect {
@@ -258,6 +259,7 @@ final class MinimapRenderer {
         rebuildRectCursor = 0;
         rebuildRectLocalIndex = 0;
         rebuildInProgress = true;
+        rebuildTargetFullyStale = !canScroll;
     }
 
     private static void continueRebuildIfInProgress() {
@@ -453,20 +455,24 @@ final class MinimapRenderer {
         final float u0 = (float) Math.max(0, Math.min(TEX_SIZE - texRegion, p.x - front.originX - texRegion / 2.0));
         final float v0 = (float) Math.max(0, Math.min(TEX_SIZE - texRegion, p.z - front.originZ - texRegion / 2.0));
 
+        final boolean frontHoldsStaleRegion = rebuildInProgress && rebuildTarget == back && rebuildTargetFullyStale;
+
         // scissor 누락 시 GL scissor가 다음 프레임까지 적용되어 화면 클리핑 발생. try-finally로 보장한다.
         context.enableScissor(viewX1, viewY1, viewX2, viewY2);
         try {
-            MatrixStack matrices = context.getMatrices();
-            matrices.push();
-            try {
-                matrices.translate(centerX, centerY, 0);
-                matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(180f - yawDeg));
-                matrices.translate(-drawSize / 2f, -drawSize / 2f, 0);
-                context.drawTexture(
-                        RenderLayer::getGuiTextured, front.id,
-                        0, 0, u0, v0, drawSize, drawSize, texRegion, texRegion, TEX_SIZE, TEX_SIZE);
-            } finally {
-                matrices.pop();
+            if (!frontHoldsStaleRegion) {
+                MatrixStack matrices = context.getMatrices();
+                matrices.push();
+                try {
+                    matrices.translate(centerX, centerY, 0);
+                    matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(180f - yawDeg));
+                    matrices.translate(-drawSize / 2f, -drawSize / 2f, 0);
+                    context.drawTexture(
+                            RenderLayer::getGuiTextured, front.id,
+                            0, 0, u0, v0, drawSize, drawSize, texRegion, texRegion, TEX_SIZE, TEX_SIZE);
+                } finally {
+                    matrices.pop();
+                }
             }
 
             drawRiderIcons(context, tickDelta, centerX, centerY, yawDeg, p, blockToScreen, sizeFactor);
@@ -686,6 +692,7 @@ final class MinimapRenderer {
         back.close();
         rebuildInProgress = false;
         rebuildTarget = null;
+        rebuildTargetFullyStale = false;
         rebuildRectCount = 0;
         rebuildRectCursor = 0;
         rebuildRectLocalIndex = 0;

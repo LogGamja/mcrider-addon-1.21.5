@@ -43,8 +43,11 @@ public class MCRiderMinimap implements ClientModInitializer {
 
         ClientChunkEvents.CHUNK_UNLOAD.register((world, chunk) ->
                 BlockSearch.invalidateChunkCacheAt(chunk.getPos().x, chunk.getPos().z));
-        // CHUNK_NOT_LOADED로 보류된 셀 복구용
-        ClientChunkEvents.CHUNK_LOAD.register((world, chunk) -> FrontierSearch.notifyChunkLoaded());
+        // CHUNK_NOT_LOADED로 보류된 셀 복구용. 청크 교체(재전송)로 인스턴스가 바뀔 수 있어 캐시도 같이 무효화한다.
+        ClientChunkEvents.CHUNK_LOAD.register((world, chunk) -> {
+            BlockSearch.invalidateChunkCacheAt(chunk.getPos().x, chunk.getPos().z);
+            FrontierSearch.notifyChunkLoaded();
+        });
     }
     private static World lastWorld = null;
     private static boolean lastDebugColors = false;
@@ -61,9 +64,10 @@ public class MCRiderMinimap implements ClientModInitializer {
         lastWorld = client.world;
 
         if (ColorGraph.actualColorCount >= 5000) {
+            LOGGER.warn("[MCRider] Minimap color limit exceeded ({}), resetting map.", ColorGraph.actualColorCount);
             clearAllMap();
             lastWorld = client.world;
-            LOGGER.warn("[MCRider] Minimap color limit exceeded ({}), resetting map.", ColorGraph.actualColorCount);
+
             return;
         }
 
