@@ -323,6 +323,28 @@ final class ColorGraph {
         parentToChildren.trim();
         colorBirth.clear();
         colorBirth.trim();
+
+        scratchGroup.clear();
+        scratchGroup.trim();
+        scratchReachable.clear();
+        scratchReachable.trim();
+        scratchReachQueue.clear();
+        scratchReachQueue.trim();
+        scratchAncestorsOfTo.clear();
+        scratchAncestorsOfTo.trim();
+        scratchAncestorsOfToQueue.clear();
+        scratchAncestorsOfToQueue.trim();
+        scratchSeen.clear();
+        scratchSeen.trim();
+        scratchSeenQueue.clear();
+        scratchSeenQueue.trim();
+        scratchDescendants.clear();
+        scratchDescendants.trim();
+        scratchAncestors.clear();
+        scratchAncestors.trim();
+        scratchParentAncestors.clear();
+        scratchParentAncestors.trim();
+
         nextColorId = 0;
         birthCounter = 0;
         colorGraphVersion = 0;

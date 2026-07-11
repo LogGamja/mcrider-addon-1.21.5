@@ -205,6 +205,9 @@ final class FrontierSearch {
         inactiveRevivalScratch.clear();
         inactiveRevivalScratch.trim();
 
+        subtreeQueue.clear();
+        subtreeQueue.trim();
+
         inactiveRevivalDrain.reset();
         revivedProcessDrain.reset();
 

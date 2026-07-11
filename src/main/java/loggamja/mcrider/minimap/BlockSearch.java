@@ -130,6 +130,7 @@ final class BlockSearch {
     }
     static void clearFakeBlocks() {
         fakeBlocks.clear();
+        fakeBlocks.trim();
     }
 
     // 수평 4면 중 3면 이상 막힘, 또는 진행 방향(dx,dz) 앞뒤가 모두 막히면 true
