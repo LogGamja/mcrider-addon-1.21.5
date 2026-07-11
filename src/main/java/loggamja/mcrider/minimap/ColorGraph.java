@@ -88,6 +88,26 @@ final class ColorGraph {
         return kids != null && kids.contains(child);
     }
 
+    // 셀이 없어진 색을 부모로 흡수해 유령 노드 누적을 막는다 (부모 없으면 스킵, 극소수라 유한 누적).
+    // 나머지 부모 엣지도 survivor로 이전되며 새 사이클이 생길 수 있어 rescanCycles로 정리한다.
+    // 호출부(FrontierSearch.eraseCellIfPainted)가 이 root의 셀이 완전히 사라졌음을 확인한 뒤에만 불러야 한다.
+    static void noteCellErased(long root) {
+        LongOpenHashSet parents = childToParents.get(root);
+        if (parents == null || parents.isEmpty()) return;
+        // 첫 후보가 자기참조(resolve==root)로 판명되면 나머지 후보도 순회해 진짜 부모를 찾는다.
+        long parent = root;
+        LongIterator it = parents.iterator();
+        while (it.hasNext()) {
+            long candidate = resolve(it.nextLong());
+            if (candidate != root) { parent = candidate; break; }
+        }
+        if (parent == root) return;
+        absorbInto(root, parent);
+        if (FrontierSearch.activeColor == root) FrontierSearch.activeColor = parent;
+        bumpColorGraphVersion();
+        rescanCycles(parent);
+    }
+
     private static final LongOpenHashSet scratchGroup = new LongOpenHashSet();
     private static final LongOpenHashSet scratchReachable = new LongOpenHashSet();
     private static final LongArrayFIFOQueue scratchReachQueue = new LongArrayFIFOQueue();

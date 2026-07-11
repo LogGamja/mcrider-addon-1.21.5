@@ -1,5 +1,6 @@
 package loggamja.mcrider.minimap;
 
+import it.unimi.dsi.fastutil.ints.IntIterator;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
@@ -45,14 +46,14 @@ final class FrontierSearch {
         dirtyColumns.addAll(visitedColumns.keySet());
     }
 
-    // ColorGraph.absorbInto에서 호출. 자손 없는 색 병합 시 diff로 못 잡는 변화를 신호로 표시
+    // ColorGraph.absorbInto에서 호출. 병합으로 diff에 안 잡히는 변화를 신호로 표시
     static void noteMergeSurvivor(long survivor) {
         if (searchActiveSet.contains(survivor)) {
             searchActiveSetTouchedByMerge = true;
         }
     }
 
-    // Renderer가 dirty 컬럼 반영을 끝내면 호출
+    // front 전체 리빌드로 dirty 컬럼이 무의미해질 때 호출
     static void clearDirtyColumns() {
         dirtyColumns.clear();
     }
@@ -99,17 +100,9 @@ final class FrontierSearch {
         int sy = BlockPos.unpackLongY(anchorCell);
 
         if (cellColor.get(anchorCell) == NO_ID && BlockSearch.isStandableAt(sx, sy, sz, false)) {
-            boolean seedIsNarrow = false;
-            if (MCRiderMinimap.EXCLUDE_NARROW_PATHS) {
-                // 미로딩 청크는 NARROW로 취급해 시딩 보류 (다음 틱 재시도)
-                seedIsNarrow = BlockSearch.isNarrowPassage(sx, sy, sz, 1, 0) != BlockSearch.PASSAGE_OPEN
-                        || BlockSearch.isNarrowPassage(sx, sy, sz, 0, 1) != BlockSearch.PASSAGE_OPEN;
-            }
-            if (!seedIsNarrow) {
-                long c = ColorGraph.newColor(NO_ID);
-                paintCell(sx, sy, sz, c);
-                FrontierQueue.push(anchorCell, sx, sz);
-            }
+            long c = ColorGraph.newColor(NO_ID);
+            paintCell(sx, sy, sz, c);
+            FrontierQueue.push(anchorCell, sx, sz);
         }
         long playerCell = resolvePlayerCellFromAnchor(anchorCell);
         updateActiveColorFromCell(playerCell);
@@ -361,15 +354,6 @@ final class FrontierSearch {
 
     // 새 트리거 없어도 다음 틱에 재시도해야 한다
     private static boolean exiledScanTimedOut = false;
-    
-    // beginIfIdle의 fill 콜백 비캡처 람다화
-    private static int revivedDrainSx, revivedDrainSz, revivedDrainMaxRange;
-    private static long revivedDrainDeadline;
-
-    private static void fillRevivedDrain() {
-        exiledScanTimedOut = FrontierQueue.drainExiledWithinRange(
-            revivedDrainSx, revivedDrainSz, revivedDrainMaxRange, revivedDrainDeadline);
-    }
 
     private static void processRevivedExiledCells(int sx, int sz, int maxRange, boolean containToActive, long deadline) {
         int chunkX = sx >> 4, chunkZ = sz >> 4;
@@ -381,11 +365,8 @@ final class FrontierSearch {
             lastDrainChunkZ = chunkZ;
             chunkLoadedSinceLastDrain = false;
         }
-        revivedDrainSx = sx;
-        revivedDrainSz = sz;
-        revivedDrainMaxRange = maxRange;
-        revivedDrainDeadline = deadline;
-        revivedProcessDrain.beginIfIdle(trigger, FrontierQueue.revivedScratch, FrontierSearch::fillRevivedDrain);
+        revivedProcessDrain.beginIfIdle(trigger, FrontierQueue.revivedScratch,
+                () -> exiledScanTimedOut = FrontierQueue.drainExiledWithinRange(sx, sz, maxRange, deadline));
         revivedProcessDrain.drain(FrontierQueue.revivedScratch, sx, sz, maxRange, containToActive, deadline);
     }
 
@@ -485,8 +466,8 @@ final class FrontierSearch {
     // 방향 d로 갈 수 있는지 판정해 handleReach로 넘긴다. 반환값은 갱신된 parkedSelf다.
     // 이 셀은 한 틱에 한 번만 park해야 해서(핑퐁 방지) 방향 루프 전체에 걸쳐 이어받아야 한다.
     private static boolean processNeighbor(long curPacked, int cx, int cy, int cz, long curColor,
-                                            boolean hasBlockAt2Meter, int[] d, boolean parkedSelf,
-                                            int sx, int sz, int maxRange, int bottomY) {
+                                           boolean hasBlockAt2Meter, int[] d, boolean parkedSelf,
+                                           int sx, int sz, int maxRange, int bottomY) {
         int nx = cx + d[0];
         int nz = cz + d[1];
 
@@ -552,7 +533,7 @@ final class FrontierSearch {
     }
 
     private static void handleReach(int cx, int cy, int cz, long curColor, int tx, int ty, int tz, boolean twoWay,
-                            int sx, int sz, int maxRange) {
+                                    int sx, int sz, int maxRange) {
         long targetCell = BlockPos.asLong(tx, ty, tz);
         long existing = cellColor.get(targetCell);
         if (existing == NO_ID) {
@@ -576,8 +557,9 @@ final class FrontierSearch {
                 long parentRoot = ColorGraph.resolve(curColor);
                 long childRoot = ColorGraph.resolve(existing);
                 if (parentRoot != childRoot) {
+                    boolean edgeAlreadyExists = ColorGraph.hasEdge(parentRoot, childRoot);
                     boolean isCycleMergeRequired;
-                    if (ColorGraph.hasEdge(parentRoot, childRoot)) {
+                    if (edgeAlreadyExists) {
                         isCycleMergeRequired = false;
                     } else {
                         LongOpenHashSet parentAncestors = ColorGraph.scratchParentAncestors;
@@ -587,8 +569,8 @@ final class FrontierSearch {
                     }
                     if (isCycleMergeRequired) {
                         ColorGraph.mergeColors(parentRoot, childRoot);
-                    }
-                    else {
+                    } else if (!edgeAlreadyExists) {
+                        // propagateActiveMembership은 addEdge가 방금 버전을 올렸다는 전제로 동작한다
                         ColorGraph.addEdge(parentRoot, childRoot);
                         propagateActiveMembership(parentRoot, childRoot, true);
                     }
@@ -615,21 +597,37 @@ final class FrontierSearch {
         long cell = BlockPos.asLong(x, y, z);
         long removedColor = cellColor.remove(cell);
         if (removedColor == NO_ID) return;
+        long removedRoot = ColorGraph.resolve(removedColor);
         long colKey = packColumn(x, z);
         IntOpenHashSet ys = visitedColumns.get(colKey);
         if (ys != null) {
             ys.remove(y);
-            if (ys.isEmpty()) {
-                visitedColumns.remove(colKey);
-                // columnsByRoot에서 죽은 colKey 걷어내기
-                long root = ColorGraph.resolve(removedColor);
-                LongOpenHashSet cols = columnsByRoot.get(root);
+            if (ys.isEmpty()) visitedColumns.remove(colKey);
+
+            // 지운 셀의 루트가 이 컬럼에 더 이상 안 남았을 때만 columnsByRoot에서 걷어낸다.
+            // 한 컬럼에 여러 루트의 셀이 섞여 있을 수 있어 ys.isEmpty()만으로는 부족하다.
+            if (!columnStillHasRoot(x, z, ys, removedRoot)) {
+                LongOpenHashSet cols = columnsByRoot.get(removedRoot);
                 if (cols != null) {
                     cols.remove(colKey);
-                    if (cols.isEmpty()) columnsByRoot.remove(root);
+                    if (cols.isEmpty()) columnsByRoot.remove(removedRoot);
                 }
             }
         }
         dirtyColumns.add(colKey);
+        // columnsByRoot에 이 root가 더 안 남아 있어야만(=살아있는 셀이 0개) 유령 노드 흡수를 시도한다.
+        // columnsByRoot 정리 뒤에 확인해야 정확하다.
+        if (!columnsByRoot.containsKey(removedRoot)) {
+            ColorGraph.noteCellErased(removedRoot);
+        }
+    }
+
+    private static boolean columnStillHasRoot(int x, int z, IntOpenHashSet remainingYs, long root) {
+        if (remainingYs == null || remainingYs.isEmpty()) return false;
+        IntIterator it = remainingYs.iterator();
+        while (it.hasNext()) {
+            if (resolvedRootAt(x, it.nextInt(), z) == root) return true;
+        }
+        return false;
     }
 }

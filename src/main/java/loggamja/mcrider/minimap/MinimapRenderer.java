@@ -608,6 +608,7 @@ final class MinimapRenderer {
                 selfMarkerRingReady = true;
             }
         } catch (Exception e) {
+            selfMarkerRingReady = true;
             LOGGER.error("[MCRider] 자기 마커 윤곽선 텍스처 생성에 실패했습니다.", e);
         }
     }

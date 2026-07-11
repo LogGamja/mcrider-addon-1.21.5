@@ -138,6 +138,7 @@ final class FrontierQueue {
     private static int exiledScanIndex = 0;
 
     static boolean drainExiledWithinRange(int sx, int sz, int maxRange, long deadline) {
+        // ResumableDrain 계약상 이 시점의 revivedScratch는 항상 비어 있어야 한다
         revivedScratch.clear();
         if (exiledScanIndex == 0) {
             int n = exiledByChunk.size();
