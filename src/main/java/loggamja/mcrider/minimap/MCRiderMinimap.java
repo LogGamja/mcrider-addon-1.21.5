@@ -16,6 +16,8 @@ import loggamja.mcrider.option.MCRiderConfig;
 import loggamja.mcrider.MCRiderMain;
 import net.minecraft.world.World;
 
+import java.lang.ref.WeakReference;
+
 // 플로드필 기반 트랙 미니맵 (색깔 관계 그래프 방식)
 // 규칙은 ColorGraph.java 참고
 public class MCRiderMinimap implements ClientModInitializer {
@@ -26,10 +28,12 @@ public class MCRiderMinimap implements ClientModInitializer {
     }
     public static final boolean EXCLUDE_NARROW_PATHS = true;
 
-    static MinecraftClient client = MinecraftClient.getInstance();
+    static MinecraftClient client;
 
     @Override
     public void onInitializeClient() {
+        client = MinecraftClient.getInstance();
+
         ClientTickEvents.START_CLIENT_TICK.register(client -> onTickStart());
 
         HudLayerRegistrationCallback.EVENT.register(layeredDrawer ->
@@ -46,7 +50,7 @@ public class MCRiderMinimap implements ClientModInitializer {
         // CHUNK_NOT_LOADED로 보류된 셀 복구용
         ClientChunkEvents.CHUNK_LOAD.register((world, chunk) -> FrontierSearch.notifyChunkLoaded());
     }
-    private static World lastWorld = null;
+    private static WeakReference<World> lastWorld = new WeakReference<>(null);
     private static boolean lastDebugColors = false;
 
     private static void onTickStart() {
@@ -59,14 +63,16 @@ public class MCRiderMinimap implements ClientModInitializer {
         // 매 DUMP_EVERY_TICKS 틱마다 누적된 통계를 로그로 요약해서 찍는다.
         MCRiderBenchmark.onTickEnd(() -> (long) ColorGraph.actualColorCount);
 
-        if (client.world != lastWorld) {
+        if (client.world != lastWorld.get()) {
             clearAllMap();
         }
-        lastWorld = client.world;
+        lastWorld = new WeakReference<>(client.world);
 
-        if (ColorGraph.actualColorCount >= 5000) {
+        if (ColorGraph.actualColorCount >= 2500) {
             LOGGER.warn("[MCRider] Minimap color limit exceeded ({}), resetting map.", ColorGraph.actualColorCount);
             clearAllMap();
+            lastWorld = new WeakReference<>(client.world);
+
             return;
         }
 
@@ -96,7 +102,7 @@ public class MCRiderMinimap implements ClientModInitializer {
         MCRiderBenchmark.end("paint(per-tick)", paintStart, MinimapRenderer.lastColumnsPainted);
     }
     public static void clearAllMap() {
-        lastWorld = null;
+        lastWorld = new WeakReference<>(null);
 
         FrontierSearch.reset();
         ColorGraph.reset();

@@ -12,14 +12,8 @@ import net.minecraft.util.math.ChunkPos;
 final class FrontierQueue {
     private FrontierQueue() {}
 
-    enum ParkReason {
-        CHUNK_NOT_LOADED,
-        OUT_OF_RANGE,
-        COLOR_INACTIVE
-    }
-
-    static Long2ObjectOpenHashMap<LongArrayList> frontierByChunk = new Long2ObjectOpenHashMap<>();
-    static Long2ObjectOpenHashMap<LongArrayList> exiledByChunk = new Long2ObjectOpenHashMap<>();
+    static final Long2ObjectOpenHashMap<LongArrayList> frontierByChunk = new Long2ObjectOpenHashMap<>();
+    static final Long2ObjectOpenHashMap<LongArrayList> exiledByChunk = new Long2ObjectOpenHashMap<>();
     static final LongOpenHashSet inactiveColorParked = new LongOpenHashSet();
 
     static final LongArrayList revivedScratch = new LongArrayList();
@@ -60,6 +54,7 @@ final class FrontierQueue {
         return bucket;
     }
 
+    // getOrCreateBucket을 안 쓰는 이유: frontierByChunk에 새 키가 생길 때마다 chunkKeysVersion을 올려야 한다.
     static void push(long cell, int cx, int cz) {
         long chunkKey = ChunkPos.toLong(cx >> 4, cz >> 4);
         LongArrayList bucket = frontierByChunk.get(chunkKey);
@@ -79,21 +74,17 @@ final class FrontierQueue {
         if (taxiDistance2D(cx, cz, sx, sz) <= maxRange) {
             push(cell, cx, cz);
         } else {
-            park(cell, cx, cz, ParkReason.OUT_OF_RANGE);
+            park(cell, cx, cz);
         }
     }
 
-    static void park(long packedPos, int worldX, int worldZ, ParkReason reason) {
-        if (reason == ParkReason.COLOR_INACTIVE) {
-            inactiveColorParked.add(packedPos);
-        } else {
-            long key = ChunkPos.toLong(worldX >> 4, worldZ >> 4);
-            getOrCreateBucket(exiledByChunk, key, 4).add(packedPos);
-        }
+    static void park(long packedPos, int worldX, int worldZ) {
+        long key = ChunkPos.toLong(worldX >> 4, worldZ >> 4);
+        getOrCreateBucket(exiledByChunk, key, 4).add(packedPos);
     }
 
     static void parkInactiveColor(long packedPos) {
-        park(packedPos, 0, 0, ParkReason.COLOR_INACTIVE);
+        inactiveColorParked.add(packedPos);
     }
 
     // searchActiveSet 재계산 후에만 호출해야 한다. 보류된 셀을 복구한다.
@@ -138,7 +129,6 @@ final class FrontierQueue {
     private static int exiledScanIndex = 0;
 
     static boolean drainExiledWithinRange(int sx, int sz, int maxRange, long deadline) {
-        // ResumableDrain 계약상 이 시점의 revivedScratch는 항상 비어 있어야 한다
         revivedScratch.clear();
         if (exiledScanIndex == 0) {
             int n = exiledByChunk.size();
@@ -161,7 +151,7 @@ final class FrontierQueue {
             int chunkX = ChunkPos.getPackedX(chunkKey);
             int chunkZ = ChunkPos.getPackedZ(chunkKey);
             if (taxiDistanceFromChunkToPos(chunkX, chunkZ, sx, sz) <= maxRange
-                    && MCRiderMinimap.client.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
+                    && BlockSearch.isChunkLoadedAtChunk(chunkX, chunkZ)) {
                 // 청크 코너 셀도 거리 재검사 (park/revive 반복 회피)
                 int keep = 0;
                 for (int i = 0, n = pending.size(); i < n; i++) {
@@ -187,13 +177,21 @@ final class FrontierQueue {
     }
 
     static void reset() {
-        frontierByChunk.clear();
-        exiledByChunk.clear();
-        inactiveColorParked.clear();
-        revivedScratch.clear();
+        clearAndTrim(frontierByChunk);
+        clearAndTrim(exiledByChunk);
+        clearAndTrim(inactiveColorParked);
+        clearAndTrim(revivedScratch);
+
         chunkKeysVersion++;
         lastSortVersion = -1;
         exiledScanIndex = 0;
         exiledScanLen = 0;
+
+        sortSnap = new long[0];
+        sortPacked = new long[0];
+        exiledScanKeys = new long[0];
     }
+    private static void clearAndTrim(Long2ObjectOpenHashMap<?> map) { map.clear(); map.trim(); }
+    private static void clearAndTrim(LongOpenHashSet set) { set.clear(); set.trim(); }
+    private static void clearAndTrim(LongArrayList list) { list.clear(); list.trim(); }
 }
