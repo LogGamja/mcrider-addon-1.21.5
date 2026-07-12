@@ -45,30 +45,35 @@ final class MinimapExporter {
         sessionFileStem = null;
         if (fileStem == null) return;
 
-        NativeImage image = buildSessionImage();
-        if (image == null) return;
+        SessionImage result = buildSessionImage();
+        if (result == null) return;
+
+        // 파일명에 이미지 좌상단(px 0,0)이 가리키는 실제 월드 좌표를 남긴다.
+        String filename = String.format("%s_x%d_z%d.png", fileStem, result.originX, result.originZ);
 
         try {
             Path dir = FabricLoader.getInstance().getGameDir().resolve("mcrider-minimaps");
             Files.createDirectories(dir);
-            Path target = dir.resolve(fileStem + ".png");
+            Path target = dir.resolve(filename);
             WRITER.submit(() -> {
-                try (image) {
-                    image.writeTo(target);
+                try (result.image) {
+                    result.image.writeTo(target);
                 } catch (IOException e) {
                     LOGGER.error("[MCRider] 미니맵 PNG 저장에 실패했습니다: {}", target, e);
                 }
             });
         } catch (IOException e) {
             LOGGER.error("[MCRider] 미니맵 저장 폴더 생성에 실패했습니다.", e);
-            image.close();
+            result.image.close();
         }
     }
+
+    private record SessionImage(NativeImage image, int originX, int originZ) {}
 
     // 세션 중 방문한 모든 컬럼의 바운딩 박스를 구해 그 크기의 이미지를 만들고, 컬럼마다
     // (activeSet 필터 없이) 색을 계산해 채운다. clearAllMap() 전에 동기적으로 끝내야 하므로
     // 여기서는 픽셀 버퍼만 만들고, 실제 PNG 인코딩/쓰기는 endSession()에서 비동기로 넘긴다.
-    private static NativeImage buildSessionImage() {
+    private static SessionImage buildSessionImage() {
         if (FrontierSearch.visitedColumns.isEmpty()) return null;
 
         int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
@@ -104,6 +109,6 @@ final class MinimapExporter {
             image.setColorArgb(x - minX, z - minZ, color);
         }
 
-        return image;
+        return new SessionImage(image, minX, minZ);
     }
 }
