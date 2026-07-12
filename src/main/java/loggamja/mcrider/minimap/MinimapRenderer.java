@@ -4,7 +4,6 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import it.unimi.dsi.fastutil.ints.IntIterator;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongIterator;
-import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.PlayerSkinDrawer;
@@ -374,27 +373,27 @@ final class MinimapRenderer {
         return (activeCount >= 2) ? OVERLAP_COLOR : VISITED_COLOR;
     }
 
-    private static final LongOpenHashSet exportSeenRoots = new LongOpenHashSet();
-
     // 세션 전체 export용 색상 계산. 화면 표시용 computeColumnColor와 달리 activeSet(현재 활성 경로) 필터를
     // 거치지 않으므로, 낙하 등으로 부모 색이 비활성화되어 화면엔 안 보이는 구간도 결과 이미지엔 남는다.
+    // 겹침 강조(OVERLAP_COLOR) 판정은 computeColumnColor와 동일하게 "이 컬럼에 쌓인 셀 개수"(높이 차이로
+    // 같은 경로가 위아래로 겹치는 경우 포함) 기준이며, 서로 다른 root 개수 기준이 아니다.
     static int computeExportColumnColor(int x, int z) {
         IntOpenHashSet ys = FrontierSearch.visitedColumns.get(FrontierSearch.packColumn(x, z));
         if (ys == null || ys.isEmpty()) return 0;
 
         int repY = Integer.MIN_VALUE;
         long repRoot = NO_ID;
-        exportSeenRoots.clear();
+        int cellCount = 0;
         IntIterator yi = ys.iterator();
         while (yi.hasNext()) {
             int y = yi.nextInt();
             long root = FrontierSearch.resolvedRootAt(x, y, z);
             if (root == NO_ID) continue;
-            exportSeenRoots.add(root);
+            cellCount++;
             if (y >= repY) { repY = y; repRoot = root; }
         }
         if (repRoot == NO_ID) return 0;
-        return (exportSeenRoots.size() >= 2) ? OVERLAP_COLOR : VISITED_COLOR;
+        return (cellCount >= 2) ? OVERLAP_COLOR : VISITED_COLOR;
     }
 
     private static int colorForRoot(long root) {
