@@ -16,6 +16,8 @@ import loggamja.mcrider.option.MCRiderConfig;
 import loggamja.mcrider.MCRiderMain;
 import net.minecraft.world.World;
 
+import java.lang.ref.WeakReference;
+
 // 플로드필 기반 트랙 미니맵 (색깔 관계 그래프 방식)
 // 규칙은 ColorGraph.java 참고
 public class MCRiderMinimap implements ClientModInitializer {
@@ -26,7 +28,7 @@ public class MCRiderMinimap implements ClientModInitializer {
     }
     public static final boolean EXCLUDE_NARROW_PATHS = true;
 
-    static MinecraftClient client = MinecraftClient.getInstance();
+    static MinecraftClient client;
 
     @Override
     public void onInitializeClient() {
@@ -51,7 +53,7 @@ public class MCRiderMinimap implements ClientModInitializer {
             FrontierSearch.notifyChunkLoaded();
         });
     }
-    private static World lastWorld = null;
+    private static WeakReference<World> lastWorld = new WeakReference<>(null);
     private static boolean lastDebugColors = false;
 
     private static void onTickStart() {
@@ -60,15 +62,15 @@ public class MCRiderMinimap implements ClientModInitializer {
         if (!MCRiderMain.isRidingKart) return;
         if (client.player == null || client.world == null) return;
 
-        if (client.world != lastWorld) {
+        if (client.world != lastWorld.get()) {
             clearAllMap();
         }
-        lastWorld = client.world;
+        lastWorld = new WeakReference<>(client.world);
 
         if (ColorGraph.actualColorCount >= 2500) {
             LOGGER.warn("[MCRider] Minimap color limit exceeded ({}), resetting map.", ColorGraph.actualColorCount);
             clearAllMap();
-            lastWorld = client.world;
+            lastWorld = new WeakReference<>(client.world);
 
             return;
         }
@@ -93,7 +95,7 @@ public class MCRiderMinimap implements ClientModInitializer {
         MinimapRenderer.repaintDirtyColumns();
     }
     public static void clearAllMap() {
-        lastWorld = null;
+        lastWorld = new WeakReference<>(null);
 
         FrontierSearch.reset();
         ColorGraph.reset();

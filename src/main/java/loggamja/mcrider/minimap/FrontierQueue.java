@@ -12,11 +12,6 @@ import net.minecraft.util.math.ChunkPos;
 final class FrontierQueue {
     private FrontierQueue() {}
 
-    enum ParkReason {
-        CHUNK_NOT_LOADED,
-        OUT_OF_RANGE
-    }
-
     static final Long2ObjectOpenHashMap<LongArrayList> frontierByChunk = new Long2ObjectOpenHashMap<>();
     static final Long2ObjectOpenHashMap<LongArrayList> exiledByChunk = new Long2ObjectOpenHashMap<>();
     static final LongOpenHashSet inactiveColorParked = new LongOpenHashSet();
@@ -79,11 +74,11 @@ final class FrontierQueue {
         if (taxiDistance2D(cx, cz, sx, sz) <= maxRange) {
             push(cell, cx, cz);
         } else {
-            park(cell, cx, cz, ParkReason.OUT_OF_RANGE);
+            park(cell, cx, cz);
         }
     }
 
-    static void park(long packedPos, int worldX, int worldZ, ParkReason reason) {
+    static void park(long packedPos, int worldX, int worldZ) {
         long key = ChunkPos.toLong(worldX >> 4, worldZ >> 4);
         getOrCreateBucket(exiledByChunk, key, 4).add(packedPos);
     }

@@ -141,11 +141,11 @@ final class FrontierSearch {
                     int cz = BlockPos.unpackLongZ(curPacked);
 
                     if (maxRange < FrontierQueue.taxiDistance2D(cx, cz, sx, sz)) {
-                        FrontierQueue.park(curPacked, cx, cz, FrontierQueue.ParkReason.OUT_OF_RANGE);
+                        FrontierQueue.park(curPacked, cx, cz);
                         continue;
                     }
                     if (!BlockSearch.isChunkLoadedAt(cx, cz)) {
-                        FrontierQueue.park(curPacked, cx, cz, FrontierQueue.ParkReason.CHUNK_NOT_LOADED);
+                        FrontierQueue.park(curPacked, cx, cz);
                         continue;
                     }
 
@@ -496,7 +496,7 @@ final class FrontierSearch {
             // 이웃 청크 키로 park해야 그 청크 로딩이 revive 조건이 된다.
             // 자기 청크로 걸면 이미 로딩된 상태라 매 틱 즉시 되살렸다가 다시 park하는 핑퐁이 생긴다.
             if (!parkedSelf) {
-                FrontierQueue.park(curPacked, nx, nz, FrontierQueue.ParkReason.CHUNK_NOT_LOADED);
+                FrontierQueue.park(curPacked, nx, nz);
                 parkedSelf = true;
             }
             return parkedSelf;
@@ -517,7 +517,7 @@ final class FrontierSearch {
                 // narrow 체크와 동일하게, 판정에 필요한 청크가 로딩될 때까지 이 셀을 보류한다.
                 if (!parkedSelf) {
                     int ux = (int) (unloaded >> 32), uz = (int) unloaded;
-                    FrontierQueue.park(curPacked, ux, uz, FrontierQueue.ParkReason.CHUNK_NOT_LOADED);
+                    FrontierQueue.park(curPacked, ux, uz);
                     parkedSelf = true;
                 }
                 return parkedSelf;
@@ -540,7 +540,7 @@ final class FrontierSearch {
                 if (!parkedSelf) {
                     int unknownX = (int) (narrow >> 32);
                     int unknownZ = (int) narrow;
-                    FrontierQueue.park(curPacked, unknownX, unknownZ, FrontierQueue.ParkReason.CHUNK_NOT_LOADED);
+                    FrontierQueue.park(curPacked, unknownX, unknownZ);
                     parkedSelf = true;
                 }
                 return parkedSelf;
