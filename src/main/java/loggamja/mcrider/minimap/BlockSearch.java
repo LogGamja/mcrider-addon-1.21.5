@@ -39,6 +39,11 @@ final class BlockSearch {
     private static final Chunk[] cacheChunks = new Chunk[CHUNK_CACHE_SLOTS];
     private static final BlockPos.Mutable MUTABLE = new BlockPos.Mutable();
 
+    static {
+        // 배열 기본값 0은 청크 (0,0)의 유효 키라 미초기화 상태와 구분이 안 된다. Long.MIN_VALUE로 채워 방지.
+        java.util.Arrays.fill(cacheKeys, Long.MIN_VALUE);
+    }
+
     // narrow/가짜 블록 판정에서 "미확정 + 로딩 필요한 청크" 반환용
     private static long packWorldXZ(int x, int z) {
         return ((long) x << 32) | (z & 0xFFFFFFFFL);
@@ -72,12 +77,16 @@ final class BlockSearch {
         }
     }
     static boolean isChunkLoadedAt(int x, int z) {
+        return isChunkLoadedAtChunk(x >> 4, z >> 4);
+    }
+    // 특정 청크 좌표가 로드되었는지
+    static boolean isChunkLoadedAtChunk(int chunkX, int chunkZ) {
         if (MCRiderMinimap.client.world == null) return false;
-        long key = ChunkPos.toLong(x >> 4, z >> 4);
+        long key = ChunkPos.toLong(chunkX, chunkZ);
         for (int i = 0; i < CHUNK_CACHE_SLOTS; i++) {
             if (cacheKeys[i] == key && cacheChunks[i] != null) return true;
         }
-        return MCRiderMinimap.client.world.getChunkManager().isChunkLoaded(x >> 4, z >> 4);
+        return MCRiderMinimap.client.world.getChunkManager().isChunkLoaded(chunkX, chunkZ);
     }
     static boolean isAirAt(int x, int y, int z) {
         // 가짜 블록이 하나도 없으면(대부분의 틱/깨끗한 트랙) asLong·해시 조회를 건너뛴다.
@@ -103,7 +112,7 @@ final class BlockSearch {
     static boolean isWallIfNotAir(boolean baseIsAir, int x, int y, int z) {
         return !baseIsAir && isBlockAt(isWall, x, y, z);
     }
-    // 도달 불가면 Integer.MIN_VALUE
+    // 도달 불가면 Integer.MIN_VALUE. 월드 바닥(bottomY)은 항상 블록으로 취급해 낙하를 멈춘다.
     static int resolveTargetY(int nx, int cy, int nz, boolean baseIsAir, boolean baseIsWall, boolean fromHasBlockAt2Meter, int bottomY) {
         if (!isAirAt(nx, cy + 1, nz)) return Integer.MIN_VALUE;
         if (!baseIsAir) {

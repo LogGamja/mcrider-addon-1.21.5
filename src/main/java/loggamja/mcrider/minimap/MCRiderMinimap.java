@@ -30,6 +30,8 @@ public class MCRiderMinimap implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        client = MinecraftClient.getInstance();
+
         ClientTickEvents.START_CLIENT_TICK.register(client -> onTickStart());
 
         HudLayerRegistrationCallback.EVENT.register(layeredDrawer ->

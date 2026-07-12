@@ -223,7 +223,7 @@ final class ColorGraph {
         actualColorCount--;
         colorBirth.remove(loser);
         FrontierSearch.markColumnsDirtyForRoot(loser); // columnsByRoot 이전 전에 dirty 마킹
-        FrontierSearch.noteMergeSurvivor(survivor); // 자손 없는 색 흡수 신호
+        FrontierSearch.noteMergeSurvivor(survivor); // diff로 못 잡는 흡수 신호
         LongOpenHashSet cols = FrontierSearch.columnsByRoot.remove(loser);
         if (cols != null) {
             FrontierSearch.columnsByRoot.computeIfAbsent(survivor, k -> new LongOpenHashSet()).addAll(cols);
@@ -315,39 +315,31 @@ final class ColorGraph {
     }
 
     static void reset() {
-        colorParentPtr.clear();
-        colorParentPtr.trim();
-        childToParents.clear();
-        childToParents.trim();
-        parentToChildren.clear();
-        parentToChildren.trim();
-        colorBirth.clear();
-        colorBirth.trim();
+        clearAndTrim(colorParentPtr);
+        clearAndTrim(childToParents);
+        clearAndTrim(parentToChildren);
+        clearAndTrim(colorBirth);
 
-        scratchGroup.clear();
-        scratchGroup.trim();
-        scratchReachable.clear();
-        scratchReachable.trim();
-        scratchReachQueue.clear();
-        scratchReachQueue.trim();
-        scratchAncestorsOfTo.clear();
-        scratchAncestorsOfTo.trim();
-        scratchAncestorsOfToQueue.clear();
-        scratchAncestorsOfToQueue.trim();
-        scratchSeen.clear();
-        scratchSeen.trim();
-        scratchSeenQueue.clear();
-        scratchSeenQueue.trim();
-        scratchDescendants.clear();
-        scratchDescendants.trim();
-        scratchAncestors.clear();
-        scratchAncestors.trim();
-        scratchParentAncestors.clear();
-        scratchParentAncestors.trim();
+        clearAndTrim(scratchGroup);
+        clearAndTrim(scratchReachable);
+        clearAndTrim(scratchReachQueue);
+        clearAndTrim(scratchAncestorsOfTo);
+        clearAndTrim(scratchAncestorsOfToQueue);
+        clearAndTrim(scratchSeen);
+        clearAndTrim(scratchSeenQueue);
+        clearAndTrim(scratchDescendants);
+        clearAndTrim(scratchAncestors);
+        clearAndTrim(scratchParentAncestors);
 
         nextColorId = 0;
         birthCounter = 0;
         colorGraphVersion = 0;
         actualColorCount = 0;
     }
+    private static void clearAndTrim(Long2LongOpenHashMap map) { map.clear(); map.trim(); }
+    private static void clearAndTrim(Long2ObjectOpenHashMap<?> map) { map.clear(); map.trim(); }
+    private static void clearAndTrim(Long2IntOpenHashMap map) { map.clear(); map.trim(); }
+    private static void clearAndTrim(LongOpenHashSet set) { set.clear(); set.trim(); }
+    private static void clearAndTrim(LongArrayFIFOQueue queue) { queue.clear(); queue.trim(); }
+
 }

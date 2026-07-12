@@ -25,7 +25,6 @@ import loggamja.mcrider.option.MCRiderConfig;
 import loggamja.mcrider.MCRiderMain;
 
 import java.io.InputStream;
-import java.util.Objects;
 
 import static loggamja.mcrider.minimap.ColorGraph.NO_ID;
 
@@ -416,7 +415,10 @@ final class MinimapRenderer {
         MinecraftClient client = MCRiderMinimap.client;
 
         front.ensure();
-        if (front.textureDirty) {
+
+        // 전체 재앵커 중엔 front가 그려지지 않으므로 업로드를 건너뛴다(재빌드 완료 시 markAllDirty로 전체 재업로드됨).
+        final boolean frontHoldsStaleRegion = rebuildInProgress && rebuildTarget == back && rebuildTargetFullyStale;
+        if (front.textureDirty && !frontHoldsStaleRegion) {
             front.uploadDirtyRegion();
             front.textureDirty = false;
         }
@@ -455,8 +457,6 @@ final class MinimapRenderer {
         final float u0 = (float) Math.max(0, Math.min(TEX_SIZE - texRegion, p.x - front.originX - texRegion / 2.0));
         final float v0 = (float) Math.max(0, Math.min(TEX_SIZE - texRegion, p.z - front.originZ - texRegion / 2.0));
 
-        final boolean frontHoldsStaleRegion = rebuildInProgress && rebuildTarget == back && rebuildTargetFullyStale;
-
         // scissor 누락 시 GL scissor가 다음 프레임까지 적용되어 화면 클리핑 발생. try-finally로 보장한다.
         context.enableScissor(viewX1, viewY1, viewX2, viewY2);
         try {
@@ -483,6 +483,7 @@ final class MinimapRenderer {
     private static void drawRiderIcons(DrawContext context, float tickDelta, int centerX, int centerY,
                                        float yawDeg, Vec3d p, double scale, double sizeFactor) {
         MinecraftClient client = MCRiderMinimap.client;
+        if (client.world == null) return;
 
         final float iconSize = (float) (RIDER_ICON_SIZE * sizeFactor);
         final float enemyIconSize = iconSize * ENEMY_ICON_SCALE;
@@ -503,7 +504,7 @@ final class MinimapRenderer {
         // 내 카트 몸체, 적, 윤곽선 순서
         drawSelfMarker(context, centerX, centerY, selfIconSize, delta);
 
-        for (AbstractClientPlayerEntity other : Objects.requireNonNull(client.world).getPlayers()) {
+        for (AbstractClientPlayerEntity other : client.world.getPlayers()) {
             if (other == MCRiderMain.getRidingPlayer()) continue;
             if (other == other.getRootVehicle()) continue;
 
@@ -669,7 +670,6 @@ final class MinimapRenderer {
             matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(rotationDeg));
             matrices.translate(-size / 2f, -size / 2f, 0);
 
-            // 중심 기준 확대로 윤곽선 두께 정확히 조정
             matrices.push();
             try {
                 float outlineScale = (isize + 2f * ENEMY_HEAD_OUTLINE_THICKNESS) / (isize + 2f);

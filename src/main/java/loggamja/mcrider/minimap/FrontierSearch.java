@@ -17,9 +17,9 @@ final class FrontierSearch {
     private FrontierSearch() {}
 
     private static final Long2LongOpenHashMap cellColor = new Long2LongOpenHashMap();
-    static Long2ObjectOpenHashMap<IntOpenHashSet> visitedColumns = new Long2ObjectOpenHashMap<>();
-    static LongOpenHashSet dirtyColumns = new LongOpenHashSet();
-    static Long2ObjectOpenHashMap<LongOpenHashSet> columnsByRoot = new Long2ObjectOpenHashMap<>();
+    static final Long2ObjectOpenHashMap<IntOpenHashSet> visitedColumns = new Long2ObjectOpenHashMap<>();
+    static final LongOpenHashSet dirtyColumns = new LongOpenHashSet();
+    static final Long2ObjectOpenHashMap<LongOpenHashSet> columnsByRoot = new Long2ObjectOpenHashMap<>();
     static final LongOpenHashSet activeSet = new LongOpenHashSet();
 
     static long activeColor = NO_ID;
@@ -471,6 +471,8 @@ final class FrontierSearch {
 
     // 전제: 이 호출 전에 addEdge가 이미 colorGraphVersion을 올려뒀어야 한다.
     // 그래야 activeSet에 대한 아래의 직접 수정이 SubtreeCache의 버전 캐시와 계속 일치한다.
+    // childRoot 한 단계만 마킹하지만, 같은 틱 뒤에 호출되는 rebuildActiveSet()의 전체 diff가
+    // childRoot의 기존 손자 서브트리까지 마저 잡아줘서 팝인 없이 같은 틱에 반영된다.
     private static void propagateActiveMembership(long parentRoot, long childRoot, boolean markDirty) {
         if (activeSet.contains(parentRoot)) {
             if (activeSet.add(childRoot) && markDirty) markColumnsDirtyForRoot(childRoot);

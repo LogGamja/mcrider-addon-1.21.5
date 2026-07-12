@@ -12,15 +12,13 @@ import net.minecraft.util.math.ChunkPos;
 final class FrontierQueue {
     private FrontierQueue() {}
 
-    // park()의 동작은 reason이 아닌 호출자가 넘기는 좌표에 따른다
     enum ParkReason {
         CHUNK_NOT_LOADED,
-        OUT_OF_RANGE,
-        COLOR_INACTIVE
+        OUT_OF_RANGE
     }
 
-    static Long2ObjectOpenHashMap<LongArrayList> frontierByChunk = new Long2ObjectOpenHashMap<>();
-    static Long2ObjectOpenHashMap<LongArrayList> exiledByChunk = new Long2ObjectOpenHashMap<>();
+    static final Long2ObjectOpenHashMap<LongArrayList> frontierByChunk = new Long2ObjectOpenHashMap<>();
+    static final Long2ObjectOpenHashMap<LongArrayList> exiledByChunk = new Long2ObjectOpenHashMap<>();
     static final LongOpenHashSet inactiveColorParked = new LongOpenHashSet();
 
     static final LongArrayList revivedScratch = new LongArrayList();
@@ -86,16 +84,12 @@ final class FrontierQueue {
     }
 
     static void park(long packedPos, int worldX, int worldZ, ParkReason reason) {
-        if (reason == ParkReason.COLOR_INACTIVE) {
-            inactiveColorParked.add(packedPos);
-        } else {
-            long key = ChunkPos.toLong(worldX >> 4, worldZ >> 4);
-            getOrCreateBucket(exiledByChunk, key, 4).add(packedPos);
-        }
+        long key = ChunkPos.toLong(worldX >> 4, worldZ >> 4);
+        getOrCreateBucket(exiledByChunk, key, 4).add(packedPos);
     }
 
     static void parkInactiveColor(long packedPos) {
-        park(packedPos, 0, 0, ParkReason.COLOR_INACTIVE);
+        inactiveColorParked.add(packedPos);
     }
 
     // searchActiveSet 재계산 후에만 호출해야 한다. 보류된 셀을 복구한다.
@@ -162,7 +156,7 @@ final class FrontierQueue {
             int chunkX = ChunkPos.getPackedX(chunkKey);
             int chunkZ = ChunkPos.getPackedZ(chunkKey);
             if (taxiDistanceFromChunkToPos(chunkX, chunkZ, sx, sz) <= maxRange
-                    && MCRiderMinimap.client.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
+                    && BlockSearch.isChunkLoadedAtChunk(chunkX, chunkZ)) {
                 // 청크 코너 셀도 거리 재검사 (park/revive 반복 회피)
                 int keep = 0;
                 for (int i = 0, n = pending.size(); i < n; i++) {
@@ -188,16 +182,10 @@ final class FrontierQueue {
     }
 
     static void reset() {
-        frontierByChunk.clear();
-        frontierByChunk.trim();
-        exiledByChunk.clear();
-        exiledByChunk.trim();
-
-        inactiveColorParked.clear();
-        inactiveColorParked.trim();
-
-        revivedScratch.clear();
-        revivedScratch.trim();
+        clearAndTrim(frontierByChunk);
+        clearAndTrim(exiledByChunk);
+        clearAndTrim(inactiveColorParked);
+        clearAndTrim(revivedScratch);
 
         chunkKeysVersion++;
         lastSortVersion = -1;
@@ -208,4 +196,7 @@ final class FrontierQueue {
         sortPacked = new long[0];
         exiledScanKeys = new long[0];
     }
+    private static void clearAndTrim(Long2ObjectOpenHashMap<?> map) { map.clear(); map.trim(); }
+    private static void clearAndTrim(LongOpenHashSet set) { set.clear(); set.trim(); }
+    private static void clearAndTrim(LongArrayList list) { list.clear(); list.trim(); }
 }
