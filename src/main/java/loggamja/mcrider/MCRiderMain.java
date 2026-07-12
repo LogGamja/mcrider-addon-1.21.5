@@ -146,10 +146,18 @@ public class MCRiderMain implements ClientModInitializer {
     }
     void updateRidingState() {
         if (currentSaddleType.equals("none") == isRidingKart) {
+            boolean wasRiding = isRidingKart;
             isRidingKart = !isRidingKart;
 
             MCRiderCamera.lastPos = null;
+            // clearAllMap()이 미니맵 텍스처를 지우기 전에 세션 종료 캡처를 먼저 해야 한다.
+            if (wasRiding) {
+                MCRiderMinimap.exportSessionEnd();
+            }
             MCRiderMinimap.clearAllMap();
+            if (!wasRiding) {
+                MCRiderMinimap.exportSessionStart();
+            }
             autoThirdPerson();
         }
     }

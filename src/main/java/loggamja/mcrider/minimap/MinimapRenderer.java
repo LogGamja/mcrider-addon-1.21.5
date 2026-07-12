@@ -4,6 +4,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import it.unimi.dsi.fastutil.ints.IntIterator;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongIterator;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.PlayerSkinDrawer;
@@ -371,6 +372,29 @@ final class MinimapRenderer {
         if (repRoot == NO_ID) return 0;
         // 길이 겹치면 강조
         return (activeCount >= 2) ? OVERLAP_COLOR : VISITED_COLOR;
+    }
+
+    private static final LongOpenHashSet exportSeenRoots = new LongOpenHashSet();
+
+    // 세션 전체 export용 색상 계산. 화면 표시용 computeColumnColor와 달리 activeSet(현재 활성 경로) 필터를
+    // 거치지 않으므로, 낙하 등으로 부모 색이 비활성화되어 화면엔 안 보이는 구간도 결과 이미지엔 남는다.
+    static int computeExportColumnColor(int x, int z) {
+        IntOpenHashSet ys = FrontierSearch.visitedColumns.get(FrontierSearch.packColumn(x, z));
+        if (ys == null || ys.isEmpty()) return 0;
+
+        int repY = Integer.MIN_VALUE;
+        long repRoot = NO_ID;
+        exportSeenRoots.clear();
+        IntIterator yi = ys.iterator();
+        while (yi.hasNext()) {
+            int y = yi.nextInt();
+            long root = FrontierSearch.resolvedRootAt(x, y, z);
+            if (root == NO_ID) continue;
+            exportSeenRoots.add(root);
+            if (y >= repY) { repY = y; repRoot = root; }
+        }
+        if (repRoot == NO_ID) return 0;
+        return (exportSeenRoots.size() >= 2) ? OVERLAP_COLOR : VISITED_COLOR;
     }
 
     private static int colorForRoot(long root) {

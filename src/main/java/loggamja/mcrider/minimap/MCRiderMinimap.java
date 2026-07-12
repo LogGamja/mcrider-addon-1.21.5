@@ -101,4 +101,13 @@ public class MCRiderMinimap implements ClientModInitializer {
         ColorGraph.reset();
         MinimapRenderer.reset();
     }
+
+    // 카트 세션(탑승~하차) PNG export 훅. exportSessionEnd()는 반드시 clearAllMap()보다 먼저 호출해야
+    // 세션 동안의 방문 기록(FrontierSearch.visitedColumns)이 지워지기 전에 이미지를 만들 수 있다.
+    public static void exportSessionStart() {
+        MinimapExporter.startSession();
+    }
+    public static void exportSessionEnd() {
+        MinimapExporter.endSession();
+    }
 }
