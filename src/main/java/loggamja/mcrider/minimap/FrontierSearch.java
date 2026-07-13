@@ -93,14 +93,14 @@ final class FrontierSearch {
         var world = MCRiderMinimap.client.world;
         if (world == null) return;
 
-        if (!BlockSearch.isChunkLoadedAt(start.getX(), start.getZ())) return;
+        if (!BlockQuery.isChunkLoadedAt(start.getX(), start.getZ())) return;
 
         int sx = start.getX(), sz = start.getZ();
         long anchorCell = findAnchorCell(sx, start.getY(), sz, world.getBottomY());
         if (anchorCell == NO_ID) return;
         int sy = BlockPos.unpackLongY(anchorCell);
 
-        if (cellColor.get(anchorCell) == NO_ID && BlockSearch.isStandableAt(sx, sy, sz, false)) {
+        if (cellColor.get(anchorCell) == NO_ID && BlockQuery.isStandableAt(sx, sy, sz, false)) {
             long c = ColorGraph.newColor(NO_ID);
             paintCell(sx, sy, sz, c);
             FrontierQueue.push(anchorCell, sx, sz);
@@ -145,7 +145,7 @@ final class FrontierSearch {
                         FrontierQueue.park(curPacked, cx, cz);
                         continue;
                     }
-                    if (!BlockSearch.isChunkLoadedAt(cx, cz)) {
+                    if (!BlockQuery.isChunkLoadedAt(cx, cz)) {
                         FrontierQueue.park(curPacked, cx, cz);
                         continue;
                     }
@@ -153,10 +153,10 @@ final class FrontierSearch {
                     long curColor = activeColorOrPark(curPacked, containToActive);
                     if (curColor == NO_ID) continue;
 
-                    boolean hasBlockAt2Meter = !BlockSearch.isAirAt(cx, cy + 2, cz);
+                    boolean hasBlockAt2Meter = !BlockQuery.isAirAt(cx, cy + 2, cz);
                     boolean parkedSelf = false;
 
-                    for (int[] d : BlockSearch.DIRECTIONS) {
+                    for (int[] d : BlockQuery.DIRECTIONS) {
                         parkedSelf = processNeighbor(curPacked, cx, cy, cz, curColor, hasBlockAt2Meter,
                                 d, parkedSelf, sx, sz, maxRange, world.getBottomY());
                     }
@@ -186,7 +186,7 @@ final class FrontierSearch {
 
         columnsByRoot.clear();
         columnsByRoot.trim();
-        BlockSearch.clearFakeBlocks();
+        BlockQuery.clearFakeBlocks();
         FrontierQueue.reset();
         activeColor = NO_ID;
 
@@ -216,7 +216,7 @@ final class FrontierSearch {
         exiledScanTimedOut = false;
         lastDrainChunkX = Integer.MIN_VALUE;
         lastDrainChunkZ = Integer.MIN_VALUE;
-        BlockSearch.invalidateChunkCache();
+        BlockQuery.invalidateChunkCache();
     }
 
     // activeSet/searchActiveSet 서브트리 재계산 캐시
@@ -445,12 +445,12 @@ final class FrontierSearch {
     }
 
     private static long findAnchorCell(int x, int y, int z, int bottomY) {
-        if (BlockSearch.isAirAt(x, y, z)) {
+        if (BlockQuery.isAirAt(x, y, z)) {
             int startY = y;
             while (y > bottomY) {
                 if (cellColor.get(BlockPos.asLong(x, y, z)) != NO_ID) break;
-                if (!BlockSearch.isAirAt(x, y - 1, z)) break;
-                if (startY - y >= BlockSearch.MAX_ANCHOR_DROP_SEARCH) break;
+                if (!BlockQuery.isAirAt(x, y - 1, z)) break;
+                if (startY - y >= BlockQuery.MAX_ANCHOR_DROP_SEARCH) break;
                 y--;
             }
         }
@@ -493,7 +493,7 @@ final class FrontierSearch {
         int nx = cx + d[0];
         int nz = cz + d[1];
 
-        if (!BlockSearch.isChunkLoadedAt(nx, nz)) {
+        if (!BlockQuery.isChunkLoadedAt(nx, nz)) {
             // 이웃 청크 키로 park해야 그 청크 로딩이 revive 조건이 된다.
             // 자기 청크로 걸면 이미 로딩된 상태라 매 틱 즉시 되살렸다가 다시 park하는 핑퐁이 생긴다.
             if (!parkedSelf) {
@@ -503,18 +503,18 @@ final class FrontierSearch {
             return parkedSelf;
         }
 
-        boolean baseIsAir = BlockSearch.isAirAt(nx, cy, nz);
-        boolean baseIsWall = BlockSearch.isWallIfNotAir(baseIsAir, nx, cy, nz);
+        boolean baseIsAir = BlockQuery.isAirAt(nx, cy, nz);
+        boolean baseIsWall = !baseIsAir && BlockQuery.isRealWallAt(nx, cy, nz);
         if (baseIsWall) return parkedSelf;
 
-        int ty = BlockSearch.resolveTargetY(nx, cy, nz, baseIsAir, baseIsWall, hasBlockAt2Meter, bottomY);
+        int ty = BlockQuery.resolveTargetY(nx, cy, nz, baseIsAir, baseIsWall, hasBlockAt2Meter, bottomY);
         if (ty == Integer.MIN_VALUE) return parkedSelf;
 
-        // cy-ty==1은 resolveTargetY가 정확히 1칸만 하강했다는 뜻이다(불변식: 그 아래엔 항상 블록이 있음)
+        // cy-ty==1은 resolveTargetY가 정확히 1칸만 하강했다는 뜻이다 (불변식: 그 아래엔 항상 블록이 있음)
         // narrow 체크가 꺼지면 안전망도 같이 빠지므로 이 블록도 narrow 설정을 따른다.
         if (MCRiderMinimap.EXCLUDE_NARROW_PATHS && cy - ty == 1) {
-            long unloaded = BlockSearch.firstUnloadedLateralChunk(nx, nz);
-            if (unloaded != BlockSearch.ALL_LATERAL_LOADED) {
+            long unloaded = BlockQuery.firstUnloadedLateralChunk(nx, nz);
+            if (unloaded != BlockQuery.ALL_LATERAL_LOADED) {
                 // narrow 체크와 동일하게, 판정에 필요한 청크가 로딩될 때까지 이 셀을 보류한다.
                 if (!parkedSelf) {
                     int ux = (int) (unloaded >> 32), uz = (int) unloaded;
@@ -524,19 +524,19 @@ final class FrontierSearch {
                 return parkedSelf;
             }
 
-            if (BlockSearch.isIsolatedPit(nx, ty, nz, d[0], d[1])) {
-                BlockSearch.addFakeBlock(nx, ty, nz);
+            if (BlockQuery.isIsolatedPit(nx, ty, nz, d[0], d[1])) {
+                BlockQuery.addFakeBlock(nx, ty, nz);
                 eraseCellIfPainted(nx, ty, nz);
                 // resolveTargetY를 다시 돌리면 ty가 cy로 보정되고
                 // 이후 흐름(narrow 체크, canMoveBetween, handleReach)이 그대로 이어받아 가짜 블록 위에 셀을 놓는다.
-                ty = BlockSearch.resolveTargetY(nx, cy, nz, baseIsAir, baseIsWall, hasBlockAt2Meter, bottomY);
+                ty = BlockQuery.resolveTargetY(nx, cy, nz, baseIsAir, baseIsWall, hasBlockAt2Meter, bottomY);
                 if (ty == Integer.MIN_VALUE) return parkedSelf;
             }
         }
 
         if (MCRiderMinimap.EXCLUDE_NARROW_PATHS) {
-            long narrow = BlockSearch.isNarrowPassageInRange(nx, cy, ty, nz, d[0], d[1]);
-            if (!BlockSearch.isPassageResultResolved(narrow)) {
+            long narrow = BlockQuery.isNarrowPassageInRange(nx, cy, ty, nz, d[0], d[1]);
+            if (!BlockQuery.isPassageResultResolved(narrow)) {
                 // "좁음 확정"이 아니라 "이웃 청크 미로딩"일 수 있어 곧장 막지 않고, 그 청크가 로딩될 때까지 보류한다.
                 if (!parkedSelf) {
                     int unknownX = (int) (narrow >> 32);
@@ -546,10 +546,10 @@ final class FrontierSearch {
                 }
                 return parkedSelf;
             }
-            if (narrow == BlockSearch.PASSAGE_NARROW) return parkedSelf;
+            if (narrow == BlockQuery.PASSAGE_NARROW) return parkedSelf;
         }
 
-        boolean twoWay = BlockSearch.canMoveBetween(nx, ty, nz, cx, cy, cz, bottomY);
+        boolean twoWay = BlockQuery.canMoveBetween(nx, ty, nz, cx, cy, cz, bottomY);
         handleReach(cx, cy, cz, curColor, nx, ty, nz, twoWay, sx, sz, maxRange);
         return parkedSelf;
     }
@@ -560,7 +560,7 @@ final class FrontierSearch {
         long existing = cellColor.get(targetCell);
         if (existing == NO_ID) {
             boolean headAlreadyChecked = (ty >= cy);
-            if (!BlockSearch.isStandableAt(tx, ty, tz, headAlreadyChecked)) return;
+            if (!BlockQuery.isStandableAt(tx, ty, tz, headAlreadyChecked)) return;
             long color;
             if (twoWay) {
                 color = curColor;

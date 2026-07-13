@@ -46,10 +46,10 @@ public class MCRiderMinimap implements ClientModInitializer {
         });
 
         ClientChunkEvents.CHUNK_UNLOAD.register((world, chunk) ->
-                BlockSearch.invalidateChunkCacheAt(chunk.getPos().x, chunk.getPos().z));
+                BlockQuery.invalidateChunkCacheAt(chunk.getPos().x, chunk.getPos().z));
         // CHUNK_NOT_LOADED로 보류된 셀 복구용
         ClientChunkEvents.CHUNK_LOAD.register((world, chunk) -> {
-            BlockSearch.invalidateChunkCacheAt(chunk.getPos().x, chunk.getPos().z); // 청크 교체(재전송) 시 인스턴스가 바뀔 수 있음
+            BlockQuery.invalidateChunkCacheAt(chunk.getPos().x, chunk.getPos().z); // 청크 교체(재전송) 시 인스턴스가 바뀔 수 있음
             FrontierSearch.notifyChunkLoaded();
         });
     }

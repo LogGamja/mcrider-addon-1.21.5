@@ -152,7 +152,7 @@ final class FrontierQueue {
             int chunkX = ChunkPos.getPackedX(chunkKey);
             int chunkZ = ChunkPos.getPackedZ(chunkKey);
             if (taxiDistanceFromChunkToPos(chunkX, chunkZ, sx, sz) <= maxRange
-                    && BlockSearch.isChunkLoadedAtChunk(chunkX, chunkZ)) {
+                    && BlockQuery.isChunkLoadedAtChunk(chunkX, chunkZ)) {
                 // 청크 코너 셀도 거리 재검사 (park/revive 반복 회피)
                 int keep = 0;
                 for (int i = 0, n = pending.size(); i < n; i++) {
