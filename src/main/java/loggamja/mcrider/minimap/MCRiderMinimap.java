@@ -46,9 +46,12 @@ public class MCRiderMinimap implements ClientModInitializer {
         });
 
         ClientChunkEvents.CHUNK_UNLOAD.register((world, chunk) ->
-                BlockSearch.invalidateChunkCacheAt(chunk.getPos().x, chunk.getPos().z));
+                BlockQuery.invalidateChunkCacheAt(chunk.getPos().x, chunk.getPos().z));
         // CHUNK_NOT_LOADED로 보류된 셀 복구용
-        ClientChunkEvents.CHUNK_LOAD.register((world, chunk) -> FrontierSearch.notifyChunkLoaded());
+        ClientChunkEvents.CHUNK_LOAD.register((world, chunk) -> {
+            BlockQuery.invalidateChunkCacheAt(chunk.getPos().x, chunk.getPos().z); // 청크 교체(재전송) 시 인스턴스가 바뀔 수 있음
+            FrontierSearch.notifyChunkLoaded();
+        });
     }
     private static WeakReference<World> lastWorld = new WeakReference<>(null);
     private static boolean lastDebugColors = false;
@@ -58,10 +61,6 @@ public class MCRiderMinimap implements ClientModInitializer {
 
         if (!MCRiderMain.isRidingKart) return;
         if (client.player == null || client.world == null) return;
-
-        // 벤치마크: early-return과 무관하게 "실제로 이 모드가 살아있는 틱"마다 1회 호출해서
-        // 매 DUMP_EVERY_TICKS 틱마다 누적된 통계를 로그로 요약해서 찍는다.
-        MCRiderBenchmark.onTickEnd(() -> (long) ColorGraph.actualColorCount);
 
         if (client.world != lastWorld.get()) {
             clearAllMap();
@@ -85,21 +84,15 @@ public class MCRiderMinimap implements ClientModInitializer {
         final int playerMargin = 5;
         BlockPos start = MCRiderMain.getRidingPlayer().getBlockPos().up();
 
-        int searchRange = (int) ((MinimapRenderer.maxDist + playerMargin * 2) * 2);
-
-        long searchStart = MCRiderBenchmark.begin();
+        int searchRange = (int) ((MinimapRenderer.MAX_DIST + playerMargin * 2) * 2);
         FrontierSearch.floodFillWithVertical(start, searchRange, FrontierSearch.STAGING_BUDGET_PER_TICK);
-        MCRiderBenchmark.end("search(per-tick)", searchStart, FrontierSearch.lastCellsProcessed);
 
         // floodFill, rebuildActiveSet, ensureOriginFor, repaintDirtyColumns 순서를 지켜야 한다.
-        // rebuildActiveSet은 colorGraphVersion을 캐시 키로 쓰므로 floodFill이 그래프를 실제로 바꿨을 때만 재계산이 일어난다.
+        // rebuildActiveSet은 colorGraphVersion을 캐시 키로 써서 그래프가 실제로 바뀐 경우만 재계산한다.
         FrontierSearch.rebuildActiveSet();
 
         MinimapRenderer.ensureOriginFor(start);
-
-        long paintStart = MCRiderBenchmark.begin();
-        MinimapRenderer.repaintDirtyColumns(start);
-        MCRiderBenchmark.end("paint(per-tick)", paintStart, MinimapRenderer.lastColumnsPainted);
+        MinimapRenderer.repaintDirtyColumns();
     }
     public static void clearAllMap() {
         lastWorld = new WeakReference<>(null);

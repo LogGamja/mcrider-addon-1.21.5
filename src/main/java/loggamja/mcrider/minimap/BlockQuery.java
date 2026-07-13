@@ -20,8 +20,9 @@ import java.util.function.Predicate;
 // 규칙3: 낙하 경로에서는 한 칸 아래도 봐야 open이다.
 // 규칙4: rear(규칙2)는 가로 이동을 밟은 진입 행(cy)에서만 쓴다
 
-final class BlockSearch {
-    private BlockSearch() {}
+// 모든 접근은 클라이언트(렌더) 스레드에서만 이뤄진다고 가정한다.
+final class BlockQuery {
+    private BlockQuery() {}
 
     private static final TagKey<Block> KART_WALL = TagKey.of(RegistryKeys.BLOCK, Identifier.of("kartmobil", "stones"));
     private static final Predicate<BlockState> isWall = state -> state.isIn(KART_WALL);
@@ -102,15 +103,18 @@ final class BlockSearch {
     // twoWay(양방향 연결) 판정
     static boolean canMoveBetween(int tx, int ty, int tz, int fx, int fy, int fz, int bottomY) {
         boolean baseIsAir = isAirAt(fx, ty, fz);
-        boolean baseIsWall = isWallIfNotAir(baseIsAir, fx, ty, fz);
+        boolean baseIsWall = !baseIsAir && isWallAt(fx, ty, fz);
         if (baseIsWall) return false;
         boolean tHasBlockAt2 = !isAirAt(tx, ty + 2, tz);
         int back = resolveTargetY(fx, ty, fz, baseIsAir, baseIsWall, tHasBlockAt2, bottomY);
         return back == fy;
     }
-    // air 먼저 검사 (tag 중복 시 일관성 유지)
-    static boolean isWallIfNotAir(boolean baseIsAir, int x, int y, int z) {
-        return !baseIsAir && isBlockAt(isWall, x, y, z);
+    static boolean isWallAt(int x, int y, int z) {
+        return isBlockAt(isWall, x, y, z);
+    }
+    static boolean isRealWallAt(int x, int y, int z) {
+        if (isWallAt(x, y, z)) return true;
+        return !isAirAt(x, y, z) && !isAirAt(x, y + 1, z);
     }
     // 도달 불가면 Integer.MIN_VALUE. 월드 바닥(bottomY)은 항상 블록으로 취급해 낙하를 멈춘다.
     static int resolveTargetY(int nx, int cy, int nz, boolean baseIsAir, boolean baseIsWall, boolean fromHasBlockAt2Meter, int bottomY) {
@@ -142,8 +146,10 @@ final class BlockSearch {
         fakeBlocks.trim();
     }
 
-    // 수평 4면 중 3면 이상 막힘, 또는 진행 방향(dx,dz) 앞뒤가 모두 막히면 true
+    // 앞이 벽이면 무조건 false, 수평 4면 중 3면 이상, 또는 앞뒤가 막히면 true
     static boolean isIsolatedPit(int nx, int ty, int nz, int dx, int dz) {
+        if (isRealWallAt(nx + dx, ty, nz + dz)) return false;
+
         int blockedSides = 0;
         boolean frontBlocked = false, backBlocked = false;
         for (int[] pd : DIRECTIONS) {
@@ -153,7 +159,8 @@ final class BlockSearch {
                 else if (pd[0] == -dx && pd[1] == -dz) backBlocked = true;
             }
         }
-        return blockedSides >= 3 || (frontBlocked && backBlocked);
+        if (blockedSides >= 3) return true;
+        return backBlocked && frontBlocked;
     }
     // isIsolatedPit이 확인할 4면과 같은 좌표를 미리 확인한다
     static long firstUnloadedLateralChunk(int nx, int nz) {
@@ -185,7 +192,7 @@ final class BlockSearch {
                 isChunkLoadedNear(x2r, z2r, centerChunkX, centerChunkZ, centerLoaded), x2r, z2r,
                 true, ny, ny);
     }
-    
+
     private static boolean isChunkLoadedNear(int x, int z, int centerChunkX, int centerChunkZ, boolean centerLoaded) {
         return (x >> 4) == centerChunkX && (z >> 4) == centerChunkZ ? centerLoaded : isChunkLoadedAt(x, z);
     }
@@ -238,8 +245,8 @@ final class BlockSearch {
 
     // narrow 판정 체인: axisResult(규칙1) -> checkTwoSideOpen(규칙3) -> checkOneSideOpen(규칙2) -> threeStateIfLoaded
     private static long axisResult(boolean loaded1, int x1, int z1, boolean loaded1r, int x1r, int z1r,
-                                    boolean loaded2, int x2, int z2, boolean loaded2r, int x2r, int z2r,
-                                    boolean useRear, int y, int belowY) {
+                                   boolean loaded2, int x2, int z2, boolean loaded2r, int x2r, int z2r,
+                                   boolean useRear, int y, int belowY) {
         long s1 = checkTwoSideOpen(loaded1, x1, z1, loaded1r, x1r, z1r, useRear, y, belowY);
         if (s1 == LATERAL_OPEN) return PASSAGE_OPEN;
         long s2 = checkTwoSideOpen(loaded2, x2, z2, loaded2r, x2r, z2r, useRear, y, belowY);
@@ -249,8 +256,8 @@ final class BlockSearch {
         return PASSAGE_NARROW;
     }
     private static long checkTwoSideOpen(boolean directLoaded, int dx, int dz,
-                                        boolean rearLoaded, int rx, int rz,
-                                        boolean useRear, int y, int belowY) {
+                                         boolean rearLoaded, int rx, int rz,
+                                         boolean useRear, int y, int belowY) {
         long here = useRear
                 ? checkOneSideOpen(directLoaded, dx, dz, rearLoaded, rx, rz, y)
                 : threeStateIfLoaded(directLoaded, dx, y, dz);
@@ -263,7 +270,7 @@ final class BlockSearch {
         return LATERAL_OPEN;
     }
     private static long checkOneSideOpen(boolean directLoaded, int dx, int dz,
-                                        boolean rearLoaded, int rx, int rz, int y) {
+                                         boolean rearLoaded, int rx, int rz, int y) {
         long direct = threeStateIfLoaded(directLoaded, dx, y, dz);
         if (direct == LATERAL_BLOCKED) return LATERAL_BLOCKED;
         long rear = threeStateIfLoaded(rearLoaded, rx, y, rz);
