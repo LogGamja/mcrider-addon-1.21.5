@@ -146,9 +146,9 @@ final class BlockQuery {
         fakeBlocks.trim();
     }
 
-    // 앞이 벽이면 무조건 false, 수평 4면 중 3면 이상, 또는 앞뒤가 막히면 true
+    // 앞이 한칸벽이면 무조건 false, 수평 4면 중 3면 이상, 또는 앞뒤가 막히면 true
     static boolean isIsolatedPit(int nx, int ty, int nz, int dx, int dz) {
-        if (isRealWallAt(nx + dx, ty, nz + dz)) return false;
+        if (isSingleBlockWallAt(nx + dx, ty, nz + dz)) return false;
 
         int blockedSides = 0;
         boolean frontBlocked = false, backBlocked = false;
@@ -162,6 +162,10 @@ final class BlockQuery {
         if (blockedSides >= 3) return true;
         return backBlocked && frontBlocked;
     }
+    static boolean isSingleBlockWallAt(int x, int y, int z) {
+        return isWallAt(x, y, z) && isAirAt(x, y + 1, z);
+    }
+
     // isIsolatedPit이 확인할 4면과 같은 좌표를 미리 확인한다
     static long firstUnloadedLateralChunk(int nx, int nz) {
         for (int[] pd : DIRECTIONS) {
