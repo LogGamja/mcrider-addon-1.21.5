@@ -28,6 +28,7 @@ import java.io.InputStream;
 
 import static loggamja.mcrider.minimap.ColorGraph.NO_ID;
 
+// 모든 접근은 클라이언트(렌더) 스레드에서만 이뤄진다고 가정한다.
 final class MinimapRenderer {
     private MinimapRenderer() {}
 

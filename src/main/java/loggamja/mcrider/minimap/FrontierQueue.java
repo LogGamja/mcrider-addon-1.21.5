@@ -9,6 +9,7 @@ import net.minecraft.util.math.ChunkPos;
 
 // 프론티어 및 보류 셀 저장소 관리
 
+// 모든 접근은 클라이언트(렌더) 스레드에서만 이뤄진다고 가정한다.
 final class FrontierQueue {
     private FrontierQueue() {}
 

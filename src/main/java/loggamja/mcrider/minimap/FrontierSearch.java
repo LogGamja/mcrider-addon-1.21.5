@@ -13,6 +13,7 @@ import net.minecraft.util.math.BlockPos;
 import static loggamja.mcrider.minimap.ColorGraph.NO_ID;
 
 // 플로드필 탐색 엔진. 탐색 상태(cellColor 등)와 표시 필터(activeColor, activeSet)를 관리한다.
+// 모든 접근은 클라이언트(렌더) 스레드에서만 이뤄진다고 가정한다.
 final class FrontierSearch {
     private FrontierSearch() {}
 

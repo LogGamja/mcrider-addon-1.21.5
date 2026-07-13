@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory;
 // 규칙3: 단방향 이동은 새 색을 만들고 직전 색의 자식으로 둠
 // 규칙4: 양방향 인접 시 혹은 자식이 조상에게 단방향 인접 시 병합
 
+// 모든 접근은 클라이언트(렌더) 스레드에서만 이뤄진다고 가정한다.
 final class ColorGraph {
     private ColorGraph() {}
 

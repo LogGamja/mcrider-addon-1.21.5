@@ -20,6 +20,7 @@ import java.util.function.Predicate;
 // 규칙3: 낙하 경로에서는 한 칸 아래도 봐야 open이다.
 // 규칙4: rear(규칙2)는 가로 이동을 밟은 진입 행(cy)에서만 쓴다
 
+// 모든 접근은 클라이언트(렌더) 스레드에서만 이뤄진다고 가정한다.
 final class BlockSearch {
     private BlockSearch() {}
 
