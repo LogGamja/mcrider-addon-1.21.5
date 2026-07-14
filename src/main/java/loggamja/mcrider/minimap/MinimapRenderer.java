@@ -14,6 +14,8 @@ import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.scoreboard.AbstractTeam;
+import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.RotationAxis;
@@ -525,6 +527,8 @@ final class MinimapRenderer {
                 : getKartBodyYaw(MCRiderMain.getRidingPlayer(), tickDelta);
         final float delta = (myKartYaw - yawDeg) + IMAGE_CORRECTION_TRICK;
 
+        final int selfOutlineColor = outlineColorFor(MCRiderMain.getRidingPlayer());
+
         // 내 카트 몸체, 적, 윤곽선 순서
         drawSelfMarker(context, centerX, centerY, selfIconSize, delta);
 
@@ -549,7 +553,7 @@ final class MinimapRenderer {
             drawEnemyHead(context, other, dotX, dotY, enemyIconSize, relativeYaw);
         }
 
-        drawSelfMarkerOutlined(context, centerX, centerY, selfIconSize, delta);
+        drawSelfMarkerOutlined(context, centerX, centerY, selfIconSize, delta, selfOutlineColor);
     }
 
     private static float getKartBodyYaw(PlayerEntity player, float tickDelta) {
@@ -563,6 +567,7 @@ final class MinimapRenderer {
         }
         return player.getYaw(tickDelta);
     }
+
     private static void drawSelfMarker(DrawContext context, float cx, float cy, float size, float rotationDeg) {
         // pop 누락 시 이후 HUD가 잘못된 위치/회전으로 렌더링. try-finally로 보장한다.
         MatrixStack matrices = context.getMatrices();
@@ -620,7 +625,7 @@ final class MinimapRenderer {
                                 }
                             }
                         }
-                        if (dilated) ring.setColorArgb(x, y, 0xFF000000);
+                        if (dilated) ring.setColorArgb(x, y, 0xFFFFFFFF);
                     }
                 }
 
@@ -643,7 +648,7 @@ final class MinimapRenderer {
         return (img.getColorArgb(x, y) >>> 24) > 10;
     }
 
-    private static void drawSelfMarkerOutlined(DrawContext context, float cx, float cy, float size, float rotationDeg) {
+    private static void drawSelfMarkerOutlined(DrawContext context, float cx, float cy, float size, float rotationDeg, int outlineColor) {
         ensureSelfMarkerRing();
         if (selfMarkerRingIcon == null) return;
 
@@ -664,7 +669,7 @@ final class MinimapRenderer {
                     roundedRingSize, roundedRingSize,
                     selfMarkerRingTexSize, selfMarkerRingTexSize,
                     selfMarkerRingTexSize, selfMarkerRingTexSize,
-                    0xFFFFFFFF
+                    outlineColor
             );
         } finally {
             matrices.pop();
@@ -686,6 +691,7 @@ final class MinimapRenderer {
     private static void drawEnemyHead(DrawContext context, AbstractClientPlayerEntity player,
                                       float cx, float cy, float size, float rotationDeg) {
         int isize = Math.round(size);
+        final int outlineColor = outlineColorFor(player);
 
         MatrixStack matrices = context.getMatrices();
         matrices.push();
@@ -700,7 +706,7 @@ final class MinimapRenderer {
                 matrices.translate(isize / 2f, isize / 2f, 0);
                 matrices.scale(outlineScale, outlineScale, 1f);
                 matrices.translate(-(isize + 2f) / 2f, -(isize + 2f) / 2f, 0);
-                context.fill(0, 0, isize + 2, isize + 2, ENEMY_HEAD_OUTLINE_COLOR);
+                context.fill(0, 0, isize + 2, isize + 2, outlineColor);
             } finally {
                 matrices.pop();
             }
@@ -709,6 +715,18 @@ final class MinimapRenderer {
         } finally {
             matrices.pop();
         }
+    }
+    // 팀 닉네임 색을 따르되 기본 닉네임이거나 팀/색이 없으면 검은색
+    private static int outlineColorFor(PlayerEntity player) {
+        AbstractTeam team = player.getScoreboardTeam();
+        if (team != null) {
+            Formatting color = team.getColor();
+            Integer rgb = color.getColorValue();
+            if (rgb != null && color != Formatting.WHITE) {
+                return 0xFF000000 | rgb;
+            }
+        }
+        return ENEMY_HEAD_OUTLINE_COLOR;
     }
 
     private static double getSizeFactor(MinecraftClient client) {

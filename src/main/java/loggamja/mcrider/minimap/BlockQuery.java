@@ -148,6 +148,7 @@ final class BlockQuery {
 
     // 앞이 한칸벽이면 무조건 false, 수평 4면 중 3면 이상, 또는 앞뒤가 막히면 true
     static boolean isIsolatedPit(int nx, int ty, int nz, int dx, int dz) {
+        if (isVoidAt(nx, ty - 1, nz)) return false;
         if (isSingleBlockWallAt(nx + dx, ty, nz + dz)) return false;
 
         int blockedSides = 0;
