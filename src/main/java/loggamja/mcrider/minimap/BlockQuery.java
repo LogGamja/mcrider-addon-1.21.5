@@ -163,7 +163,7 @@ final class BlockQuery {
         return backBlocked && frontBlocked;
     }
     static boolean isSingleBlockWallAt(int x, int y, int z) {
-        return isWallAt(x, y, z) && isAirAt(x, y + 1, z);
+        return isWallAt(x, y, z) && isAirAt(x, y + 1, z) && isAirAt(x, y + 2, z);
     }
 
     // isIsolatedPit이 확인할 4면과 같은 좌표를 미리 확인한다
