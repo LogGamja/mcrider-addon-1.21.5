@@ -13,6 +13,7 @@ import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.decoration.DisplayEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.scoreboard.AbstractTeam;
 import net.minecraft.util.Formatting;
@@ -61,6 +62,8 @@ final class MinimapRenderer {
 
     private static final float ENEMY_HEAD_OUTLINE_THICKNESS = 0.4f;
     private static final int ENEMY_HEAD_OUTLINE_COLOR = 0xFF000000;
+
+    private static final int SHADOW_FILL_COLOR = 0xFF808080;
 
     private static final class TextureBuffer {
         final Identifier id;
@@ -506,9 +509,31 @@ final class MinimapRenderer {
 
         final int selfOutlineColor = outlineColorFor(MCRiderMain.getRidingPlayer());
 
-        // 내 카트 몸체, 적, 윤곽선 순서
+        // 나
         drawSelfMarker(context, centerX, centerY, selfIconSize, delta);
 
+        // 고스트
+        for (Entity entity : client.world.getEntities()) {
+            if (!(entity instanceof DisplayEntity.ItemDisplayEntity)) continue;
+            if (!MCRiderMain.hasCertainName(entity, "mcrider-shadow")) continue;
+
+            final Vec3d q = entity.getLerpedPos(tickDelta);
+            final double dx = q.x - p.x;
+            final double dz = q.z - p.z;
+
+            final double localForward = dx * fx + dz * fz;
+            final double localRight = dx * rx + dz * rz;
+
+            if (Math.abs(localForward) > MAX_DIST || Math.abs(localRight) > MAX_DIST) continue;
+
+            final float dotX = (float) (centerX - localRight * scale);
+            final float dotY = (float) (centerY - localForward * scale);
+
+            final float relativeYaw = (entity.getYaw(tickDelta) - yawDeg) + IMAGE_CORRECTION_TRICK;
+            drawShadowHead(context, dotX, dotY, enemyIconSize, relativeYaw);
+        }
+
+        // 적
         for (AbstractClientPlayerEntity other : client.world.getPlayers()) {
             if (other == MCRiderMain.getRidingPlayer()) continue;
             if (other == other.getRootVehicle()) continue;
@@ -529,7 +554,8 @@ final class MinimapRenderer {
             final float relativeYaw = (enemyKartYaw - yawDeg) + IMAGE_CORRECTION_TRICK;
             drawEnemyHead(context, other, dotX, dotY, enemyIconSize, relativeYaw);
         }
-
+        
+        // 내 윤곽선
         drawSelfMarkerOutlined(context, centerX, centerY, selfIconSize, delta, selfOutlineColor);
     }
 
@@ -689,6 +715,33 @@ final class MinimapRenderer {
             }
 
             PlayerSkinDrawer.draw(context, player.getSkinTextures(), 0, 0, isize);
+        } finally {
+            matrices.pop();
+        }
+    }
+    // 적 머리와 같은 구도지만 얼굴 대신 회색 단색이 나옴. 고스트용
+    private static void drawShadowHead(DrawContext context, float cx, float cy, float size, float rotationDeg) {
+        int isize = Math.round(size);
+
+        MatrixStack matrices = context.getMatrices();
+        matrices.push();
+        try {
+            matrices.translate(cx, cy, 0);
+            matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(rotationDeg));
+            matrices.translate(-size / 2f, -size / 2f, 0);
+
+            matrices.push();
+            try {
+                float outlineScale = (isize + 2f * ENEMY_HEAD_OUTLINE_THICKNESS) / (isize + 2f);
+                matrices.translate(isize / 2f, isize / 2f, 0);
+                matrices.scale(outlineScale, outlineScale, 1f);
+                matrices.translate(-(isize + 2f) / 2f, -(isize + 2f) / 2f, 0);
+                context.fill(0, 0, isize + 2, isize + 2, ENEMY_HEAD_OUTLINE_COLOR);
+            } finally {
+                matrices.pop();
+            }
+
+            context.fill(0, 0, isize, isize, SHADOW_FILL_COLOR);
         } finally {
             matrices.pop();
         }
