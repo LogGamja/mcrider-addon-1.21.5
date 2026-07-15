@@ -41,8 +41,9 @@ public class MCRiderMinimap implements ClientModInitializer {
                         Identifier.of("mcrider-official", "minimap_hud"),
                         (context, tickCounter) -> MinimapRenderer.renderMinimap(context, tickCounter.getTickProgress(false))));
 
-        ClientPlayConnectionEvents.DISCONNECT.register((client, handler) -> {
-            clearAllMap();
+        // 무조건 렌더 스레드로 예약
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            client.execute(MCRiderMinimap::clearAllMap);
         });
 
         ClientChunkEvents.CHUNK_UNLOAD.register((world, chunk) ->

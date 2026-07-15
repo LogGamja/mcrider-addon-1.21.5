@@ -50,10 +50,13 @@ public class MCRiderMain implements ClientModInitializer {
             EntityRollManager.clear();
             MCRiderSuspension.clearStates();
         });
-        ClientPlayConnectionEvents.DISCONNECT.register((client, handler) -> {
-            isRidingKart = false;
-            useLegacyKartStopData = false;
-            hasKartYawHistory = false;
+        // 무조건 렌더 스레드로 예약
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            client.execute(() -> {
+                isRidingKart = false;
+                useLegacyKartStopData = false;
+                hasKartYawHistory = false;
+            });
         });
 
         MCRiderConfig.INSTANCE.load();

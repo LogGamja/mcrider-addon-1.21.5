@@ -17,7 +17,7 @@ public class EntityRollManager {
         rollStates.put(entityId, new RollState(
                 current,
                 targetRollDeg,
-                System.currentTimeMillis(),
+                System.nanoTime() / 1_000_000L,
                 Math.round(durationTicks * getMillisPerTick())
         ));
     }
@@ -34,7 +34,7 @@ public class EntityRollManager {
         RollState state = rollStates.get(entityId);
         if (state == null) return 0f;
 
-        long now = System.currentTimeMillis();
+        long now = System.nanoTime() / 1_000_000L;
         long elapsed = now - state.startTime;
 
         if (elapsed >= state.duration) {

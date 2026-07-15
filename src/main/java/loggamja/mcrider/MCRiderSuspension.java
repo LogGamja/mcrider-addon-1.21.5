@@ -46,9 +46,12 @@ public class MCRiderSuspension implements ClientModInitializer {
     public void onInitializeClient() {
         ClientTickEvents.END_CLIENT_TICK.register(client -> onClientTick());
 
-        ClientPlayConnectionEvents.DISCONNECT.register((client, handler) -> {
-            EntityRollManager.clear();
-            clearStates();
+        // 무조건 렌더 스레드로 예약
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            client.execute(() -> {
+                EntityRollManager.clear();
+                clearStates();
+            });
         });
     }
 

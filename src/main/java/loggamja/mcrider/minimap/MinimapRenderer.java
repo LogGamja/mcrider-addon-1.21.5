@@ -13,7 +13,6 @@ import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
-import net.minecraft.entity.decoration.DisplayEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.scoreboard.AbstractTeam;
 import net.minecraft.util.Formatting;
@@ -26,6 +25,7 @@ import org.slf4j.LoggerFactory;
 
 import loggamja.mcrider.option.MCRiderConfig;
 import loggamja.mcrider.MCRiderMain;
+import loggamja.mcrider.MCRiderRadar;
 
 import java.io.InputStream;
 
@@ -513,10 +513,7 @@ final class MinimapRenderer {
         drawSelfMarker(context, centerX, centerY, selfIconSize, delta);
 
         // 고스트
-        for (Entity entity : client.world.getEntities()) {
-            if (!(entity instanceof DisplayEntity.ItemDisplayEntity)) continue;
-            if (!MCRiderMain.hasCertainName(entity, "mcrider-shadow")) continue;
-
+        for (Entity entity : MCRiderRadar.getShadowEntities()) {
             final Vec3d q = entity.getLerpedPos(tickDelta);
             final double dx = q.x - p.x;
             final double dz = q.z - p.z;
