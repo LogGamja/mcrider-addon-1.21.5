@@ -44,7 +44,7 @@ public abstract class GameRendererMixin {
     @Unique float mcrider$lastYaw;
 
     @Unique boolean mcrider$isFovBackupedThisFrame;
-    @Unique boolean mcrider$isFovEffectScaleBackupedThisTick;
+    @Unique boolean mcrider$isFovEffectScaleBackupedThisFrame;
 
     @Unique int mcrider$backupFov;
     @Unique double mcrider$backupFovEffectScale;
@@ -54,7 +54,7 @@ public abstract class GameRendererMixin {
         if (!MCRiderMain.isRidingKart) return;
 
         mcrider$backupFovEffectScale = mcrider$options.getFovEffectScale().getValue();
-        mcrider$isFovEffectScaleBackupedThisTick = true;
+        mcrider$isFovEffectScaleBackupedThisFrame = true;
 
         double customEffectScale = MCRiderConfig.INSTANCE.MCRiderFOVEffects / 100f;
         if (client.options.getPerspective() == Perspective.FIRST_PERSON) {
@@ -64,10 +64,10 @@ public abstract class GameRendererMixin {
     }
     @Inject(method = "updateFovMultiplier", at = @At(value = "TAIL"))
     private void mcrider$afterFovUpdate(CallbackInfo ci) {
-        if (!mcrider$isFovEffectScaleBackupedThisTick) return;
+        if (!mcrider$isFovEffectScaleBackupedThisFrame) return;
 
         mcrider$options.getFovEffectScale().setValue(mcrider$backupFovEffectScale);
-        mcrider$isFovEffectScaleBackupedThisTick = false;
+        mcrider$isFovEffectScaleBackupedThisFrame = false;
     }
     @Inject(method = "getFov", at = @At(value = "HEAD"), cancellable = true)
     private void mcrider$beforeGetFov(Camera camera, float tickDelta, boolean changingFov, CallbackInfoReturnable<Float> cir) {

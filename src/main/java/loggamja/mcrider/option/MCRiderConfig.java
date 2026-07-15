@@ -49,6 +49,7 @@ public class MCRiderConfig {
             LOGGER.error("[MCRider] 설정 파일을 불러오는 데 실패했습니다.", e);
         } catch (com.google.gson.JsonParseException e) {
             LOGGER.error("[MCRider] 설정 파일 형식이 올바르지 않아 기본값으로 대체합니다.", e);
+            INSTANCE = new MCRiderConfig();
         }
     }
 

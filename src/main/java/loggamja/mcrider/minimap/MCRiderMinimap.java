@@ -61,7 +61,7 @@ public class MCRiderMinimap implements ClientModInitializer {
         if (MCRiderConfig.INSTANCE.useMinimap == 0) return;
 
         if (!MCRiderMain.isRidingKart) return;
-        if (client.player == null || client.world == null) return;
+        if (!MCRiderMain.isPlayingInGame()) return;
 
         if (client.world != lastWorld.get()) {
             clearAllMap();

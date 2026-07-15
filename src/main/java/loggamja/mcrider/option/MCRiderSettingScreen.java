@@ -87,6 +87,11 @@ public class MCRiderSettingScreen extends Screen {
                 protected void applyValue() {
                     double actual = min + this.value * (max - min);
                     def.setter().accept((float) actual);
+                }
+
+                @Override
+                public void onRelease(double mouseX, double mouseY) {
+                    super.onRelease(mouseX, mouseY);
                     MCRiderConfig.INSTANCE.save();
                 }
             };

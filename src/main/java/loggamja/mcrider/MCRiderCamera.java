@@ -22,7 +22,7 @@ public class MCRiderCamera implements ClientModInitializer {
 
     static boolean isUsingBooster = false;
 
-    float filteredTargetFOV = 92;
+    float filteredTargetFOV = 90;
     public static float filteredFOV = 90;
     public static float filteredFOVAtPrevTick = 90;
 

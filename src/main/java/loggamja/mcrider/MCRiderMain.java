@@ -101,7 +101,10 @@ public class MCRiderMain implements ClientModInitializer {
         return getAllowModelRotation(kartMobil, getRidingPlayer());
     }
     public static boolean getAllowModelRotation(Entity kartMobil, PlayerEntity player) {
-        if (hasCertainName(kartMobil, "mcrider-stop")) useLegacyKartStopData = true;
+        // 한 번 감지되면 그 세션은 항상 레거시인 것이 보장됨
+        if (hasCertainName(kartMobil, "mcrider-stop")) {
+            useLegacyKartStopData = true;
+        }
 
         if (useLegacyKartStopData) {
             return !hasCertainName(kartMobil, "mcrider-stop");
@@ -241,7 +244,7 @@ public class MCRiderMain implements ClientModInitializer {
     float getOverShootAngle(float deltaAngle) {
         var overShootAngle = deltaAngle;
 
-        // 1.0 엔진은 클램프 구현하지 않음
+        // 1.0 엔진은 상한 클램프 구현하지 않음
         if (kartEngine == 7) {
             if (deltaAngle <= -55) overShootAngle = -110f - deltaAngle;
             if (55 <= deltaAngle) overShootAngle = 110f - deltaAngle;

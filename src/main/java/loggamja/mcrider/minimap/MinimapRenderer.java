@@ -429,7 +429,7 @@ final class MinimapRenderer {
             front.textureDirty = false;
         }
 
-        final double sizeFactor = getSizeFactor(client);
+        final double sizeFactor = MCRiderRadar.getSizeFactor(client);
         final int screenWidth = client.getWindow().getScaledWidth();
         final int screenHeight = client.getWindow().getScaledHeight();
         final double scaledPadding = PADDING * sizeFactor;
@@ -754,12 +754,6 @@ final class MinimapRenderer {
             }
         }
         return ENEMY_HEAD_OUTLINE_COLOR;
-    }
-
-    private static double getSizeFactor(MinecraftClient client) {
-        final double physicalScale = client.getWindow().getHeight() / 1080.0;
-        final double scaleFactor = client.getWindow().getScaleFactor();
-        return physicalScale / scaleFactor;
     }
 
     static void reset() {

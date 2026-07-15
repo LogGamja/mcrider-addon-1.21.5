@@ -112,7 +112,7 @@ public class MCRiderSuspension implements ClientModInitializer {
         if (st.steerGradientBuffer.size() > 5) st.steerGradientBuffer.removeFirst();
         st.prevPlayerYaw = playerYaw;
 
-        boolean isPlayingSwingAnimation = st.swingAnimationTicks > 0;
+        boolean wasPlayingSwingAnimation = st.swingAnimationTicks > 0;
         if (st.swingAnimationTicks > 0) st.swingAnimationTicks--;
         if (st.driftJustStartedTicks > 0) st.driftJustStartedTicks--;
 
@@ -131,11 +131,13 @@ public class MCRiderSuspension implements ClientModInitializer {
                 st.driftJustStartedTicks = DRIFT_START_TICKS;
             }
             else {
-                if (filteredSteerGradient > 2 && !isPlayingSwingAnimation && !disableSwingAnimation) {
+                if (filteredSteerGradient > 2 && !wasPlayingSwingAnimation && !disableSwingAnimation) {
                     st.swingAnimationTicks = SWING_ANIMATION_TICKS;
                 }
             }
         }
+
+        boolean isPlayingSwingAnimation = st.swingAnimationTicks > 0;
 
         float moveDirection = 0f;
         float steerDirection = 0f;

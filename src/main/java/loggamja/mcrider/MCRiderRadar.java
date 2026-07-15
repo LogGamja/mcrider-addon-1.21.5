@@ -131,7 +131,7 @@ public class MCRiderRadar implements ClientModInitializer {
 
         drawArrowIcon(context, arrowX, arrowY, arrowSize, arrowRotDeg, a, rgb);
     }
-    private double getSizeFactor(MinecraftClient client) {
+    public static double getSizeFactor(MinecraftClient client) {
         final double physicalScale = client.getWindow().getHeight() / 1080.0;
         final double scaleFactor = client.getWindow().getScaleFactor();
         return physicalScale / scaleFactor;
