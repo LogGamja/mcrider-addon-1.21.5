@@ -63,6 +63,14 @@ public final class MCRiderAPI {
         return def == null ? OptionalDouble.empty() : OptionalDouble.of(def.getter().getAsDouble());
     }
 
+    // 모든 옵션을 기본값으로 되돌린다. 실제 쓰기/저장은 클라이언트 메인 스레드로 마샬링한다
+    public static void resetToDefaults() {
+        MinecraftClient.getInstance().execute(() -> {
+            MCRiderConfig.INSTANCE = new MCRiderConfig();
+            MCRiderConfig.INSTANCE.save();
+        });
+    }
+
     // 현재 화면 위에 MCRider 설정 화면을 연다 (ESC 메뉴를 거치지 않아도 됨)
     // setScreen은 메인 스레드 전용이므로 마샬링한다. currentScreen은 실행 시점(메인 스레드)에 읽어 정확한 화면을 parent로 삼는다
     public static void openSettings() {
