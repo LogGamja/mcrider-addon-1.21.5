@@ -2,6 +2,7 @@ package loggamja.mcrider.option;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.InstanceCreator;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,7 +16,10 @@ import java.nio.file.Files;
 
 public class MCRiderConfig {
     private static final Logger LOGGER = LoggerFactory.getLogger("mcrider");
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final Gson GSON = new GsonBuilder()
+            .setPrettyPrinting()
+            .registerTypeAdapter(MCRiderConfig.class, (InstanceCreator<MCRiderConfig>) type -> new MCRiderConfig())
+            .create();
     private static final File CONFIG_FILE = new File(FabricLoader.getInstance().getConfigDir().toFile(), "mcrider-config.json");
 
     public int MCRiderRotationOption = 2;
