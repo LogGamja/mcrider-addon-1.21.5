@@ -489,7 +489,7 @@ final class MinimapRenderer {
     private static void drawRiderIcons(DrawContext context, float tickDelta, int centerX, int centerY,
                                        float yawDeg, Vec3d p, double scale, double sizeFactor) {
         MinecraftClient client = MCRiderMinimap.client;
-        if (client.world == null) return;
+        if (!MCRiderMain.isPlayingInGame()) return;
 
         final float iconSize = (float) (RIDER_ICON_SIZE * sizeFactor);
         final float enemyIconSize = iconSize * ENEMY_ICON_SCALE;

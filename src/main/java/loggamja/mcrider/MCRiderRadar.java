@@ -52,7 +52,7 @@ public class MCRiderRadar implements ClientModInitializer {
     }
     private static void collectShadowEntities(MinecraftClient client) {
         shadowEntities.clear();
-        if (client.world == null) return;
+        if (!MCRiderMain.isPlayingInGame()) return;
         if (MCRiderConfig.INSTANCE.MCRiderRadarOption != 1 && MCRiderConfig.INSTANCE.useMinimap == 0) return;
 
         for (Entity entity : client.world.getEntities()) {

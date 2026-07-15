@@ -1,6 +1,7 @@
 package loggamja.mcrider.minimap;
 
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import loggamja.mcrider.MCRiderMain;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
@@ -82,7 +83,7 @@ final class BlockQuery {
     }
     // 특정 청크 좌표가 로드되었는지
     static boolean isChunkLoadedAtChunk(int chunkX, int chunkZ) {
-        if (MCRiderMinimap.client.world == null) return false;
+        if (!MCRiderMain.isPlayingInGame()) return false;
         long key = ChunkPos.toLong(chunkX, chunkZ);
         for (int i = 0; i < CHUNK_CACHE_SLOTS; i++) {
             if (cacheKeys[i] == key && cacheChunks[i] != null) return true;
@@ -296,7 +297,7 @@ final class BlockQuery {
         return isBlockAt(isVoid, x, y, z);
     }
     private static boolean isBlockAt(Predicate<BlockState> predicate, int x, int y, int z) {
-        if (MCRiderMinimap.client.world == null) return false;
+        if (!MCRiderMain.isPlayingInGame()) return false;
         return predicate.test(blockStateAt(x, y, z));
     }
     private static BlockState blockStateAt(int x, int y, int z) {
