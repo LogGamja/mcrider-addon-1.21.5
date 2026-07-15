@@ -1,7 +1,6 @@
 package loggamja.mcrider.option;
 
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.GameMenuScreen;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.tooltip.Tooltip;
 import net.minecraft.client.gui.widget.ButtonWidget;
@@ -9,9 +8,12 @@ import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.text.Text;
 
 public class MCRiderSettingScreen extends Screen {
+    private final Screen parent;
 
-    public MCRiderSettingScreen() {
+    // ESC 메뉴가 아닌 다른 곳(API 등)에서도 열릴 수 있으므로, 닫을 때 돌아갈 화면을 직접 기억한다
+    public MCRiderSettingScreen(Screen parent) {
         super(Text.translatable("mcrider.setting.title"));
+        this.parent = parent;
     }
 
     @Override
@@ -116,7 +118,7 @@ public class MCRiderSettingScreen extends Screen {
     @Override
     public void close() {
         assert this.client != null;
-        this.client.setScreen(new GameMenuScreen(true));
+        this.client.setScreen(parent);
         MCRiderConfig.INSTANCE.save();
     }
 }
