@@ -132,7 +132,8 @@ public class MCRiderRadar implements ClientModInitializer {
         drawArrowIcon(context, arrowX, arrowY, arrowSize, arrowRotDeg, a, rgb);
     }
     public static double getSizeFactor(MinecraftClient client) {
-        final double physicalScale = client.getWindow().getHeight() / 1080.0;
+        // getFramebufferHeight()를 써야 운영체제 디스플레이 배율을 무시함
+        final double physicalScale = client.getWindow().getFramebufferHeight() / 1080.0;
         final double scaleFactor = client.getWindow().getScaleFactor();
         return physicalScale / scaleFactor;
     }

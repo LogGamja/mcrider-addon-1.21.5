@@ -38,8 +38,10 @@ final class MinimapRenderer {
     private static final Logger LOGGER = LoggerFactory.getLogger("mcrider");
 
     private static final double LEGACY_GUI_SCALE_BASIS = 4.0;
-    private static final int PADDING = (int) Math.round(10 * LEGACY_GUI_SCALE_BASIS);
     private static final int BASE_RADIUS = (int) Math.round(50 * LEGACY_GUI_SCALE_BASIS);
+
+    private static final int HUD_MARGIN = 15;
+    private static final double HUD_MARGIN_BASE_SCALE = 3;
 
     static final double BASE_DIST = 60;
     private static final double UI_SCALE = 0.75;
@@ -432,7 +434,7 @@ final class MinimapRenderer {
         final double sizeFactor = MCRiderRadar.getSizeFactor(client);
         final int screenWidth = client.getWindow().getScaledWidth();
         final int screenHeight = client.getWindow().getScaledHeight();
-        final double scaledPadding = PADDING * sizeFactor;
+        final double scaledPadding = HUD_MARGIN * HUD_MARGIN_BASE_SCALE * sizeFactor;
         final double scaledRadius = RADIUS * sizeFactor;
 
         // 미니맵 위치 옵션에 따른 렌더링
