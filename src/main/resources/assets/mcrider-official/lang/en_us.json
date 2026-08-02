@@ -38,8 +38,9 @@
   "mcrider.option.camera_mode.kartrider": "Camera mode: Kartrider[4]",
   "mcrider.tooltip.camera_mode": "Change camera mode when riding a kart.",
 
-  "mcrider.option.spectator_camera.default": "Spectator Camera: Default",
-  "mcrider.option.spectator_camera.observer": "Spectator Camera: Observer",
+  "mcrider.option.spectator_camera.off": "Spectator Camera: OFF",
+  "mcrider.option.spectator_camera.mcrider": "Spectator Camera: MCRider",
+  "mcrider.option.spectator_camera.kartrider": "Spectator Camera: KartRider",
   "mcrider.tooltip.spectator_camera": "Change the camera behavior when spectating another rider.",
 
   "mcrider.option.suspension_effect.off": "Suspension Effect: OFF",

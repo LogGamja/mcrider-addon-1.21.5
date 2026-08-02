@@ -21,6 +21,7 @@
           "loggamja.mcrider.MCRiderRadar",
           "loggamja.mcrider.MCRiderDraft",
           "loggamja.mcrider.MCRiderCamera",
+          "loggamja.mcrider.MCRiderObserverCamera",
           "loggamja.mcrider.MCRiderSuspension"
 		]
 	},

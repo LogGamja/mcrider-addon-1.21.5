@@ -161,21 +161,34 @@ public class MCRiderCamera implements ClientModInitializer {
         float alpha = MathHelper.clamp(tickInterval * temporalGradient, 0f, 1f);
         return current + (target - current) * alpha;
     }
+    // 관전 카메라 옵션에 따른 거리 증가
+    static final float OBSERVER_DISTANCE_MULTIPLIER = 1.5f;
+
+    static boolean isObserverBoostActive() {
+        return MCRiderConfig.INSTANCE.spectatorCameraMode != 0 && MCRiderMain.isSpectatingPlayer();
+    }
+
     public static float getCameraDistanceOffset(float originalDistance) {
-        if (MCRiderConfig.INSTANCE.cameraMode == 0)
-            return originalDistance;
-        else if (client.options.getPerspective() == Perspective.FIRST_PERSON)
+        if (client.options.getPerspective() == Perspective.FIRST_PERSON)
             return originalDistance;
 
-        return (float) linearMap(cameraDistanceOffset, BASE_DISTANCE, 815, linearTransformTargetBaseDistance, 815) / 200;
+        boolean observerBoost = isObserverBoostActive();
+        if (MCRiderConfig.INSTANCE.cameraMode == 0)
+            return observerBoost ? originalDistance * OBSERVER_DISTANCE_MULTIPLIER : originalDistance;
+
+        float distance = (float) linearMap(cameraDistanceOffset, BASE_DISTANCE, 815, linearTransformTargetBaseDistance, 815) / 200;
+        return observerBoost ? distance * OBSERVER_DISTANCE_MULTIPLIER : distance;
     }
     public static float getCameraDistanceOffsetAtPrevTick(float originalDistance) {
-        if (MCRiderConfig.INSTANCE.cameraMode == 0)
-            return originalDistance;
-        else if (client.options.getPerspective() == Perspective.FIRST_PERSON)
+        if (client.options.getPerspective() == Perspective.FIRST_PERSON)
             return originalDistance;
 
-        return (float) linearMap(cameraDistanceOffsetAtPrevTick, BASE_DISTANCE, 815, linearTransformTargetBaseDistance, 815) / 200;
+        boolean observerBoost = isObserverBoostActive();
+        if (MCRiderConfig.INSTANCE.cameraMode == 0)
+            return observerBoost ? originalDistance * OBSERVER_DISTANCE_MULTIPLIER : originalDistance;
+
+        float distance = (float) linearMap(cameraDistanceOffsetAtPrevTick, BASE_DISTANCE, 815, linearTransformTargetBaseDistance, 815) / 200;
+        return observerBoost ? distance * OBSERVER_DISTANCE_MULTIPLIER : distance;
     }
     // 기본 카메라 거리를 늘리기 위한 선형변환식
     static double linearMap(double x, double a, double b, double c, double d) {

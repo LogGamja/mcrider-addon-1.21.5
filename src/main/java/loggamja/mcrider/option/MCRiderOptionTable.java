@@ -80,7 +80,7 @@ public final class MCRiderOptionTable {
             ),
             new ToggleDef(
                     "spectator_camera", Category.CAMERA,
-                    new String[]{"mcrider.option.spectator_camera.default", "mcrider.option.spectator_camera.observer"},
+                    new String[]{"mcrider.option.spectator_camera.off", "mcrider.option.spectator_camera.mcrider", "mcrider.option.spectator_camera.kartrider"},
                     "mcrider.tooltip.spectator_camera",
                     () -> MCRiderConfig.INSTANCE.spectatorCameraMode,
                     v -> MCRiderConfig.INSTANCE.spectatorCameraMode = v

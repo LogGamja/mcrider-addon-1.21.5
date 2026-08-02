@@ -38,8 +38,9 @@
   "mcrider.option.camera_mode.kartrider": "카메라 모드: 원작[4]",
   "mcrider.tooltip.camera_mode": "카트 탑승 시 카메라 연출 방식을 선택할 수 있습니다.",
 
-  "mcrider.option.spectator_camera.default": "관전 카메라: 기본",
-  "mcrider.option.spectator_camera.observer": "관전 카메라: 옵저버",
+  "mcrider.option.spectator_camera.off": "관전 카메라: 꺼짐",
+  "mcrider.option.spectator_camera.mcrider": "관전 카메라: 마크라이더",
+  "mcrider.option.spectator_camera.kartrider": "관전 카메라: 카트라이더",
   "mcrider.tooltip.spectator_camera": "다른 라이더를 관전할 때 카메라 연출 방식을 선택합니다.",
 
   "mcrider.option.suspension_effect.off": "서스펜션 효과: 꺼짐",

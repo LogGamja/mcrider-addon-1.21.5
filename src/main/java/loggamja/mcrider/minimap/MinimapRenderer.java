@@ -559,15 +559,7 @@ final class MinimapRenderer {
     }
 
     private static float getKartBodyYaw(PlayerEntity player, float tickDelta) {
-        Entity kart = player.getRootVehicle();
-        if (kart != null && kart != player) {
-            for (Entity passenger : kart.getPassengerList()) {
-                if (MCRiderMain.hasCertainName(passenger, "mcrider-modelsaddle")) {
-                    return passenger.getYaw(tickDelta);
-                }
-            }
-        }
-        return player.getYaw(tickDelta);
+        return MCRiderMain.getKartBodyYaw(player, tickDelta);
     }
 
     private static void drawSelfMarker(DrawContext context, float cx, float cy, float size, float rotationDeg) {

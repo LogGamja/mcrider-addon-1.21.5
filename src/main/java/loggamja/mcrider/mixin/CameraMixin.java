@@ -1,14 +1,17 @@
 package loggamja.mcrider.mixin;
 
 import loggamja.mcrider.MCRiderCamera;
+import loggamja.mcrider.MCRiderObserverCamera;
 import loggamja.mcrider.option.MCRiderConfig;
 import loggamja.mcrider.MCRiderMain;
 import loggamja.mcrider.helper.EntityRollManager;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.option.Perspective;
 import net.minecraft.client.render.Camera;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.math.MathHelper;
+import net.minecraft.world.BlockView;
 import org.joml.Quaternionf;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -89,5 +92,52 @@ public class CameraMixin {
 
         if (Math.abs(mcrider$smoothRoll) < 1.0e-4f) return;
         this.rotation.rotateZ((float) Math.toRadians(mcrider$smoothRoll));
+    }
+
+    // 앵커(카메라 위치) 계산에 쓰일 yaw를 카트바디(mcrider-modelsaddle) 방향의 지수평균으로 대체한다.
+    @ModifyVariable(method = "setRotation(FF)V", at = @At("HEAD"), argsOnly = true, ordinal = 0)
+    private float mcrider$overrideObserverAnchorYaw(float yaw) {
+        if (MinecraftClient.getInstance().options.getPerspective() != Perspective.THIRD_PERSON_BACK) {
+            MCRiderObserverCamera.requestAnchorResync();
+            return yaw;
+        }
+
+        float delta = MinecraftClient.getInstance().getRenderTickCounter().getTickProgress(false);
+        return MCRiderObserverCamera.updateAnchorYaw(yaw, delta);
+    }
+
+    // pitch는 옵저버 카메라 로직(수직 속도 기반)으로 대체한다
+    @ModifyVariable(method = "setRotation(FF)V", at = @At("HEAD"), argsOnly = true, ordinal = 1)
+    private float mcrider$overrideObserverPitch(float pitch) {
+        if (MinecraftClient.getInstance().options.getPerspective() != Perspective.THIRD_PERSON_BACK) return pitch;
+
+        float delta = MinecraftClient.getInstance().getRenderTickCounter().getTickProgress(false);
+        return MCRiderObserverCamera.getPitchOverride(pitch, delta);
+    }
+
+    // TAIL이라 앵커 위치는 그대로 두고 화면 방향만 바뀐다.
+    // 서스펜션 롤과 축이 섞이지 않도록 롤을 떼었다가 yaw(월드축 premul)/pitch(로컬축)를 적용한 뒤 롤을 다시 붙인다.
+    @Inject(method = "update", at = @At("TAIL"))
+    private void mcrider$applyObserverOffsets(BlockView area, Entity focusedEntity, boolean thirdPerson, boolean inverseView, float tickDelta, CallbackInfo ci) {
+        if (!thirdPerson || inverseView) return;
+
+        float yawOffset = MCRiderObserverCamera.getYawOvershootOffset();
+        float pitchOffset = MCRiderObserverCamera.getLocalPitchOffset();
+        if (yawOffset == 0f && pitchOffset == 0f) return;
+
+        boolean hasRoll = MCRiderConfig.INSTANCE.suspensionEffect == 2 && Math.abs(mcrider$smoothRoll) >= 1.0e-4f;
+        float rollRad = hasRoll ? (float) Math.toRadians(mcrider$smoothRoll) : 0f;
+
+        if (hasRoll) this.rotation.rotateZ(-rollRad);
+
+        if (yawOffset != 0f) {
+            Quaternionf worldYaw = new Quaternionf().rotationY((float) Math.toRadians(yawOffset));
+            this.rotation.premul(worldYaw);
+        }
+        if (pitchOffset != 0f) {
+            this.rotation.rotateX((float) Math.toRadians(-pitchOffset));
+        }
+
+        if (hasRoll) this.rotation.rotateZ(rollRad);
     }
 }

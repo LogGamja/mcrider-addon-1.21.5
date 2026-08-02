@@ -124,6 +124,25 @@ public class MCRiderMain implements ClientModInitializer {
         }
         return client.player;
     }
+
+    public static boolean isSpectatingPlayer() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        var cameraEntity = client.getCameraEntity();
+
+        return cameraEntity != null && cameraEntity.isPlayer() && cameraEntity != client.player;
+    }
+
+    public static float getKartBodyYaw(PlayerEntity player, float tickDelta) {
+        Entity kart = player.getRootVehicle();
+        if (kart != null && kart != player) {
+            for (Entity passenger : kart.getPassengerList()) {
+                if (hasCertainName(passenger, "mcrider-modelsaddle")) {
+                    return passenger.getYaw(tickDelta);
+                }
+            }
+        }
+        return player.getYaw(tickDelta);
+    }
     static String getSaddleType(Entity saddle) {
         if (hasCertainName(saddle, "mcrider-saddle")) {
             return "common";
