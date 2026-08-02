@@ -71,7 +71,8 @@ public abstract class GameRendererMixin {
     }
     @Inject(method = "getFov", at = @At(value = "HEAD"), cancellable = true)
     private void mcrider$beforeGetFov(Camera camera, float tickDelta, boolean changingFov, CallbackInfoReturnable<Float> cir) {
-        if (!MCRiderMain.isRidingKart) return;
+        // !changingFov: 팔 늘어남 방지
+        if (!MCRiderMain.isRidingKart || !changingFov) return;
 
         if (MCRiderConfig.INSTANCE.cameraMode == 0) {
             mcrider$backupFov = mcrider$options.getFov().getValue();

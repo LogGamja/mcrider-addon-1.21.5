@@ -62,12 +62,11 @@ public class MCRiderObserverCamera implements ClientModInitializer {
         float newYaw = MCRiderMain.getKartBodyYaw(target, 1f);
         Vec3d pos = target.getPos();
 
-        // 대상 전환은 렌더 경로(updateAnchorYaw)가 먼저 감지해 이미 리싱크했을 수 있다.
-        // 여기서 또 UUID만 보고 판단하면 그 리싱크를 놓치므로 공용 헬퍼로 통일한다
+        // 대상 전환 감지와 리싱크는 헬퍼가 단독으로 처리한다. 틱은 헬퍼가 보지 않는 텔레포트만 담당
         boolean targetChanged = syncToTargetIfChanged(target, newYaw);
-        boolean mustResync = targetChanged || (lastObservedPos != null && pos.distanceTo(lastObservedPos) > TELEPORT_DISTANCE_THRESHOLD);
+        boolean teleported = !targetChanged && lastObservedPos != null && pos.distanceTo(lastObservedPos) > TELEPORT_DISTANCE_THRESHOLD;
 
-        if (mustResync) resync(newYaw);
+        if (teleported) resync(newYaw);
 
         lastObservedTargetUuid = target.getUuid();
         lastObservedPos = pos;
