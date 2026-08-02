@@ -11,79 +11,96 @@ import java.util.function.IntSupplier;
 public final class MCRiderOptionTable {
     private MCRiderOptionTable() {}
 
-    public record ToggleDef(String id, String[] labelKeys, String tooltipKey, IntSupplier getter, IntConsumer setter) {
+    public enum Category {
+        BASIC("mcrider.setting.category.basic"),
+        UI("mcrider.setting.category.ui"),
+        CAMERA("mcrider.setting.category.camera");
+
+        private final String labelKey;
+        Category(String labelKey) { this.labelKey = labelKey; }
+        public String labelKey() { return labelKey; }
+    }
+
+    public record ToggleDef(String id, Category category, String[] labelKeys, String tooltipKey, IntSupplier getter, IntConsumer setter) {
         public int stateCount() { return labelKeys.length; }
     }
 
-    public record SliderDef(String id, String labelKey, String tooltipKey, double min, double max,
+    public record SliderDef(String id, Category category, String labelKey, String tooltipKey, double min, double max,
                       DoubleSupplier getter, Consumer<Float> setter) {}
 
     public static final ToggleDef[] TOGGLES = {
             new ToggleDef(
-                    "steer_boost",
+                    "steer_boost", Category.BASIC,
                     new String[]{"mcrider.option.steer_boost.off", "mcrider.option.steer_boost.normal", "mcrider.option.steer_boost.extreme"},
                     "mcrider.tooltip.steer_boost",
                     () -> MCRiderConfig.INSTANCE.MCRiderRotationOption,
                     v -> MCRiderConfig.INSTANCE.MCRiderRotationOption = v
             ),
             new ToggleDef(
-                    "packet_boost",
+                    "packet_boost", Category.BASIC,
                     new String[]{"mcrider.option.packet_boost.off", "mcrider.option.packet_boost.on"},
                     "mcrider.tooltip.packet_boost",
                     () -> MCRiderConfig.INSTANCE.MCRiderPacketAcceleration ? 1 : 0,
                     v -> MCRiderConfig.INSTANCE.MCRiderPacketAcceleration = v != 0
             ),
             new ToggleDef(
-                    "enemy_radar",
+                    "enemy_radar", Category.UI,
                     new String[]{"mcrider.option.enemy_radar.off", "mcrider.option.enemy_radar.on"},
                     "mcrider.tooltip.enemy_radar",
                     () -> MCRiderConfig.INSTANCE.MCRiderRadarOption,
                     v -> MCRiderConfig.INSTANCE.MCRiderRadarOption = v
             ),
             new ToggleDef(
-                    "draft_gauge",
+                    "draft_gauge", Category.UI,
                     new String[]{"mcrider.option.draft_gauge.off", "mcrider.option.draft_gauge.on"},
                     "mcrider.tooltip.draft_gauge",
                     () -> MCRiderConfig.INSTANCE.useDraftGauge ? 1 : 0,
                     v -> MCRiderConfig.INSTANCE.useDraftGauge = v != 0
             ),
             new ToggleDef(
-                    "auto_third_person",
+                    "auto_third_person", Category.CAMERA,
                     new String[]{"mcrider.option.auto_third_person.off", "mcrider.option.auto_third_person.on"},
                     "mcrider.tooltip.auto_third_person",
                     () -> MCRiderConfig.INSTANCE.useAutoThirdPerson ? 1 : 0,
                     v -> MCRiderConfig.INSTANCE.useAutoThirdPerson = v != 0
             ),
             new ToggleDef(
-                    "noclip_camera",
+                    "noclip_camera", Category.CAMERA,
                     new String[]{"mcrider.option.noclip_camera.off", "mcrider.option.noclip_camera.on"},
                     "mcrider.tooltip.noclip_camera",
                     () -> MCRiderConfig.INSTANCE.useNoclipCamera ? 1 : 0,
                     v -> MCRiderConfig.INSTANCE.useNoclipCamera = v != 0
             ),
             new ToggleDef(
-                    "camera_mode",
+                    "camera_mode", Category.CAMERA,
                     new String[]{"mcrider.option.camera_mode.default", "mcrider.option.camera_mode.balance", "mcrider.option.camera_mode.normal", "mcrider.option.camera_mode.kartrider"},
                     "mcrider.tooltip.camera_mode",
                     () -> MCRiderConfig.INSTANCE.cameraMode,
                     v -> MCRiderConfig.INSTANCE.cameraMode = v
             ),
             new ToggleDef(
-                    "suspension_effect",
+                    "spectator_camera", Category.CAMERA,
+                    new String[]{"mcrider.option.spectator_camera.default", "mcrider.option.spectator_camera.observer"},
+                    "mcrider.tooltip.spectator_camera",
+                    () -> MCRiderConfig.INSTANCE.spectatorCameraMode,
+                    v -> MCRiderConfig.INSTANCE.spectatorCameraMode = v
+            ),
+            new ToggleDef(
+                    "suspension_effect", Category.BASIC,
                     new String[]{"mcrider.option.suspension_effect.off", "mcrider.option.suspension_effect.kart", "mcrider.option.suspension_effect.kart_and_camera"},
                     "mcrider.tooltip.suspension_effect",
                     () -> MCRiderConfig.INSTANCE.suspensionEffect,
                     v -> MCRiderConfig.INSTANCE.suspensionEffect = v
             ),
             new ToggleDef(
-                    "bike_suspension",
+                    "bike_suspension", Category.BASIC,
                     new String[]{"mcrider.option.bike_suspension.default", "mcrider.option.bike_suspension.four_wheel", "mcrider.option.bike_suspension.realistic", "mcrider.option.bike_suspension.extreme"},
                     "mcrider.tooltip.bike_suspension",
                     () -> MCRiderConfig.INSTANCE.bikeSuspension,
                     v -> MCRiderConfig.INSTANCE.bikeSuspension = v
             ),
             new ToggleDef(
-                    "track_minimap",
+                    "track_minimap", Category.UI,
                     new String[]{
                             "mcrider.option.track_minimap.off",
                             "mcrider.option.track_minimap.bottom_left",
@@ -102,18 +119,26 @@ public final class MCRiderOptionTable {
 
     public static final SliderDef[] SLIDERS = {
             new SliderDef(
-                    "riding_fov",
+                    "riding_fov", Category.CAMERA,
                     "mcrider.slider.riding_fov", "mcrider.slider.riding_fov.tooltip", 30.0, 110.0,
                     () -> MCRiderConfig.INSTANCE.MCRiderFOV,
                     v -> MCRiderConfig.INSTANCE.MCRiderFOV = Math.round(v)
             ),
             new SliderDef(
-                    "riding_fov_effects",
+                    "riding_fov_effects", Category.CAMERA,
                     "mcrider.slider.riding_fov_effects", "mcrider.slider.riding_fov_effects.tooltip", 0.0, 100.0,
                     () -> MCRiderConfig.INSTANCE.MCRiderFOVEffects,
                     v -> MCRiderConfig.INSTANCE.MCRiderFOVEffects = Math.round(v)
             ),
     };
+
+    public static ToggleDef[] togglesIn(Category category) {
+        return java.util.Arrays.stream(TOGGLES).filter(t -> t.category() == category).toArray(ToggleDef[]::new);
+    }
+
+    public static SliderDef[] slidersIn(Category category) {
+        return java.util.Arrays.stream(SLIDERS).filter(s -> s.category() == category).toArray(SliderDef[]::new);
+    }
 
     public static ToggleDef findToggle(String id) {
         for (ToggleDef def : TOGGLES) {

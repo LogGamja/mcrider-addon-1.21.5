@@ -1,7 +1,11 @@
 {
-  "mcrider.setting.title": "설정",
+  "mcrider.setting.title": "마크라이더 설정",
   "mcrider.setting.menu_button": "마크라이더 설정",
-  "mcrider.setting.ok": "확인",
+  "mcrider.setting.ok": "완료",
+
+  "mcrider.setting.category.basic": "기본",
+  "mcrider.setting.category.ui": "인터페이스",
+  "mcrider.setting.category.camera": "카메라",
 
   "mcrider.option.steer_boost.off": "조작 가속: 꺼짐",
   "mcrider.option.steer_boost.normal": "조작 가속: 보통",
@@ -33,6 +37,10 @@
   "mcrider.option.camera_mode.normal": "카메라 모드: 보통[3]",
   "mcrider.option.camera_mode.kartrider": "카메라 모드: 원작[4]",
   "mcrider.tooltip.camera_mode": "카트 탑승 시 카메라 연출 방식을 선택할 수 있습니다.",
+
+  "mcrider.option.spectator_camera.default": "관전 카메라: 기본",
+  "mcrider.option.spectator_camera.observer": "관전 카메라: 옵저버",
+  "mcrider.tooltip.spectator_camera": "다른 라이더를 관전할 때 카메라 연출 방식을 선택합니다.",
 
   "mcrider.option.suspension_effect.off": "서스펜션 효과: 꺼짐",
   "mcrider.option.suspension_effect.kart": "서스펜션 효과: 카트바디",

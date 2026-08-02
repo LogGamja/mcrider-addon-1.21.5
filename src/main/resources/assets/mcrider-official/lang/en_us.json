@@ -1,7 +1,11 @@
 {
-  "mcrider.setting.title": "Setting",
+  "mcrider.setting.title": "MCRider Setting",
   "mcrider.setting.menu_button": "MCRider Setting",
-  "mcrider.setting.ok": "OK",
+  "mcrider.setting.ok": "Done",
+
+  "mcrider.setting.category.basic": "Basic",
+  "mcrider.setting.category.ui": "Interface",
+  "mcrider.setting.category.camera": "Camera",
 
   "mcrider.option.steer_boost.off": "Steer Boost: OFF",
   "mcrider.option.steer_boost.normal": "Steer Boost: Normal",
@@ -33,6 +37,10 @@
   "mcrider.option.camera_mode.normal": "Camera mode: Normal[3]",
   "mcrider.option.camera_mode.kartrider": "Camera mode: Kartrider[4]",
   "mcrider.tooltip.camera_mode": "Change camera mode when riding a kart.",
+
+  "mcrider.option.spectator_camera.default": "Spectator Camera: Default",
+  "mcrider.option.spectator_camera.observer": "Spectator Camera: Observer",
+  "mcrider.tooltip.spectator_camera": "Change the camera behavior when spectating another rider.",
 
   "mcrider.option.suspension_effect.off": "Suspension Effect: OFF",
   "mcrider.option.suspension_effect.kart": "Suspension Effect: Kart",

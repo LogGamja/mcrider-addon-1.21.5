@@ -30,6 +30,7 @@ public class MCRiderConfig {
     public boolean useDraftGauge = true;
     public boolean useAutoThirdPerson = true;
     public int cameraMode = 2;
+    public int spectatorCameraMode = 0;
 
     public int suspensionEffect = 0;
     public int bikeSuspension = 0;

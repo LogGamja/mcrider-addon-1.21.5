@@ -2,13 +2,12 @@ package loggamja.mcrider.option;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.tooltip.Tooltip;
 import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.text.Text;
 
 public class MCRiderSettingScreen extends Screen {
     private final Screen parent;
+    private int startY;
 
     // ESC 메뉴가 아닌 다른 곳(API 등)에서도 열릴 수 있으므로, 닫을 때 돌아갈 화면을 직접 기억한다
     public MCRiderSettingScreen(Screen parent) {
@@ -24,86 +23,29 @@ public class MCRiderSettingScreen extends Screen {
         int buttonHeight = 20;
         int spacing = 25;
         int startX = this.width / 2 - buttonWidth / 2;
-        int topGap = 15;
-        int startY = topGap + 24;
 
         MCRiderOptionTable.clampAllToggles();
         MCRiderOptionTable.clampAllSliders();
 
-        var toggles = MCRiderOptionTable.TOGGLES;
-        int buttonsPerRow = 2;
-        int gap = 12;
-        int centerX = this.width / 2;
+        MCRiderOptionTable.Category[] categories = MCRiderOptionTable.Category.values();
+        int totalRows = categories.length + 2;
+        this.startY = this.height / 2 - (totalRows * spacing) / 2;
+        int startY = this.startY;
 
-        for (int i = 0; i < toggles.length; i++) {
-            var def = toggles[i];
-
-            int row = i / buttonsPerRow;
-            int col = i % buttonsPerRow;
-
-            int buttonY = startY + row * spacing;
-            int leftX  = centerX - (gap / 2) - buttonWidth;
-            int rightX = centerX + (gap / 2);
-
-            int buttonX = (col == 0) ? leftX : rightX;
-
-            int current = def.getter().getAsInt();
-
-            ButtonWidget toggleButton = ButtonWidget.builder(
-                            Text.translatable(def.labelKeys()[current]),
-                            button -> {
-                                int next = (def.getter().getAsInt() + 1) % def.stateCount();
-                                def.setter().accept(next);
-                                button.setMessage(Text.translatable(def.labelKeys()[next]));
-                                MCRiderConfig.INSTANCE.save();
-                            })
-                    .position(buttonX, buttonY)
-                    .size(buttonWidth, buttonHeight)
-                    .tooltip(Tooltip.of(Text.translatable(def.tooltipKey())))
-                    .build();
-
-            this.addDrawableChild(toggleButton);
-        }
-
-        int toggleRows = (toggles.length + buttonsPerRow - 1) / buttonsPerRow;
-
-        var sliders = MCRiderOptionTable.SLIDERS;
-        for (int i = 0; i < sliders.length; i++) {
-            var def = sliders[i];
-            double min = def.min();
-            double max = def.max();
-            double value = def.getter().getAsDouble();
-
-            double normalized = (value - min) / (max - min);
-            String labelText = Text.translatable(def.labelKey()).getString();
-
-            SliderWidget slider = new SliderWidget(startX, startY + (toggleRows + i) * spacing,
-                    buttonWidth, buttonHeight, Text.literal(labelText + ": " + (int) value), normalized) {
-                @Override
-                protected void updateMessage() {
-                    double actual = min + this.value * (max - min);
-                    this.setMessage(Text.literal(labelText + ": " + (int) actual));
-                }
-
-                @Override
-                protected void applyValue() {
-                    double actual = min + this.value * (max - min);
-                    def.setter().accept((float) actual);
-                }
-
-                @Override
-                public void onRelease(double mouseX, double mouseY) {
-                    super.onRelease(mouseX, mouseY);
-                    MCRiderConfig.INSTANCE.save();
-                }
-            };
-            slider.setTooltip(Tooltip.of(Text.translatable(def.tooltipKey())));
-            this.addDrawableChild(slider);
+        for (int i = 0; i < categories.length; i++) {
+            var category = categories[i];
+            this.addDrawableChild(
+                ButtonWidget.builder(Text.translatable(category.labelKey()),
+                                button -> this.client.setScreen(new MCRiderCategoryScreen(this, category)))
+                        .position(startX, startY + i * spacing)
+                        .size(buttonWidth, buttonHeight)
+                        .build()
+            );
         }
 
         this.addDrawableChild(
             ButtonWidget.builder(Text.translatable("mcrider.setting.ok"), button -> this.close())
-                .position(startX, startY + (toggleRows + sliders.length) * spacing)
+                .position(startX, startY + (categories.length + 1) * spacing)
                 .size(buttonWidth, buttonHeight)
                 .build()
         );
@@ -111,7 +53,7 @@ public class MCRiderSettingScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        context.drawCenteredTextWithShadow(this.textRenderer, Text.translatable("mcrider.setting.title"), this.width / 2, 15, 0xFFFFFF);
+        context.drawCenteredTextWithShadow(this.textRenderer, Text.translatable("mcrider.setting.title"), this.width / 2, this.startY / 2, 0xFFFFFF);
         super.render(context, mouseX, mouseY, delta);
     }
 
