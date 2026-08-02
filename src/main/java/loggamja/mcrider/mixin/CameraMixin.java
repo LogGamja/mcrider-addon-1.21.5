@@ -102,14 +102,14 @@ public class CameraMixin {
             return yaw;
         }
 
-        float delta = MinecraftClient.getInstance().getRenderTickCounter().getTickProgress(false);
-        return MCRiderObserverCamera.updateAnchorYaw(yaw, delta);
+        return MCRiderObserverCamera.updateAnchorYaw(yaw);
     }
 
     // pitch는 옵저버 카메라 로직(수직 속도 기반)으로 대체한다
     @ModifyVariable(method = "setRotation(FF)V", at = @At("HEAD"), argsOnly = true, ordinal = 1)
     private float mcrider$overrideObserverPitch(float pitch) {
         if (MinecraftClient.getInstance().options.getPerspective() != Perspective.THIRD_PERSON_BACK) return pitch;
+        if (!MCRiderObserverCamera.isObserverLogicActive()) return pitch;
 
         float delta = MinecraftClient.getInstance().getRenderTickCounter().getTickProgress(false);
         return MCRiderObserverCamera.getPitchOverride(pitch, delta);

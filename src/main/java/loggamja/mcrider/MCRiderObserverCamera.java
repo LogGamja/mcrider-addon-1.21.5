@@ -16,6 +16,7 @@ public class MCRiderObserverCamera implements ClientModInitializer {
     static final double TELEPORT_DISTANCE_THRESHOLD = 16.0;
     static UUID lastObservedTargetUuid = null;
     static Vec3d lastObservedPos = null;
+    static boolean isReset = true;
 
     static final float DEFAULT_PITCH = 15f;
     static final float MIN_PITCH = 10f;
@@ -42,6 +43,7 @@ public class MCRiderObserverCamera implements ClientModInitializer {
 
     // 오버슈팅 보간
     static final float YAW_OVERSHOOT_MULTIPLIER = -0.175f;
+    static final float YAW_OVERSHOOT_MAX = 90f;
     static final float YAW_VELOCITY_SMOOTH_TIME = 0.3f;
     static float anchorYawVelocity = 0f;
 
@@ -51,15 +53,18 @@ public class MCRiderObserverCamera implements ClientModInitializer {
     }
     void onClientTickStart() {
         if (!isObserverLogicActive()) {
-            reset();
+            if (!isReset) reset();
             return;
         }
+        isReset = false;
 
         PlayerEntity target = MCRiderMain.getRidingPlayer();
         float newYaw = MCRiderMain.getKartBodyYaw(target, 1f);
         Vec3d pos = target.getPos();
 
-        boolean targetChanged = !target.getUuid().equals(lastObservedTargetUuid);
+        // 대상 전환은 렌더 경로(updateAnchorYaw)가 먼저 감지해 이미 리싱크했을 수 있다.
+        // 여기서 또 UUID만 보고 판단하면 그 리싱크를 놓치므로 공용 헬퍼로 통일한다
+        boolean targetChanged = syncToTargetIfChanged(target, newYaw);
         boolean mustResync = targetChanged || (lastObservedPos != null && pos.distanceTo(lastObservedPos) > TELEPORT_DISTANCE_THRESHOLD);
 
         if (mustResync) resync(newYaw);
@@ -70,7 +75,18 @@ public class MCRiderObserverCamera implements ClientModInitializer {
         updatePitch(target);
         kartBodyYawRaw = newYaw;
     }
-    void resync(float newYaw) {
+    // 관전 대상이 바뀌면 화면에 다음 프레임이 그려지기 전에 앵커를 새 대상 방향으로 맞춰야 한다.
+    // 틱 핸들러와 렌더 경로(updateAnchorYaw) 양쪽에서 호출되므로, 어느 쪽이 먼저 대상 전환을
+    // 감지하더라도 나머지 한쪽이 중복 리싱크하지 않도록 UUID 갱신까지 여기서 함께 처리한다
+    static boolean syncToTargetIfChanged(PlayerEntity target, float newYaw) {
+        if (target.getUuid().equals(lastObservedTargetUuid)) return false;
+
+        resync(newYaw);
+        lastObservedTargetUuid = target.getUuid();
+        lastObservedPos = target.getPos();
+        return true;
+    }
+    static void resync(float newYaw) {
         lastY = null;
         verticalVelocityBuffer.clear();
         syncAnchor(newYaw);
@@ -127,6 +143,7 @@ public class MCRiderObserverCamera implements ClientModInitializer {
         renderedAnchorYaw = 0f;
         anchorYawVelocity = 0f;
         needsAnchorResync = true;
+        isReset = true;
     }
     public static boolean isObserverLogicActive() {
         if (!MCRiderMain.isPlayingInGame() || !MCRiderMain.isRidingKart) return false;
@@ -147,8 +164,12 @@ public class MCRiderObserverCamera implements ClientModInitializer {
     }
     // 앵커 위치 계산에 쓰이는 yaw. 카트바디 방향의 지수평균으로 대체한다.
     // Camera#setRotation의 @ModifyVariable에서만 프레임당 정확히 한 번 호출해야 한다
-    public static float updateAnchorYaw(float vanillaYaw, float tickDelta) {
+    public static float updateAnchorYaw(float vanillaYaw) {
         if (!isObserverLogicActive()) return vanillaYaw;
+
+        // 대상 전환도 틱을 기다리면 그 사이 프레임들이 이전 대상의 앵커로 그려진다
+        PlayerEntity target = MCRiderMain.getRidingPlayer();
+        syncToTargetIfChanged(target, MCRiderMain.getKartBodyYaw(target, 1f));
 
         // 틱을 기다리면 그 사이 프레임들이 초기화된 방향을 그대로 그린다
         if (needsAnchorResync) syncAnchor(MCRiderMain.getKartBodyYaw(MCRiderMain.getRidingPlayer(), 1f));
@@ -170,7 +191,10 @@ public class MCRiderObserverCamera implements ClientModInitializer {
     }
     public static float getYawOvershootOffset() {
         if (!isOvershootActive()) return 0f;
-        return anchorYawVelocity * YAW_OVERSHOOT_MULTIPLIER;
+
+        // 클램프
+        float offset = anchorYawVelocity * YAW_OVERSHOOT_MULTIPLIER;
+        return MathHelper.clamp(offset, -YAW_OVERSHOOT_MAX, YAW_OVERSHOOT_MAX);
     }
     public static float getLocalPitchOffset() {
         if (!isObserverLogicActive()) return 0f;

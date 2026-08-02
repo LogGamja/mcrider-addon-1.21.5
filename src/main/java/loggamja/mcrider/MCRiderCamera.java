@@ -164,6 +164,10 @@ public class MCRiderCamera implements ClientModInitializer {
     // 관전 카메라 옵션에 따른 거리 증가
     static final float OBSERVER_DISTANCE_MULTIPLIER = 1.5f;
 
+    // 바닐라 Camera#update가 clipToSpace에 넘기는 기준 거리(4.0F * entity scale).
+    // originalDistance / 이 값 = 엔티티 스케일 배수이므로, 커스텀 거리에도 곱해 스케일을 보존한다
+    static final float VANILLA_BASE_CLIP_DISTANCE = 4.0f;
+
     static boolean isObserverBoostActive() {
         return MCRiderConfig.INSTANCE.spectatorCameraMode != 0 && MCRiderMain.isSpectatingPlayer();
     }
@@ -177,6 +181,7 @@ public class MCRiderCamera implements ClientModInitializer {
             return observerBoost ? originalDistance * OBSERVER_DISTANCE_MULTIPLIER : originalDistance;
 
         float distance = (float) linearMap(cameraDistanceOffset, BASE_DISTANCE, 815, linearTransformTargetBaseDistance, 815) / 200;
+        distance *= originalDistance / VANILLA_BASE_CLIP_DISTANCE;
         return observerBoost ? distance * OBSERVER_DISTANCE_MULTIPLIER : distance;
     }
     public static float getCameraDistanceOffsetAtPrevTick(float originalDistance) {
@@ -188,6 +193,7 @@ public class MCRiderCamera implements ClientModInitializer {
             return observerBoost ? originalDistance * OBSERVER_DISTANCE_MULTIPLIER : originalDistance;
 
         float distance = (float) linearMap(cameraDistanceOffsetAtPrevTick, BASE_DISTANCE, 815, linearTransformTargetBaseDistance, 815) / 200;
+        distance *= originalDistance / VANILLA_BASE_CLIP_DISTANCE;
         return observerBoost ? distance * OBSERVER_DISTANCE_MULTIPLIER : distance;
     }
     // 기본 카메라 거리를 늘리기 위한 선형변환식
