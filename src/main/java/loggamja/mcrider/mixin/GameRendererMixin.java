@@ -3,6 +3,7 @@ package loggamja.mcrider.mixin;
 
 import loggamja.mcrider.MCRiderCamera;
 import loggamja.mcrider.MCRiderMain;
+import loggamja.mcrider.helper.FlashbackDetector;
 import loggamja.mcrider.option.MCRiderConfig;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
@@ -32,11 +33,17 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.Objects;
 
-@Mixin(GameRenderer.class)
+// 1000 미만: getFov HEAD에서 Flashback보다 먼저 짜여야 아래 리플레이 분기가 산다
+// 인젝션 포인트는 weaving 전에 일괄 해석되므로 먼저 짜인 쪽이 먼저 실행된다
+@Mixin(value = GameRenderer.class, priority = 900)
 public abstract class GameRendererMixin {
     @Shadow public abstract MinecraftClient getClient();
 
     @Shadow @Final private MinecraftClient client;
+
+    // Flashback용
+    @Shadow private float fovMultiplier;
+    @Shadow private float lastFovMultiplier;
 
     @Unique private PlayerInput mcrider$lastPlayerInput = PlayerInput.DEFAULT;
     @Unique final GameOptions mcrider$options = MinecraftClient.getInstance().options;
@@ -51,6 +58,8 @@ public abstract class GameRendererMixin {
 
     @Inject(method = "updateFovMultiplier", at = @At(value = "HEAD"))
     private void mcrider$beforeFovMultiplierUpdate(CallbackInfo ci) {
+        mcrider$restoreFovEffectScale();
+
         if (!MCRiderMain.isRidingKart) return;
 
         mcrider$backupFovEffectScale = mcrider$options.getFovEffectScale().getValue();
@@ -62,8 +71,13 @@ public abstract class GameRendererMixin {
         }
         mcrider$options.getFovEffectScale().setValue(customEffectScale);
     }
+
     @Inject(method = "updateFovMultiplier", at = @At(value = "TAIL"))
     private void mcrider$afterFovUpdate(CallbackInfo ci) {
+        mcrider$restoreFovEffectScale();
+    }
+    @Unique
+    private void mcrider$restoreFovEffectScale() {
         if (!mcrider$isFovEffectScaleBackupedThisFrame) return;
 
         mcrider$options.getFovEffectScale().setValue(mcrider$backupFovEffectScale);
@@ -71,10 +85,22 @@ public abstract class GameRendererMixin {
     }
     @Inject(method = "getFov", at = @At(value = "HEAD"), cancellable = true)
     private void mcrider$beforeGetFov(Camera camera, float tickDelta, boolean changingFov, CallbackInfoReturnable<Float> cir) {
+        // 옵션 오염 방지 안전망
+        mcrider$restoreFov();
+
         // !changingFov: 팔 늘어남 방지
         if (!MCRiderMain.isRidingKart || !changingFov) return;
 
+        if (FlashbackDetector.isOverridingFov()) return;
+
         if (MCRiderConfig.INSTANCE.cameraMode == 0) {
+            if (FlashbackDetector.isInReplay()) {
+                float multiplier = MathHelper.lerp(tickDelta, lastFovMultiplier, fovMultiplier);
+
+                cir.setReturnValue(MCRiderConfig.INSTANCE.MCRiderFOV * multiplier);
+                return;
+            }
+
             mcrider$backupFov = mcrider$options.getFov().getValue();
             mcrider$isFovBackupedThisFrame = true;
 
@@ -91,6 +117,10 @@ public abstract class GameRendererMixin {
     }
     @Inject(method = "getFov", at = @At(value = "TAIL"))
     private void mcrider$afterGetFov(Camera camera, float tickDelta, boolean changingFov, CallbackInfoReturnable<Float> cir) {
+        mcrider$restoreFov();
+    }
+    @Unique
+    private void mcrider$restoreFov() {
         if (!mcrider$isFovBackupedThisFrame) return;
 
         mcrider$options.getFov().setValue(mcrider$backupFov);
