@@ -59,7 +59,7 @@ public class MCRiderObserverCamera implements ClientModInitializer {
         isReset = false;
 
         PlayerEntity target = MCRiderMain.getRidingPlayer();
-        float newYaw = MCRiderMain.getKartBodyYaw(target, 1f);
+        float newYaw = resolveYaw(target, 1f);
         Vec3d pos = target.getPos();
 
         // 대상 전환 감지와 리싱크는 헬퍼가 단독으로 처리한다. 틱은 헬퍼가 보지 않는 텔레포트만 담당
@@ -112,8 +112,19 @@ public class MCRiderObserverCamera implements ClientModInitializer {
         lastY = curY;
 
         pitchAtPrevTick = pitch;
-        float targetPitch = DEFAULT_PITCH - averageVelocity() * VERTICAL_VELOCITY_MULTIPLIER;
+        float targetPitch = allowsModelRotation(target)
+                ? DEFAULT_PITCH - averageVelocity() * VERTICAL_VELOCITY_MULTIPLIER
+                : target.getPitch(1f);
         pitch = MathHelper.clamp(targetPitch, MIN_PITCH, MAX_PITCH);
+    }
+    // 정지상태, 루프에서는 유저의 시선을 따라감
+    static boolean allowsModelRotation(PlayerEntity target) {
+        return MCRiderMain.getAllowModelRotation(target.getRootVehicle(), target);
+    }
+    static float resolveYaw(PlayerEntity target, float tickDelta) {
+        return allowsModelRotation(target)
+                ? MCRiderMain.getKartBodyYaw(target, tickDelta)
+                : target.getYaw(tickDelta);
     }
     static void addToVelocityBuffer(float velocity) {
         verticalVelocityBuffer.add(velocity);
@@ -168,10 +179,10 @@ public class MCRiderObserverCamera implements ClientModInitializer {
 
         // 대상 전환도 틱을 기다리면 그 사이 프레임들이 이전 대상의 앵커로 그려진다
         PlayerEntity target = MCRiderMain.getRidingPlayer();
-        syncToTargetIfChanged(target, MCRiderMain.getKartBodyYaw(target, 1f));
+        syncToTargetIfChanged(target, resolveYaw(target, 1f));
 
         // 틱을 기다리면 그 사이 프레임들이 초기화된 방향을 그대로 그린다
-        if (needsAnchorResync) syncAnchor(MCRiderMain.getKartBodyYaw(MCRiderMain.getRidingPlayer(), 1f));
+        if (needsAnchorResync) syncAnchor(resolveYaw(MCRiderMain.getRidingPlayer(), 1f));
 
         long now = System.nanoTime();
         float dt = (anchorYawLastTimeNanos == 0L) ? 0f : (now - anchorYawLastTimeNanos) / 1.0e9f;
