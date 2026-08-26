@@ -57,6 +57,7 @@ public class MCRiderSuspension implements ClientModInitializer {
 
     private void onClientTick() {
         if (!MCRiderMain.isPlayingInGame()) return;
+        if (MCRiderMain.kartEngine == 7) return;
 
         var world = MinecraftClient.getInstance().world;
         if (world == null) return;

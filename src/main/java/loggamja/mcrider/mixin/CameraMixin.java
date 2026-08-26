@@ -64,6 +64,7 @@ public class CameraMixin {
 
     @Inject(method = "setRotation(FF)V", at = @At("TAIL"))
     private void mcrider$setRotation(float yaw, float pitch, CallbackInfo ci) {
+        if (MCRiderMain.kartEngine == 7) return;
         if (MCRiderConfig.INSTANCE.suspensionEffect != 2) return;
 
         long now = System.nanoTime();
