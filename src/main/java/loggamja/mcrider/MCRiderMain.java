@@ -219,6 +219,7 @@ public class MCRiderMain implements ClientModInitializer {
         for (var i: passengers) {
             if (hasCertainName(i, "mcrider-direction")) {
                 var kartModelRotation = calculateRotation(i.getYaw());
+
                 prevKartYaw = hasKartYawHistory ? currentKartYaw : kartModelRotation;
                 currentKartYaw = kartModelRotation;
                 hasKartYawHistory = true;
@@ -244,13 +245,24 @@ public class MCRiderMain implements ClientModInitializer {
     float calculateRotation(float directionYaw) {
         var playerYaw = playerYawBuffer.getFirst();
 
+        // 타 엔진 조기 리턴
+        if (kartEngine == 1004) {
+            return MathHelper.wrapDegrees(playerYaw);
+        }
+        else if (kartEngine == 1006) {
+            int driftState = MCRiderMain.getS2CValue(MCRiderMain.getRidingPlayer(), "state-drift");
+            if (driftState == 1) {
+                return MathHelper.wrapDegrees(playerYaw);
+            }
+            else {
+                return MathHelper.wrapDegrees(directionYaw);
+            }
+        }
+
         var deltaAngle = MathHelper.wrapDegrees(playerYaw - directionYaw);
         var overShootAngle = getOverShootAngle(deltaAngle);
 
-        if (kartEngine == 1004)
-            return MathHelper.wrapDegrees(playerYaw);
-        else
-            return MathHelper.wrapDegrees(playerYaw + overShootAngle);
+        return MathHelper.wrapDegrees(playerYaw + overShootAngle);
     }
     void rotateKartModel(Entity entity, float angleToRotate) {
         List<Entity> models = entity.getPassengerList();
