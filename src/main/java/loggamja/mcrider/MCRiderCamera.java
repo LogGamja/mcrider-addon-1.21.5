@@ -37,6 +37,9 @@ public class MCRiderCamera implements ClientModInitializer {
     static Vec3d lastPos = null;
     float speed = 0f;
     public static float realSpeed = 0f;
+    public static float realDirection = 0f;
+
+    private static final float MIN_MOVE_FOR_DIRECTION = 0.0001f;
     public static float actionbarSpeed = 0f;
     public static int timeAfterLastActionbar = 0;
 
@@ -48,9 +51,13 @@ public class MCRiderCamera implements ClientModInitializer {
     }
 
     void onClientTickStart() {
-        if (!MCRiderMain.isPlayingInGame() || !MCRiderMain.isRidingKart || MCRiderConfig.INSTANCE.cameraMode == 0) return;
+        if (!MCRiderMain.isPlayingInGame() || !MCRiderMain.isRidingKart) return;
 
+        // 카트의 틱당 위치 차분(realSpeed/realDirection)은 카메라 연출 옵션(cameraMode)과 무관하게 항상 갱신되어야 함
         calculateSpeed();
+
+        if (MCRiderConfig.INSTANCE.cameraMode == 0) return;
+
         detectBooster();
 
         int armSpeedMultiplier = 2;
@@ -125,6 +132,12 @@ public class MCRiderCamera implements ClientModInitializer {
             float tickInterval = getTickRate();
             if (tickInterval > 0f) {
                 realSpeed = (distPerTick / tickInterval) * 3.6f;
+            }
+            
+            // 이동방향 구하기
+            if (distPerTick > MIN_MOVE_FOR_DIRECTION) {
+                float yawRad = (float) MathHelper.atan2(-dx, dz);
+                realDirection = MathHelper.wrapDegrees((float) Math.toDegrees(yawRad));
             }
         }
         lastPos = cur;
