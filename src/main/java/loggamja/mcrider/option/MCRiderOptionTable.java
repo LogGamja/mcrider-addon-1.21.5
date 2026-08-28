@@ -93,6 +93,13 @@ public final class MCRiderOptionTable {
                     v -> MCRiderConfig.INSTANCE.suspensionEffect = v
             ),
             new ToggleDef(
+                    "player_body_lock", Category.BASIC,
+                    new String[]{"mcrider.option.player_body_lock.off", "mcrider.option.player_body_lock.on"},
+                    "mcrider.tooltip.player_body_lock",
+                    () -> MCRiderConfig.INSTANCE.playerBodyLock ? 1 : 0,
+                    v -> MCRiderConfig.INSTANCE.playerBodyLock = v != 0
+            ),
+            new ToggleDef(
                     "bike_suspension", Category.BASIC,
                     new String[]{"mcrider.option.bike_suspension.default", "mcrider.option.bike_suspension.four_wheel", "mcrider.option.bike_suspension.realistic", "mcrider.option.bike_suspension.extreme"},
                     "mcrider.tooltip.bike_suspension",

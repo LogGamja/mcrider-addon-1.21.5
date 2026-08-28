@@ -48,6 +48,10 @@
   "mcrider.option.suspension_effect.kart_and_camera": "Suspension Effect: Kart and Camera",
   "mcrider.tooltip.suspension_effect": "Change suspension effect when riding a kart.",
 
+  "mcrider.option.player_body_lock.off": "Player Body Lock: OFF",
+  "mcrider.option.player_body_lock.on": "Player Body Lock: ON",
+  "mcrider.tooltip.player_body_lock": "Align the player's body with the kart for a cleaner look.",
+
   "mcrider.option.bike_suspension.default": "Bike Suspension: Default",
   "mcrider.option.bike_suspension.four_wheel": "Bike Suspension: 4-Wheel",
   "mcrider.option.bike_suspension.realistic": "Bike Suspension: Realistic",

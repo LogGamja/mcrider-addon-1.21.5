@@ -34,6 +34,7 @@ public class MCRiderConfig {
 
     public int suspensionEffect = 0;
     public int bikeSuspension = 0;
+    public boolean playerBodyLock = true;
 
     public int MCRiderFOV = 90;
     public int MCRiderFOVEffects = 80;

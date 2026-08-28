@@ -48,6 +48,10 @@
   "mcrider.option.suspension_effect.kart_and_camera": "서스펜션 효과: 카트와 카메라",
   "mcrider.tooltip.suspension_effect": "카트 탑승 시 드리프트 서스펜션 효과를 선택합니다.",
 
+  "mcrider.option.player_body_lock.off": "플레이어 상체 고정: 꺼짐",
+  "mcrider.option.player_body_lock.on": "플레이어 상체 고정: 켜짐",
+  "mcrider.tooltip.player_body_lock": "플레이어 몸체를 카트바디와 일치시켜 깔끔하게 보이게 합니다.",
+
   "mcrider.option.bike_suspension.default": "바이크 서스펜션: 기본",
   "mcrider.option.bike_suspension.four_wheel": "바이크 서스펜션: 4륜 카트",
   "mcrider.option.bike_suspension.realistic": "바이크 서스펜션: 현실적",
@@ -62,7 +66,7 @@
   "mcrider.option.track_minimap.top_left": "트랙 미니맵: 좌측 상단",
   "mcrider.option.track_minimap.top_right": "트랙 미니맵: 우측 상단",
   "mcrider.option.track_minimap.debug": "트랙 미니맵: 디버그",
-  "mcrider.tooltip.track_minimap": "카트 탑승 시 주변 환경을 자동으로 탐색해 미니맵과 라이더 위치를 보여줍니다.",
+  "mcrider.tooltip.track_minimap": "카트 탑승 시 주변을 자동으로 탐색해 미니맵과 라이더 위치를 보여줍니다.",
 
   "mcrider.slider.riding_fov": "주행 시야 범위",
   "mcrider.slider.riding_fov.tooltip": "카메라 모드 '기본' 상태에서만 적용됩니다.",

@@ -36,12 +36,17 @@ public class MCRiderMain implements ClientModInitializer {
     private static boolean hasKartYawHistory = false;
     private static boolean isKartYawUpdatedThisTick = false;
 
+    // F1 엔진 directionYaw 노이즈 억제용
+    private static float filteredDirectionYaw = 0f;
+    private static boolean hasFilteredDirectionYaw = false;
+    private static final float DIRECTION_YAW_SMOOTH_GRADIENT = 12f;
+
     static MinecraftClient client = MinecraftClient.getInstance();
 
     @Override
     public void onInitializeClient() {
         ClientEntityEvents.ENTITY_UNLOAD.register((entity, world) ->
-                EntityRollManager.remove(entity.getUuid()));
+            EntityRollManager.remove(entity.getUuid()));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             onClientTickEnd();
@@ -56,6 +61,7 @@ public class MCRiderMain implements ClientModInitializer {
                 isRidingKart = false;
                 useLegacyKartStopData = false;
                 hasKartYawHistory = false;
+                hasFilteredDirectionYaw = false;
             });
         });
 
@@ -88,6 +94,8 @@ public class MCRiderMain implements ClientModInitializer {
                     simulateKartRotation(kartMobil);
                 }
             }
+        }
+        if (MCRiderConfig.INSTANCE.playerBodyLock) {
             fixAllPlayersBodyToKart();
         }
     }
@@ -252,10 +260,18 @@ public class MCRiderMain implements ClientModInitializer {
         else if (kartEngine == 1006) {
             int driftState = MCRiderMain.getS2CValue(MCRiderMain.getRidingPlayer(), "state-drift");
             if (driftState == 1) {
+                hasFilteredDirectionYaw = false;
                 return MathHelper.wrapDegrees(playerYaw);
             }
             else {
-                return MathHelper.wrapDegrees(directionYaw);
+                float alpha = MathHelper.clamp(MCRiderCamera.getTickRate() * DIRECTION_YAW_SMOOTH_GRADIENT, 0f, 1f);
+                if (!hasFilteredDirectionYaw) {
+                    alpha = 1;
+                    hasFilteredDirectionYaw = true;
+                }
+                filteredDirectionYaw = MathHelper.lerpAngleDegrees(alpha, filteredDirectionYaw, directionYaw);
+
+                return MathHelper.wrapDegrees(filteredDirectionYaw);
             }
         }
 
