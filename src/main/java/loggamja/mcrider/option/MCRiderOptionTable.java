@@ -107,6 +107,13 @@ public final class MCRiderOptionTable {
                     v -> MCRiderConfig.INSTANCE.bikeSuspension = v
             ),
             new ToggleDef(
+                    "auto_save_delay", Category.BASIC,
+                    new String[]{"mcrider.option.auto_save_delay.off", "mcrider.option.auto_save_delay.on"},
+                    "mcrider.tooltip.auto_save_delay",
+                    () -> MCRiderConfig.INSTANCE.autoSaveDelayEnabled ? 1 : 0,
+                    v -> MCRiderConfig.INSTANCE.autoSaveDelayEnabled = v != 0
+            ),
+            new ToggleDef(
                     "track_minimap", Category.UI,
                     new String[]{
                             "mcrider.option.track_minimap.off",

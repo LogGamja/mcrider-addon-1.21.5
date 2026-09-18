@@ -3,6 +3,7 @@ package loggamja.mcrider.option;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.InstanceCreator;
+import com.google.gson.annotations.SerializedName;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,11 +40,17 @@ public class MCRiderConfig {
     public int MCRiderFOV = 90;
     public int MCRiderFOVEffects = 80;
 
+    @SerializedName("serverside.autoSaveDelayEnabled")
+    public boolean autoSaveDelayEnabled = true;
+
     // 싱글톤 (load()가 역직렬화된 인스턴스로 통째로 교체하므로 final이 아님)
     public static MCRiderConfig INSTANCE = new MCRiderConfig();
 
     public void load() {
-        if (!CONFIG_FILE.exists()) return;
+        if (!CONFIG_FILE.exists()) {
+            save();
+            return;
+        }
         try (Reader reader = Files.newBufferedReader(CONFIG_FILE.toPath(), StandardCharsets.UTF_8)) {
             MCRiderConfig loaded = GSON.fromJson(reader, MCRiderConfig.class);
             if (loaded != null) {

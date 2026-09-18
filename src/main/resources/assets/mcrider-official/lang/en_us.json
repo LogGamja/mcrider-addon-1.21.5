@@ -58,6 +58,10 @@
   "mcrider.option.bike_suspension.extreme": "Bike Suspension: Extreme!",
   "mcrider.tooltip.bike_suspension": "Change bike suspension effect when enable suspension effect.",
 
+  "mcrider.option.auto_save_delay.off": "Autosave Delay: OFF",
+  "mcrider.option.auto_save_delay.on": "Autosave Delay: ON",
+  "mcrider.tooltip.auto_save_delay": "Delay the autosave during a singleplayer race to avoid lag.",
+
   "mcrider.option.track_minimap.off": "Track Minimap: OFF",
   "mcrider.option.track_minimap.bottom_left": "Track Minimap: Bottom Left",
   "mcrider.option.track_minimap.bottom_right": "Track Minimap: Bottom Right",

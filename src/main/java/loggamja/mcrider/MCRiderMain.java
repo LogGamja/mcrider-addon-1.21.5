@@ -64,8 +64,6 @@ public class MCRiderMain implements ClientModInitializer {
                 hasFilteredDirectionYaw = false;
             });
         });
-
-        MCRiderConfig.INSTANCE.load();
     }
     //MinecraftClient mc = MinecraftClient.getInstance();
     //mc.getWindow().setWindowedSize(1024, 768);
